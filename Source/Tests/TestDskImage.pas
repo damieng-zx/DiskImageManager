@@ -18,7 +18,7 @@ unit TestDskImage;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, DskImage;
+  Classes, SysUtils, fpcunit, testregistry, DskImage, DSKFormat;
 
 type
   TDskImageTest = class(TTestCase)
@@ -34,6 +34,7 @@ type
     procedure TestRoundTripStandardDSK;
     procedure TestRoundTripMGT;
     procedure TestDetectFormatNotEmpty;
+    procedure TestLoadUnformattedExtendedDSK;
   end;
 
 implementation
@@ -209,6 +210,48 @@ begin
     AssertTrue('format detected', Trim(Img.Disk.DetectFormat) <> '');
   finally
     Img.Free;
+  end;
+end;
+
+// An Extended DSK that declares tracks but carries no track data at all (a
+// 256-byte header with an all-zero track-size table, as emitted by HxC for an
+// unformatted disk). Loading one used to crash in format detection when it
+// dereferenced the non-existent first sector; it should now load cleanly and
+// report itself as unformatted.
+procedure TDskImageTest.TestLoadUnformattedExtendedDSK;
+var
+  Header: TDSKInfoBlock;
+  Stream: TFileStream;
+  FileName: string;
+  Img: TDSKImage;
+begin
+  FileName := TempName('.dsk');
+  FillChar(Header, SizeOf(Header), 0);
+  Move(DiskInfoExtended[1], Header.DiskInfoBlock, Length(DiskInfoExtended));
+  Header.Disk_NumTracks := 43;
+  Header.Disk_NumSides := 1;
+  // Disk_ExtTrackSize left all zero: every declared track is unformatted.
+
+  Stream := TFileStream.Create(FileName, fmCreate);
+  try
+    Stream.WriteBuffer(Header, SizeOf(Header));
+  finally
+    Stream.Free;
+  end;
+
+  try
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertEquals('sides', 1, Img.Disk.Sides);
+      AssertEquals('tracks', 43, Img.Disk.Side[0].Tracks);
+      AssertEquals('no formatted sectors', 0, Img.Disk.Side[0].Track[0].Sectors);
+      // Regression: this call previously dereferenced a nil first sector.
+      AssertEquals('format', 'Unformatted', Img.Disk.DetectFormat);
+    finally
+      Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
   end;
 end;
 

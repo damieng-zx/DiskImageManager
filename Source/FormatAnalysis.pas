@@ -50,9 +50,24 @@ var
   FirstTrack: TDSKTrack;
   FirstSector: TDSKSector;
 begin
-  FirstTrack := Disk.GetLogicalTrack(0);
-  FirstSector := FirstTrack.GetFirstLogicalSector();
   Result := '';
+
+  // An image can advertise tracks yet hold no formatted sectors (e.g. a
+  // 256-byte Extended DSK with an all-zero track-size table). There is no
+  // first sector to fingerprint, so report it as unformatted rather than
+  // dereferencing nil below.
+  FirstTrack := Disk.GetLogicalTrack(0);
+  if FirstTrack = nil then
+  begin
+    Result := 'Unformatted';
+    exit;
+  end;
+  FirstSector := FirstTrack.GetFirstLogicalSector();
+  if FirstSector = nil then
+  begin
+    Result := 'Unformatted';
+    exit;
+  end;
 
   // Amstrad formats (9 sectors, 512 size, SS or DS)
   if (FirstTrack.Sectors = 9) and (FirstSector.DataSize = 512) then
