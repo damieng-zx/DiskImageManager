@@ -344,14 +344,25 @@ end;
 function TCPMFile.GetData(WithHeader: boolean): TDiskByteArray;
 var
   Block, BytesLeft, TargetIdx, BlockSize, SectorsLeft, SectorsPerBlock: integer;
+  TotalSize: integer;
   Disk: TDSKDisk;
   Sector: TDSKSector;
   FileData: TDiskByteArray;
 begin
   FileData := nil;
-  SetLength(FileData, Size + HeaderSize);
 
-  BytesLeft := Size + HeaderSize;
+  // PLUS3DOS records the whole file length (its 128-byte header included) in
+  // Size, whereas AMSDOS and headerless files record only the payload. Derive
+  // the true on-disk length so we neither over-read past the file nor treat the
+  // trailing header-sized run of bytes as content.
+  if HeaderType = 'PLUS3DOS' then
+    TotalSize := Size
+  else
+    TotalSize := Size + HeaderSize;
+
+  SetLength(FileData, TotalSize);
+
+  BytesLeft := TotalSize;
   TargetIdx := 0;
   Disk := FParentFileSystem.FParentDisk;
   BlockSize := Disk.Specification.GetBlockSize();
@@ -384,13 +395,12 @@ begin
     until SectorsLeft = 0;
   end;
 
-  // Strip any headers. Size is the payload length (it excludes the header), so
-  // the headerless copy takes Size bytes from just past the header - subtracting
-  // HeaderSize here would drop the final HeaderSize bytes of the file.
+  // Strip any header: the headerless copy takes the payload that follows the
+  // header, i.e. everything after the first HeaderSize bytes of the file.
   if (not WithHeader) and ((HeaderType = 'PLUS3DOS') or (HeaderType = 'AMSDOS')) then
-    Result := Copy(FileData, HeaderSize, Size)
+    Result := Copy(FileData, HeaderSize, TotalSize - HeaderSize)
   else
-    Result := Copy(FileData, 0, Size + HeaderSize);
+    Result := Copy(FileData, 0, TotalSize);
 end;
 
 end.
