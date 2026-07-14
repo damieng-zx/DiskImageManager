@@ -1,7 +1,6 @@
 # Disk Image Manager
-Development Build Notes
 
-## 2.12.0 (12 June 2026)
+## 2.12.0 (14 July 2026)
 ### Changes
 - Auto-detect the CPC screen graphics mode from banding artifacts instead of always defaulting to one mode
 - Open the CPC screen viewer only for full screens, routing Advanced OCP Art Studio files appropriately on double-click
@@ -10,11 +9,16 @@ Development Build Notes
 - View Advanced OCP Art Studio CPC screens, decompressing MJH-packed data and .WIN window files
 - Save button in the CPC and Spectrum screen viewers to export the displayed screen as an image
 - Interactive disk map: hover a sector for a floating panel (side, track, sector, ID, status, size, index offset and decoded FDC flags) or an unformatted track for its details, and click a sector or track to jump straight to it in the tree
+- Navigate back and forward through places you've visited in the tree using the mouse back/forward buttons, the < and > toolbar buttons, the Navigate menu, or Alt+Left/Right; the history is remembered between sessions
+- List the contents of +3DOS character (string) arrays in the file viewer, one string per line
 ### Fixes
 - Fix the New disk dialog: working filler byte, DPB preview, memory leaks and options
 - Fix mode-0 CPC screens being misdetected as mode 1
 - Fix truncation when extracting files without headers
 - Fix tree context-menu actions operating on the selected node instead of the right-clicked one
+- Fix +3DOS files including 128 bytes of header data when viewed or extracted, which also stopped +3DOS SCREEN$ files from displaying
+- Fix attribute-less 6144-byte SCREEN$ files rendering as white on black instead of black on white
+- Open unformatted 256-byte Extended DSK images without crashing
 
 ## 2.11.0 (05 June 2026)
 ### Changes
