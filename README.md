@@ -11,6 +11,7 @@ These images are traditionally created with CPDRead under DOS but Simon Owen's m
 ### Images
 
 * Conversion between standard and extended image formats
+* Read and save MGT/SAM Coupe disk images
 * Identification of tool that created the image
 * List all ASCII strings found on a disk image
 * Copy a disk image's full path to the clipboard
@@ -20,15 +21,19 @@ These images are traditionally created with CPDRead under DOS but Simon Owen's m
 * Display of extended disk parameter block (XDPB)
 * Boot compatibility: Amstrad PCW 9512, Amstrad PCW 8256, Amstrad CPC 664/6128, Sinclair Spectrum +3
 * Visual customisable map of space utilisation, track structure and controller flags
+* Interactive disk map: hover a sector or track for its details and click to jump to it in the tree
 * Save visual map to bitmap
 * Hex and ASCII display of sector data
 * Search sector data for ASCII data
+* Navigate back and forward through visited locations with the mouse buttons, toolbar arrows or Alt+Left/Right
 * Recovery of Extended DSK images that are missing their track-size table
 
 ### File viewers
 
 * Sinclair BASIC viewer with syntax highlighting
 * Amstrad (Locomotive) BASIC viewer with syntax highlighting
+* Character (string) array viewer listing +3DOS DATA arrays
+* Plain text viewer for +3DOS custom file types
 * Spectrum SCREEN$ viewer with FLASH animation and zoom
 * Amstrad CPC screen viewer for modes 0, 1 and 2 with automatic mode detection and zoom
 * Advanced OCP Art Studio compressed screens (MJH run-length encoding) and window (.WIN) clips
@@ -94,7 +99,7 @@ Identification of copy-protection schemes both signed and somtimes unsigned:
 
 ## Building
 
-This application requires the [Lazarus development system](http://www.lazarus.freepascal.org/) and was tested using Lazarus IDE v4.2 on Windows 11 with high DPI support.
+This application requires the [Lazarus development system](http://www.lazarus.freepascal.org/) and was tested using Lazarus IDE v4.8 on Windows 11 with high DPI support.
 
 To be able to build and visually edit the forms you will need to install the supplied DIMComponents package. To do that:
 
