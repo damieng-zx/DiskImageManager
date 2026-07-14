@@ -17,6 +17,7 @@
 - Fix mode-0 CPC screens being misdetected as mode 1
 - Fix truncation when extracting files without headers
 - Fix tree context-menu actions operating on the selected node instead of the right-clicked one
+- List all 64 directory entries on CPC Data and System disks instead of only the first 32
 - Fix +3DOS files including 128 bytes of header data when viewed or extracted, which also stopped +3DOS SCREEN$ files from displaying
 - Fix attribute-less 6144-byte SCREEN$ files rendering as white on black instead of black on white
 - Open unformatted 256-byte Extended DSK images without crashing

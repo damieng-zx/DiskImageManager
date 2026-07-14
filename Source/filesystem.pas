@@ -113,14 +113,9 @@ var
   PrimaryDiskFile, ExtentEntry, DiskFile: TCPMFile;
 begin
   Spec := FParentDisk.Specification;
-  case Spec.Format of
-    dsFormatCPC_Data:
-      MaxEntries := 32;
-    dsFormatCPC_System:
-      MaxEntries := 32;
-    else
-      MaxEntries := Spec.DirectoryBlocks * Spec.GetBlockSize() div DIR_ENTRY_SIZE;
-  end;
+  // Directory entries = directory blocks * block size / 32 bytes per entry.
+  // For CPC Data and System this is 2 * 1024 / 32 = 64, matching AMSDOS.
+  MaxEntries := Spec.DirectoryBlocks * Spec.GetBlockSize() div DIR_ENTRY_SIZE;
 
   Result := TFPGList<TCPMFile>.Create;
   Extents := TFPGList<TCPMFile>.Create;
