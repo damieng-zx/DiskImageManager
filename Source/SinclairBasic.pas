@@ -29,12 +29,18 @@ type
     function DecodeLineRTF(const Data: array of byte; StartPos, Length: integer): string;
     function GetSpecialChar(B: byte): string;
     function EscapeRTF(const S: string): string;
+    function DecodeArrayChar(B: byte): string;
+    function ParseStringArrayHeader(const Data: array of byte;
+      out StartPos, StringLen, NumStrings: integer): boolean;
   public
     constructor Create(Mode: TSinclairBasicMode = sbMode128K);
     function Decode(const Data: array of byte): string;
     function DecodeFile(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
     function DecodeRTF(const Data: array of byte): string;
     function DecodeFileRTF(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
+    function DecodeStringArray(const Data: array of byte): string;
+    function DecodeStringArrayRTF(const Data: array of byte): string;
+    function DecodeStringArrayFileRTF(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
     property Mode: TSinclairBasicMode read FMode write FMode;
   end;
 
@@ -551,6 +557,144 @@ begin
 
   BasicData := Copy(FileData, 128, ProgLength);
   Result := DecodeRTF(BasicData);
+end;
+
+// Decode a single byte of a saved character (string) array element. Unlike a
+// tokenised BASIC line there are no number markers, so every byte is a literal
+// character: printable ASCII, a Spectrum special/extended character, or a
+// keyword token.
+function TSinclairBasicParser.DecodeArrayChar(B: byte): string;
+begin
+  case B of
+    $20..$7E: Result := Chr(B);
+    $7F..$A2: Result := GetSpecialChar(B);
+    $A3..$FF: Result := GetTokenText(B);
+  else
+    Result := '';  // control characters
+  end;
+end;
+
+// Parse the dimension table at the start of a saved character array. The data
+// is [dimension count][dim 1 lo/hi]..[dim K lo/hi][elements]. The final
+// dimension is the length of each string; the product of the earlier
+// dimensions is the number of strings. Returns False if the header is invalid.
+function TSinclairBasicParser.ParseStringArrayHeader(const Data: array of byte;
+  out StartPos, StringLen, NumStrings: integer): boolean;
+var
+  DataLen, Pos, DimCount, I: integer;
+  DimSize, TotalElems: int64;
+begin
+  Result := False;
+  StartPos := 0;
+  StringLen := 0;
+  NumStrings := 0;
+
+  DataLen := System.Length(Data);
+  if DataLen < 1 then
+    Exit;
+
+  DimCount := Data[0];
+  if DimCount < 1 then
+    Exit;
+
+  // Need one byte per count plus two bytes per dimension size
+  if 1 + (DimCount * 2) > DataLen then
+    Exit;
+
+  Pos := 1;
+  TotalElems := 1;
+  for I := 0 to DimCount - 1 do
+  begin
+    DimSize := Data[Pos] or (word(Data[Pos + 1]) shl 8);
+    Inc(Pos, 2);
+    TotalElems := TotalElems * DimSize;
+    StringLen := DimSize;  // last dimension wins = string length
+  end;
+
+  if StringLen < 1 then
+    Exit;
+
+  StartPos := Pos;
+  NumStrings := TotalElems div StringLen;
+  Result := True;
+end;
+
+// Decode a saved character array to plain text, one array item (string) per
+// line with trailing space padding removed. Data is the file contents with the
+// 128-byte PLUS3DOS header already stripped.
+function TSinclairBasicParser.DecodeStringArray(const Data: array of byte): string;
+var
+  StartPos, StringLen, NumStrings, ItemIdx, I, Pos: integer;
+  Item: string;
+begin
+  Result := '';
+  if not ParseStringArrayHeader(Data, StartPos, StringLen, NumStrings) then
+    Exit;
+
+  Pos := StartPos;
+  for ItemIdx := 0 to NumStrings - 1 do
+  begin
+    Item := '';
+    for I := 0 to StringLen - 1 do
+    begin
+      if Pos >= System.Length(Data) then
+        Break;
+      Item := Item + DecodeArrayChar(Data[Pos]);
+      Inc(Pos);
+    end;
+    Result := Result + TrimRight(Item) + #13#10;
+  end;
+end;
+
+// Decode a saved character array to RTF for the file viewer, one array item
+// (string) per line.
+function TSinclairBasicParser.DecodeStringArrayRTF(const Data: array of byte): string;
+const
+  RTFHeader = '{\rtf1\ansi\deff0' +
+    '{\fonttbl{\f0\fmodern Consolas;}}' +
+    '\f0\fs26 ';
+var
+  StartPos, StringLen, NumStrings, ItemIdx, I, Pos: integer;
+  Item: string;
+begin
+  Result := '';
+  if not ParseStringArrayHeader(Data, StartPos, StringLen, NumStrings) then
+    Exit;
+
+  Result := RTFHeader;
+  Pos := StartPos;
+  for ItemIdx := 0 to NumStrings - 1 do
+  begin
+    if ItemIdx > 0 then
+      Result := Result + '\par ';
+    Item := '';
+    for I := 0 to StringLen - 1 do
+    begin
+      if Pos >= System.Length(Data) then
+        Break;
+      Item := Item + DecodeArrayChar(Data[Pos]);
+      Inc(Pos);
+    end;
+    Result := Result + EscapeRTF(TrimRight(Item));
+  end;
+  Result := Result + '}';
+end;
+
+function TSinclairBasicParser.DecodeStringArrayFileRTF(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
+var
+  FileData, ArrayData: TDiskByteArray;
+begin
+  Result := '';
+
+  if DiskFile.HeaderType <> 'PLUS3DOS' then
+    Exit;
+
+  FileData := DiskFile.GetData(True);
+  if System.Length(FileData) < 128 then
+    Exit;
+
+  ArrayData := Copy(FileData, 128, System.Length(FileData) - 128);
+  Result := DecodeStringArrayRTF(ArrayData);
 end;
 
 end.

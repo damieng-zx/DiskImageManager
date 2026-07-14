@@ -24,6 +24,9 @@ type
     procedure TestModeDependentToken48K;
     procedure TestPoundSign;
     procedure TestMultipleLines;
+    procedure TestStringArrayTwoDimensions;
+    procedure TestStringArraySingleString;
+    procedure TestStringArrayTrimsPadding;
   end;
 
 implementation
@@ -116,6 +119,54 @@ begin
     AssertEquals('10 PRINT "HI"' + CRLF + '20 CLS ' + CRLF,
       P.Decode([$00, $0A, $06, $00, tPRINT, $22, $48, $49, $22, $0D,
                 $00, $14, $02, $00, $FB, $0D]));
+  finally
+    P.Free;
+  end;
+end;
+
+// Saved character array format (PLUS3DOS header already stripped):
+//   [dimension count][dim 1 lo/hi]..[dim K lo/hi][elements]
+// The final dimension is the length of each string; the product of the
+// earlier dimensions is the number of strings.
+procedure TSinclairBasicTest.TestStringArrayTwoDimensions;
+var
+  P: TSinclairBasicParser;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    // DIM a$(2,3) = two strings of three chars: "ABC" and "DEF"
+    AssertEquals('ABC' + CRLF + 'DEF' + CRLF,
+      P.DecodeStringArray([$02, $02, $00, $03, $00,
+                           $41, $42, $43, $44, $45, $46]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TSinclairBasicTest.TestStringArraySingleString;
+var
+  P: TSinclairBasicParser;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    // DIM a$(2) = a single two-character string "HI"
+    AssertEquals('HI' + CRLF,
+      P.DecodeStringArray([$01, $02, $00, $48, $49]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TSinclairBasicTest.TestStringArrayTrimsPadding;
+var
+  P: TSinclairBasicParser;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    // DIM a$(2,4) with space-padded strings "HI  " and "BYE " - padding trimmed
+    AssertEquals('HI' + CRLF + 'BYE' + CRLF,
+      P.DecodeStringArray([$02, $02, $00, $04, $00,
+                           $48, $49, $20, $20, $42, $59, $45, $20]));
   finally
     P.Free;
   end;

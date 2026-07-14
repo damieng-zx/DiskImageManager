@@ -1549,6 +1549,13 @@ begin
     ShowBasicViewer(DiskImage.Disk, DiskFile, DiskName);
     Exit;
   end;
+
+  // Character (string) array, e.g. DATA a$(10) - list one string per line
+  if DiskFile.Meta.StartsWith('DATA ') and (Pos('$(', DiskFile.Meta) > 0) then
+  begin
+    ShowStringArrayViewer(DiskImage.Disk, DiskFile, DiskName);
+    Exit;
+  end;
 end;
 
 procedure TfrmMain.OnApplicationDropFiles(Sender: TObject;
