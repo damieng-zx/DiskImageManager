@@ -9,7 +9,6 @@ uses
 {$R *.res}
 
 begin
-  Application.Scaled := True;
   Application.Initialize;
   Application.Title := 'Disk Image Manager';
   Application.CreateForm(TfrmMain, frmMain);

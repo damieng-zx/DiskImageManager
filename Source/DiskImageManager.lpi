@@ -16,9 +16,9 @@
       <ResourceType Value="res"/>
       <UseXPManifest Value="True"/>
       <XPManifest>
-        <DpiAware Value="True/PM"/>
+        <DpiAware Value="True/PM_V2"/>
         <TextName Value="Disk Image Manager"/>
-        <TextDesc Value="A manager for Spectrum, PCW and CPC .DSK files."/>
+        <TextDesc Value="A manager for Spectrum, PCW, CPC and Einstein .DSK files."/>
       </XPManifest>
       <Icon Value="0"/>
     </General>
@@ -30,7 +30,7 @@
       <AutoIncrementBuild Value="True"/>
       <MajorVersionNr Value="2"/>
       <MinorVersionNr Value="12"/>
-      <BuildNr Value="130"/>
+      <BuildNr Value="133"/>
       <StringTable CompanyName="Envy Technologies" InternalName="Disk Image Manager" LegalCopyright="Copyright 2002-2026 Damien Guard." OriginalFilename="DiskImageManager.exe" ProductName="Disk Image Manager"/>
     </VersionInfo>
     <BuildModes Count="2">
@@ -147,9 +147,8 @@
         <UnitName Value="Settings"/>
       </Unit8>
       <Unit9>
-        <Filename Value="filesystem.pas"/>
+        <Filename Value="FileSystem.pas"/>
         <IsPartOfProject Value="True"/>
-        <UnitName Value="FileSystem"/>
       </Unit9>
       <Unit10>
         <Filename Value="FormatAnalysis.pas"/>
