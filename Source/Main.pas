@@ -507,7 +507,10 @@ var
   DiskFile: TCPMFile;
   Data: TDiskByteArray;
 begin
+  if Settings.LastSaveFolder <> '' then
+    dlgSelectDirectory.InitialDir := Settings.LastSaveFolder;
   if not dlgSelectDirectory.Execute then exit;
+  Settings.LastSaveFolder := dlgSelectDirectory.FileName;
 
   SaveCount := 0;
   Folder := dlgSelectDirectory.FileName + PathDelim;
@@ -553,7 +556,10 @@ begin
   DiskFile := TCPMFile(lvwMain.Selected.Data);
 
   dlgSaveBinary.FileName := DiskFile.FileName;
+  if Settings.LastSaveFolder <> '' then
+    dlgSaveBinary.InitialDir := Settings.LastSaveFolder;
   if not dlgSaveBinary.Execute then exit;
+  Settings.LastSaveFolder := ExtractFilePath(dlgSaveBinary.FileName);
 
   Stream := TFileStream.Create(dlgSaveBinary.FileName, fmCreate);
   try
@@ -907,8 +913,13 @@ end;
 
 procedure TfrmMain.itmOpenClick(Sender: TObject);
 begin
+  if Settings.LastOpenFolder <> '' then
+    dlgOpen.InitialDir := Settings.LastOpenFolder;
   if dlgOpen.Execute then
+  begin
+    Settings.LastOpenFolder := ExtractFilePath(dlgOpen.FileName);
     LoadFiles(dlgOpen.Files.ToStringArray());
+  end;
 end;
 
 procedure TfrmMain.itmCopyMapToClipboardClick(Sender: TObject);
@@ -1534,7 +1545,11 @@ begin
       dlgSave.FilterIndex := 2;
   end;
 
+  if Settings.LastSaveFolder <> '' then
+    dlgSave.InitialDir := Settings.LastSaveFolder;
   if dlgSave.Execute then
+  begin
+    Settings.LastSaveFolder := ExtractFilePath(dlgSave.FileName);
     case dlgSave.FilterIndex of
       3: Image.SaveFile(dlgSave.FileName, diRawMGT, Copy, False);
       2: Image.SaveFile(dlgSave.FileName, diExtendedDSK, Copy,
@@ -1565,6 +1580,7 @@ begin
           Image.SaveFile(dlgSave.FileName, diStandardDSK, Copy, False);
       end;
     end;
+  end;
 end;
 
 procedure TfrmMain.itmSaveMapAsClick(Sender: TObject);
@@ -1575,9 +1591,14 @@ begin
   if DiskMap.Side.Side > 0 then
     DefaultFileName := DefaultFileName + ' Side ' + StrInt(DiskMap.Side.Side);
   dlgSaveMap.FileName := ExtractFileNameOnly(DefaultFileName);
+  if Settings.LastSaveFolder <> '' then
+    dlgSaveMap.InitialDir := Settings.LastSaveFolder;
   if dlgSaveMap.Execute then
+  begin
+    Settings.LastSaveFolder := ExtractFilePath(dlgSaveMap.FileName);
     DiskMap.SaveMap(dlgSaveMap.FileName, Settings.SaveDiskMapWidth,
       Settings.SaveDiskMapHeight);
+  end;
 end;
 
 procedure TfrmMain.itmDarkBlankSectorsPopClick(Sender: TObject);

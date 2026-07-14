@@ -58,6 +58,10 @@ type
     RemoveEmptyTracks: boolean;
     SaveDiskMapHeight, SaveDiskMapWidth: integer;
 
+    // Folders last used in the open and save dialogs
+    LastOpenFolder: string;
+    LastSaveFolder: string;
+
     constructor Create(Owner: TForm);
     procedure Load(ClearFiles: boolean);
     procedure Apply;
@@ -161,6 +165,10 @@ begin
   SaveDiskMapWidth := Reg.ReadInteger(S, 'MapWidth', 640);
   SaveDiskMapHeight := Reg.ReadInteger(S, 'MapHeight', 480);
 
+  S := 'Folders';
+  LastOpenFolder := Reg.ReadString(S, 'LastOpen', '');
+  LastSaveFolder := Reg.ReadString(S, 'LastSave', '');
+
   S := 'Recent';
   Idx := 1;
   RecentFiles.Clear;
@@ -251,6 +259,10 @@ begin
   Reg.WriteBool(S, 'RemoveEmptyTracks', RemoveEmptyTracks);
   Reg.WriteInteger(S, 'MapWidth', SaveDiskMapWidth);
   Reg.WriteInteger(S, 'MapHeight', SaveDiskMapHeight);
+
+  S := 'Folders';
+  Reg.WriteString(S, 'LastOpen', LastOpenFolder);
+  Reg.WriteString(S, 'LastSave', LastSaveFolder);
 
   S := 'Recent';
   Reg.EraseSection(S);
