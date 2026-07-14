@@ -31,12 +31,14 @@ type
   public
     procedure LoadBasicFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
     procedure LoadStringArrayFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+    procedure LoadTextFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
     property DiskName: string read FDiskName write FDiskName;
     property FileName: string read FFileName write FFileName;
   end;
 
 procedure ShowBasicViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
 procedure ShowStringArrayViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+procedure ShowTextViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
 
 implementation
 
@@ -60,6 +62,15 @@ var
 begin
   Viewer := TfrmFileViewer.Create(Application);
   Viewer.LoadStringArrayFile(DiskImage, DiskFile, DiskName);
+  Viewer.Show;
+end;
+
+procedure ShowTextViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+var
+  Viewer: TfrmFileViewer;
+begin
+  Viewer := TfrmFileViewer.Create(Application);
+  Viewer.LoadTextFile(DiskImage, DiskFile, DiskName);
   Viewer.Show;
 end;
 
@@ -165,6 +176,29 @@ begin
 
   if RTFText = '' then
     RTFText := '{\rtf1\ansi (Unable to decode string array)}';
+  FViewer.LoadRTF(RTFText);
+end;
+
+procedure TfrmFileViewer.LoadTextFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+var
+  Parser: TSinclairBasicParser;
+  RTFText: string;
+begin
+  FDiskName := DiskName;
+  FFileName := DiskFile.FileName;
+  UpdateCaption;
+
+  EnsureViewer;
+
+  Parser := TSinclairBasicParser.Create(sbMode128K);
+  try
+    RTFText := Parser.DecodeTextFileRTF(DiskImage, DiskFile);
+  finally
+    Parser.Free;
+  end;
+
+  if RTFText = '' then
+    RTFText := '{\rtf1\ansi (Unable to decode file)}';
   FViewer.LoadRTF(RTFText);
 end;
 

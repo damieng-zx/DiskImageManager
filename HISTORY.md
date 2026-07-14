@@ -11,6 +11,7 @@
 - Interactive disk map: hover a sector for a floating panel (side, track, sector, ID, status, size, index offset and decoded FDC flags) or an unformatted track for its details, and click a sector or track to jump straight to it in the tree
 - Navigate back and forward through places you've visited in the tree using the mouse back/forward buttons, the < and > toolbar buttons, the Navigate menu, or Alt+Left/Right; the history is remembered between sessions
 - List the contents of +3DOS character (string) arrays in the file viewer, one string per line
+- View +3DOS custom type 0x04 files as plain text in the file viewer
 ### Fixes
 - Fix the New disk dialog: working filler byte, DPB preview, memory leaks and options
 - Fix mode-0 CPC screens being misdetected as mode 1

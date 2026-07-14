@@ -41,6 +41,8 @@ type
     function DecodeStringArray(const Data: array of byte): string;
     function DecodeStringArrayRTF(const Data: array of byte): string;
     function DecodeStringArrayFileRTF(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
+    function DecodeTextRTF(const Data: array of byte): string;
+    function DecodeTextFileRTF(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
     property Mode: TSinclairBasicMode read FMode write FMode;
   end;
 
@@ -695,6 +697,53 @@ begin
 
   ArrayData := Copy(FileData, 128, System.Length(FileData) - 128);
   Result := DecodeStringArrayRTF(ArrayData);
+end;
+
+// Decode arbitrary file contents to RTF as plain text, mapping each byte with
+// the Spectrum character set (printable ASCII, special characters and keyword
+// tokens) and treating CR/LF as line breaks.
+function TSinclairBasicParser.DecodeTextRTF(const Data: array of byte): string;
+const
+  RTFHeader = '{\rtf1\ansi\deff0' +
+    '{\fonttbl{\f0\fmodern Consolas;}}' +
+    '\f0\fs26 ';
+var
+  I: integer;
+  Line: string;
+begin
+  Result := RTFHeader;
+  Line := '';
+  I := 0;
+  while I <= High(Data) do
+  begin
+    case Data[I] of
+      $0D:  // CR - line break, swallowing a following LF (CRLF)
+      begin
+        Result := Result + EscapeRTF(Line) + '\par ';
+        Line := '';
+        if (I < High(Data)) and (Data[I + 1] = $0A) then
+          Inc(I);
+      end;
+      $0A:  // lone LF - line break
+      begin
+        Result := Result + EscapeRTF(Line) + '\par ';
+        Line := '';
+      end;
+    else
+      Line := Line + DecodeArrayChar(Data[I]);
+    end;
+    Inc(I);
+  end;
+  if Line <> '' then
+    Result := Result + EscapeRTF(Line);
+  Result := Result + '}';
+end;
+
+// Decode a file's payload (with any AMSDOS/PLUS3DOS header stripped) as plain
+// text for the file viewer.
+function TSinclairBasicParser.DecodeTextFileRTF(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
+begin
+  Result := DecodeTextRTF(DiskFile.GetData(False));
 end;
 
 end.

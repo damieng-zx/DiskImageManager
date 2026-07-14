@@ -1920,6 +1920,13 @@ begin
     ShowStringArrayViewer(DiskImage.Disk, DiskFile, DiskName);
     Exit;
   end;
+
+  // Custom PLUS3DOS type 0x04 - show the payload in the plain text viewer
+  if DiskFile.Meta = 'Custom 0x4' then
+  begin
+    ShowTextViewer(DiskImage.Disk, DiskFile, DiskName);
+    Exit;
+  end;
 end;
 
 procedure TfrmMain.OnApplicationDropFiles(Sender: TObject;
