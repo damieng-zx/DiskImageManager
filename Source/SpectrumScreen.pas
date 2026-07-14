@@ -179,9 +179,10 @@ begin
 
   HasAttr := Length(Data) = ScreenSizeWithColor;
 
-  // Default colors for mono screens (white on black)
-  Colors[0].R := 0; Colors[0].G := 0; Colors[0].B := 0;
-  Colors[1].R := 205; Colors[1].G := 205; Colors[1].B := 205;
+  // Default colours for mono screens: black ink on non-bright white paper,
+  // matching the Spectrum's default screen attribute (paper 7, ink 0)
+  Colors[0].R := 205; Colors[0].G := 205; Colors[0].B := 205;  // Paper (white)
+  Colors[1].R := 0; Colors[1].G := 0; Colors[1].B := 0;        // Ink (black)
 
   for CellY := 0 to AttributeHeight - 1 do
   begin
