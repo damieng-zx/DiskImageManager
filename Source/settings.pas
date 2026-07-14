@@ -44,6 +44,10 @@ type
     OpenView: string;
     RecentFiles: TStringList;
 
+    // Navigation history (serialized location descriptors + current index)
+    NavHistoryRaw: TStringList;
+    NavHistoryIndex: integer;
+
     // Strings
     StringsFont: TFont;
     StringMinLength: integer;
@@ -73,6 +77,8 @@ constructor TSettings.Create(Owner: TForm);
 begin
   frmMain := TFrmMain(Owner);
   RecentFiles := TStringList.Create;
+  NavHistoryRaw := TStringList.Create;
+  NavHistoryIndex := -1;
 end;
 
 // Apply some settings directly to other places
@@ -165,6 +171,17 @@ begin
       RecentFiles.Add(FileName);
   until FileName = '*end';
 
+  S := 'History';
+  NavHistoryIndex := Reg.ReadInteger(S, 'Index', -1);
+  Idx := 1;
+  NavHistoryRaw.Clear;
+  repeat
+    FileName := Reg.ReadString(S, StrInt(Idx), '*end');
+    Inc(Idx);
+    if FileName <> '*end' then
+      NavHistoryRaw.Add(FileName);
+  until FileName = '*end';
+
   Reg.Free;
 
   Apply;
@@ -239,6 +256,12 @@ begin
   Reg.EraseSection(S);
   for Idx := 0 to RecentFiles.Count - 1 do
     Reg.WriteString(S, StrInt(Idx + 1), RecentFiles[Idx]);
+
+  S := 'History';
+  Reg.EraseSection(S);
+  Reg.WriteInteger(S, 'Index', NavHistoryIndex);
+  for Idx := 0 to NavHistoryRaw.Count - 1 do
+    Reg.WriteString(S, StrInt(Idx + 1), NavHistoryRaw[Idx]);
 
   Reg.Free;
 end;

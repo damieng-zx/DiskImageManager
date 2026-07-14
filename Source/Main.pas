@@ -19,10 +19,24 @@ uses
   Comparers, FileViewer, SinclairBasic, ZXScreenViewer, SpectrumScreen,
   CPCScreenViewer, AmstradScreen,
   Classes, Graphics, SysUtils, Forms, Dialogs, Menus,
-  ComCtrls, ExtCtrls, Controls,
+  ComCtrls, ExtCtrls, Controls, Contnrs,
   Clipbrd, StdCtrls, FileUtil, StrUtils, LazFileUtils, LConvEncoding, CommCtrl;
 
 type
+  { TNavLocation }
+
+  // A serializable descriptor of a place the user has visited: the disk image,
+  // the path of child indices from that disk's root node down to the selected
+  // node, and the selected row in the detail list (-1 if none). Stored rather
+  // than raw node/object pointers so it survives images closing and app restart.
+  TNavLocation = class
+    ImageFile: string;
+    NodePath: array of integer;
+    ListRow: integer;
+    function Serialize: string;
+    class function Deserialize(const Text: string): TNavLocation;
+  end;
+
   { TfrmMain }
 
   TfrmMain = class(TForm)
@@ -99,6 +113,12 @@ type
     tbnCopy: TToolButton;
     tbnFind: TToolButton;
     tbnCloseAll: TToolButton;
+    tbnBack: TToolButton;
+    tbnForward: TToolButton;
+    tbnNavSep: TToolButton;
+    itmNavigate: TMenuItem;
+    itmBack: TMenuItem;
+    itmForward: TMenuItem;
     tvwMain: TTreeView;
     lvwMain: TListView;
     imlSmall: TImageList;
@@ -195,9 +215,29 @@ type
     procedure tvwMainDblClick(Sender: TObject);
     procedure tvwMainMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: integer);
+    procedure itmBackClick(Sender: TObject);
+    procedure itmForwardClick(Sender: TObject);
+    procedure lvwMainSelectItem(Sender: TObject; Item: TListItem;
+      Selected: boolean);
+    procedure NavMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: integer);
+    procedure FormDestroy(Sender: TObject);
   private
     NextNewFile: integer;
     FPresenter: TListViewPresenter;
+    FNavHistory: TObjectList;
+    FNavIndex: integer;
+    FNavigating: boolean;
+    function BuildNavLocation: TNavLocation;
+    function ResolveNavLocation(Loc: TNavLocation): TTreeNode;
+    function SameNavLocation(A, B: TNavLocation): boolean;
+    procedure NavigateTo(Loc: TNavLocation);
+    procedure GoBack;
+    procedure GoForward;
+    procedure UpdateNavButtons;
+    procedure RecordNavLocation;
+    procedure RestoreNavHistory;
+    procedure SaveNavHistory;
     function AddTree(Parent: TTreeNode; Text: string; ImageIdx: integer;
       NodeObject: TObject): TTreeNode;
     function GetSelectedSector(Sender: TObject): TDSKSector;
@@ -247,6 +287,45 @@ implementation
 
 uses New;
 
+{ TNavLocation }
+
+// Serialize as "ImageFile|i0.i1.i2|ListRow" ('|' can't appear in a Windows path)
+function TNavLocation.Serialize: string;
+var
+  PathStr: string;
+  Idx: integer;
+begin
+  PathStr := '';
+  for Idx := 0 to High(NodePath) do
+  begin
+    if PathStr <> '' then
+      PathStr := PathStr + '.';
+    PathStr := PathStr + IntToStr(NodePath[Idx]);
+  end;
+  Result := ImageFile + '|' + PathStr + '|' + IntToStr(ListRow);
+end;
+
+class function TNavLocation.Deserialize(const Text: string): TNavLocation;
+var
+  Parts, PathParts: TStringArray;
+  Idx: integer;
+begin
+  Result := nil;
+  Parts := Text.Split(['|']);
+  if Length(Parts) <> 3 then
+    Exit;
+  Result := TNavLocation.Create;
+  Result.ImageFile := Parts[0];
+  Result.ListRow := StrToIntDef(Parts[2], -1);
+  if Parts[1] <> '' then
+  begin
+    PathParts := Parts[1].Split(['.']);
+    SetLength(Result.NodePath, Length(PathParts));
+    for Idx := 0 to High(PathParts) do
+      Result.NodePath[Idx] := StrToIntDef(PathParts[Idx], 0);
+  end;
+end;
+
 procedure TfrmMain.FormCreate(Sender: TObject);
 var
   FileNames: TStringList;
@@ -264,6 +343,19 @@ begin
   DiskMap.OnTrackClick := DiskMapTrackClick;
   Application.AddOnDropFilesHandler(OnApplicationDropFiles);
 
+  // Navigation history (browser-style back/forward)
+  FNavHistory := TObjectList.Create(True);
+  FNavIndex := -1;
+  FNavigating := False;
+  lvwMain.OnSelectItem := lvwMainSelectItem;
+  // Route physical mouse back/forward buttons from across the window
+  OnMouseDown := NavMouseDown;
+  lvwMain.OnMouseDown := NavMouseDown;
+  DiskMap.OnMouseDown := NavMouseDown;
+  memo.OnMouseDown := NavMouseDown;
+  pnlRight.OnMouseDown := NavMouseDown;
+  pnlLeft.OnMouseDown := NavMouseDown;
+
   FileNames := TStringList.Create();
   for Idx := 1 to ParamCount do
     if (not ParamStr(Idx).StartsWith('--')) then
@@ -271,6 +363,15 @@ begin
   LoadFiles(FileNames.ToStringArray());
 
   FileNames.Free;
+
+  // The workspace (and any command-line files) are now loaded, so the tree
+  // exists and stored history entries can be resolved back to nodes.
+  RestoreNavHistory;
+end;
+
+procedure TfrmMain.FormDestroy(Sender: TObject);
+begin
+  FNavHistory.Free;
 end;
 
 procedure TfrmMain.LoadFiles(FileNames: array of string);
@@ -532,6 +633,261 @@ begin
       ChildNode := Node.GetNextChild(ChildNode);
     until ChildNode = nil;
   end;
+end;
+
+// Build a descriptor for the currently selected tree node + detail-list row.
+// Returns nil if there is no selection or no owning disk image.
+function TfrmMain.BuildNavLocation: TNavLocation;
+var
+  Node, DiskNode: TTreeNode;
+  Depth, Idx: integer;
+begin
+  Result := nil;
+  Node := tvwMain.Selected;
+  if Node = nil then
+    Exit;
+
+  // Walk up to the owning disk root, counting depth
+  DiskNode := Node;
+  Depth := 0;
+  while (DiskNode <> nil) and not IsDiskNode(DiskNode) do
+  begin
+    DiskNode := DiskNode.Parent;
+    Inc(Depth);
+  end;
+  if (DiskNode = nil) or (DiskNode.Data = nil) or
+    (TObject(DiskNode.Data).ClassType <> TDSKImage) then
+    Exit;
+
+  Result := TNavLocation.Create;
+  Result.ImageFile := TDSKImage(DiskNode.Data).FileName;
+
+  // Record child indices from the disk root down to the selected node
+  SetLength(Result.NodePath, Depth);
+  Node := tvwMain.Selected;
+  for Idx := Depth - 1 downto 0 do
+  begin
+    Result.NodePath[Idx] := Node.Index;
+    Node := Node.Parent;
+  end;
+
+  if lvwMain.Selected <> nil then
+    Result.ListRow := lvwMain.Selected.Index
+  else
+    Result.ListRow := -1;
+end;
+
+// Resolve a descriptor back to a live tree node, or nil if it no longer exists
+// (image closed, sector deleted, etc.).
+function TfrmMain.ResolveNavLocation(Loc: TNavLocation): TTreeNode;
+var
+  Node, Candidate: TTreeNode;
+  Idx: integer;
+begin
+  Result := nil;
+  if Loc = nil then
+    Exit;
+
+  // Find the matching disk root by file name
+  Candidate := nil;
+  for Node in tvwMain.Items do
+    if IsDiskNode(Node) and (Node.Data <> nil) and
+      (TObject(Node.Data).ClassType = TDSKImage) and
+      (TDSKImage(Node.Data).FileName = Loc.ImageFile) then
+    begin
+      Candidate := Node;
+      Break;
+    end;
+  if Candidate = nil then
+    Exit;
+
+  // Follow the recorded child indices down
+  for Idx := 0 to High(Loc.NodePath) do
+  begin
+    if (Loc.NodePath[Idx] < 0) or (Loc.NodePath[Idx] >= Candidate.Count) then
+      Exit;
+    Candidate := Candidate.Items[Loc.NodePath[Idx]];
+  end;
+  Result := Candidate;
+end;
+
+// Two locations are "the same place" if they point at the same node (ignoring
+// the detail-list row, so re-picking a file in the same list isn't new history).
+function TfrmMain.SameNavLocation(A, B: TNavLocation): boolean;
+var
+  Idx: integer;
+begin
+  Result := False;
+  if (A = nil) or (B = nil) then
+    Exit;
+  if A.ImageFile <> B.ImageFile then
+    Exit;
+  if Length(A.NodePath) <> Length(B.NodePath) then
+    Exit;
+  for Idx := 0 to High(A.NodePath) do
+    if A.NodePath[Idx] <> B.NodePath[Idx] then
+      Exit;
+  Result := True;
+end;
+
+// Record the current selection as a new history entry, dropping any forward
+// branch. Called from tvwMainChange when not navigating programmatically.
+procedure TfrmMain.RecordNavLocation;
+var
+  Loc: TNavLocation;
+begin
+  Loc := BuildNavLocation;
+  if Loc = nil then
+    Exit;
+
+  // Skip if it's the same place we're already sitting on (the detail-list row
+  // for the current entry is maintained separately by lvwMainSelectItem).
+  if (FNavIndex >= 0) and (FNavIndex < FNavHistory.Count) and
+    SameNavLocation(Loc, TNavLocation(FNavHistory[FNavIndex])) then
+  begin
+    Loc.Free;
+    Exit;
+  end;
+
+  // Drop the forward branch, then append
+  while FNavHistory.Count > FNavIndex + 1 do
+    FNavHistory.Delete(FNavHistory.Count - 1);
+  FNavHistory.Add(Loc);
+  FNavIndex := FNavHistory.Count - 1;
+  UpdateNavButtons;
+end;
+
+// Select the node/row described by Loc, letting the normal refresh flow rebuild
+// the detail pane. Guarded so it doesn't record itself as new history.
+procedure TfrmMain.NavigateTo(Loc: TNavLocation);
+var
+  Node: TTreeNode;
+begin
+  Node := ResolveNavLocation(Loc);
+  if Node = nil then
+    Exit;
+
+  FNavigating := True;
+  try
+    Node.Selected := True;
+    Node.MakeVisible;
+    // Selecting the node fires tvwMainChange -> RefreshList, repopulating lvwMain
+    if (Loc.ListRow >= 0) and (Loc.ListRow < lvwMain.Items.Count) then
+    begin
+      lvwMain.Selected := lvwMain.Items[Loc.ListRow];
+      lvwMain.Selected.MakeVisible(False);
+    end;
+  finally
+    FNavigating := False;
+  end;
+  UpdateNavButtons;
+end;
+
+procedure TfrmMain.GoBack;
+begin
+  // Skip over any entries that no longer resolve (e.g. closed images)
+  while FNavIndex > 0 do
+  begin
+    Dec(FNavIndex);
+    if ResolveNavLocation(TNavLocation(FNavHistory[FNavIndex])) <> nil then
+    begin
+      NavigateTo(TNavLocation(FNavHistory[FNavIndex]));
+      Exit;
+    end;
+  end;
+  UpdateNavButtons;
+end;
+
+procedure TfrmMain.GoForward;
+begin
+  while FNavIndex < FNavHistory.Count - 1 do
+  begin
+    Inc(FNavIndex);
+    if ResolveNavLocation(TNavLocation(FNavHistory[FNavIndex])) <> nil then
+    begin
+      NavigateTo(TNavLocation(FNavHistory[FNavIndex]));
+      Exit;
+    end;
+  end;
+  UpdateNavButtons;
+end;
+
+procedure TfrmMain.UpdateNavButtons;
+var
+  CanBack, CanForward: boolean;
+begin
+  CanBack := FNavIndex > 0;
+  CanForward := FNavIndex < FNavHistory.Count - 1;
+  tbnBack.Enabled := CanBack;
+  tbnForward.Enabled := CanForward;
+  itmBack.Enabled := CanBack;
+  itmForward.Enabled := CanForward;
+end;
+
+// Parse persisted history entries and drop any that no longer resolve
+procedure TfrmMain.RestoreNavHistory;
+var
+  Line: string;
+  Loc: TNavLocation;
+begin
+  FNavHistory.Clear;
+  for Line in Settings.NavHistoryRaw do
+  begin
+    Loc := TNavLocation.Deserialize(Line);
+    if (Loc <> nil) and (ResolveNavLocation(Loc) <> nil) then
+      FNavHistory.Add(Loc)
+    else
+      Loc.Free;
+  end;
+
+  FNavIndex := Settings.NavHistoryIndex;
+  if FNavIndex >= FNavHistory.Count then
+    FNavIndex := FNavHistory.Count - 1;
+  if FNavIndex < 0 then
+    FNavIndex := FNavHistory.Count - 1;
+  UpdateNavButtons;
+end;
+
+// Serialize the in-memory history into Settings for persistence
+procedure TfrmMain.SaveNavHistory;
+var
+  Idx: integer;
+begin
+  Settings.NavHistoryRaw.Clear;
+  for Idx := 0 to FNavHistory.Count - 1 do
+    Settings.NavHistoryRaw.Add(TNavLocation(FNavHistory[Idx]).Serialize);
+  Settings.NavHistoryIndex := FNavIndex;
+end;
+
+procedure TfrmMain.itmBackClick(Sender: TObject);
+begin
+  GoBack;
+end;
+
+procedure TfrmMain.itmForwardClick(Sender: TObject);
+begin
+  GoForward;
+end;
+
+// Physical mouse back/forward buttons anywhere in the window
+procedure TfrmMain.NavMouseDown(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: integer);
+begin
+  if Button = mbExtra1 then
+    GoBack
+  else if Button = mbExtra2 then
+    GoForward;
+end;
+
+// Keep the current history entry's detail-list row up to date as the user
+// selects rows, so navigating away remembers exactly what was highlighted.
+procedure TfrmMain.lvwMainSelectItem(Sender: TObject; Item: TListItem;
+  Selected: boolean);
+begin
+  if FNavigating or not Selected then
+    Exit;
+  if (FNavIndex >= 0) and (FNavIndex < FNavHistory.Count) and (Item <> nil) then
+    TNavLocation(FNavHistory[FNavIndex]).ListRow := Item.Index;
 end;
 
 procedure TfrmMain.UpdateRecentFilesMenu;
@@ -827,6 +1183,8 @@ end;
 procedure TfrmMain.tvwMainChange(Sender: TObject; Node: TTreeNode);
 begin
   UpdateMenus;
+  if not FNavigating then
+    RecordNavLocation;
 end;
 
 // Jump the treeview to the sector clicked on the disk map
@@ -898,6 +1256,7 @@ begin
   end;
 
   RefreshList;
+  UpdateNavButtons;
 end;
 
 function TfrmMain.GetTitle(Data: TTreeNode): string;
@@ -1096,6 +1455,7 @@ end;
 
 procedure TfrmMain.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
+  SaveNavHistory;
   Settings.Save;
   if CloseAll(True) then
   begin
@@ -1487,7 +1847,11 @@ begin
     Node := tvwMain.GetNodeAt(X, Y);
     if Node <> nil then
       Node.Selected := True;
-  end;
+  end
+  else if Button = mbExtra1 then
+    GoBack
+  else if Button = mbExtra2 then
+    GoForward;
 end;
 
 procedure TfrmMain.ShowFile(Sender: TObject);

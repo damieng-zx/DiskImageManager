@@ -77,6 +77,7 @@ type
     property Visible;
     property OnSectorClick: TSectorClickEvent read FOnSectorClick write FOnSectorClick;
     property OnTrackClick: TTrackClickEvent read FOnTrackClick write FOnTrackClick;
+    property OnMouseDown;
   end;
 
 procedure Register;
