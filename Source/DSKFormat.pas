@@ -11,6 +11,10 @@ const
   DiskSectorOffsetBlock = 'Offset-Info' + #13 + #10;
   CreatorSig = 'SPIN Disk Man';
   CreatorDU54 = 'Disk Image (DU54)' + #13 + #10;
+  // DU54 writes its creator at offset 16 of the disk info block, where the
+  // signature runs one byte past the end of that field and into the creator
+  // one, so this is as much of it as can be matched within the block itself
+  CreatorDU54InInfoBlock = 'Disk Image (DU54)' + #13;
 
   MaxTracks = 204;
 

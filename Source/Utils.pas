@@ -94,14 +94,17 @@ begin
         Result := Result + Chr(S[Idx] - 128);
 end;
 
-// Compare two char arrays
+// Does A start with the whole of B? B is 1-based and A is 0-based, so the last
+// character of B sits at Idx = Length(B) - 1: stopping short of it, as these
+// used to, matched 'MV - CP' against 'MV - CPC'. B has to fit in A to match at
+// all, which also keeps the comparison inside A.
 function CompareBlock(A: array of char; B: string): boolean;
 var
   Idx: integer;
 begin
-  Result := True;
+  Result := Length(B) <= Length(A);
   Idx := 0;
-  while Result and (Idx < Length(B) - 1) do
+  while Result and (Idx < Length(B)) do
   begin
     if A[Idx] <> B[Idx + 1] then
       Result := False;
@@ -109,14 +112,14 @@ begin
   end;
 end;
 
-// Compare two char arrays
+// Does A contain the whole of B at Start?
 function CompareBlockStart(A: array of char; B: string; Start: integer): boolean;
 var
   Idx: integer;
 begin
-  Result := True;
+  Result := (Start >= 0) and (Start + Length(B) <= Length(A));
   Idx := 0;
-  while Result and (Idx < Length(B) - 1) do
+  while Result and (Idx < Length(B)) do
   begin
     if A[Idx + Start] <> B[Idx + 1] then
       Result := False;
@@ -124,15 +127,15 @@ begin
   end;
 end;
 
-// Compare two char arrays case insensitively
+// Does A start with the whole of B, ignoring case?
 function CompareBlockInsensitive(A: array of char; B: string): boolean;
 var
   Idx: integer;
   AChar, BChar: char;
 begin
-  Result := True;
+  Result := Length(B) <= Length(A);
   Idx := 0;
-  while Result and (Idx < Length(B) - 1) do
+  while Result and (Idx < Length(B)) do
   begin
     AChar := UpCase(A[Idx]);
     BChar := UpCase(B[Idx + 1]);

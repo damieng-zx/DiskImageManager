@@ -634,7 +634,7 @@ begin
   DiskFile.ReadBuffer(DSKInfoBlock, SizeOf(DSKInfoBlock));
 
   // Get the creator (DU54 puts in wrong place)
-  if CompareBlockStart(DSKInfoBlock.DiskInfoBlock, CreatorDU54, 16) then
+  if CompareBlockStart(DSKInfoBlock.DiskInfoBlock, CreatorDU54InInfoBlock, 16) then
     Creator := CreatorDU54
   else
     Creator := StrBlockClean(DSKInfoBlock.Disk_Creator, 0, 14);

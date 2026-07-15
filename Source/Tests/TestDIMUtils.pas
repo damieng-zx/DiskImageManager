@@ -117,9 +117,16 @@ end;
 
 procedure TUtilsTest.TestCompareBlock;
 begin
-  // Matches the leading characters (the final char of B is not compared)
+  // A starts with the whole of B
   AssertTrue(CompareBlock(['M', 'V', ' ', '-'], 'MV '));
   AssertFalse(CompareBlock(['X', 'V'], 'MV'));
+  // The last character of B counts as much as the first. Only the first was
+  // ever tested, and the comparison stopped one short of the last, so this is
+  // what let 'MV - CP' pass for 'MV - CPC'.
+  AssertFalse(CompareBlock(['M', 'X'], 'MV'));
+  AssertFalse(CompareBlock(['M', 'V', ' ', '-', ' ', 'C', 'P', 'X'], 'MV - CPC'));
+  // B has to fit in A to be found in it
+  AssertFalse(CompareBlock(['M', 'V'], 'MV - CPC'));
 end;
 
 procedure TUtilsTest.TestCompareBlockInsensitive;
@@ -127,6 +134,9 @@ begin
   AssertTrue(CompareBlockInsensitive(['h', 'i'], 'HI'));
   AssertTrue(CompareBlockInsensitive(['H', 'I'], 'hi'));
   AssertFalse(CompareBlockInsensitive(['x', 'i'], 'HI'));
+  // Again, the last character counts
+  AssertFalse(CompareBlockInsensitive(['h', 'x'], 'HI'));
+  AssertFalse(CompareBlockInsensitive(['h'], 'HI'));
 end;
 
 procedure TUtilsTest.TestCompareBlockStart;
@@ -134,6 +144,10 @@ begin
   // Compare starting at offset 2 within the char array
   AssertTrue(CompareBlockStart(['x', 'y', 'M', 'V'], 'MV', 2));
   AssertFalse(CompareBlockStart(['x', 'y', 'Z', 'V'], 'MV', 2));
+  // And again the last character
+  AssertFalse(CompareBlockStart(['x', 'y', 'M', 'Z'], 'MV', 2));
+  // B has to fit in what is left of A from Start
+  AssertFalse(CompareBlockStart(['x', 'y', 'M'], 'MV', 2));
 end;
 
 procedure TUtilsTest.TestCompareByLength;
