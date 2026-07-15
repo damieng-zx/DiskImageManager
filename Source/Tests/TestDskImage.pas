@@ -28,6 +28,7 @@ type
     function FileLen(const FileName: string): int64;
     procedure WriteText(Sector: TDSKSector; Offset: integer; const Text: string);
     function CountOf(List: TStringList; const Text: string): integer;
+    function HasMessageLike(List: TStringList; const Text: string): boolean;
   published
     procedure TestFormatGeometryPCW;
     procedure TestFormatSectorData;
@@ -42,6 +43,8 @@ type
     procedure TestGetAllStringsOnEmptyDisk;
     procedure TestHighTrackCountOnEmptySide;
     procedure TestIdentifyOnEmptyDisk;
+    procedure TestLoadClampsSectorCount;
+    procedure TestLoadWarnsTooManyTrackSizes;
   end;
 
 implementation
@@ -85,6 +88,16 @@ begin
   Result := 0;
   for Idx := 0 to List.Count - 1 do
     if List[Idx] = Text then Inc(Result);
+end;
+
+function TDskImageTest.HasMessageLike(List: TStringList; const Text: string): boolean;
+var
+  Idx: integer;
+begin
+  Result := True;
+  for Idx := 0 to List.Count - 1 do
+    if Pos(Text, List[Idx]) > 0 then exit;
+  Result := False;
 end;
 
 function TDskImageTest.FileLen(const FileName: string): int64;
@@ -386,6 +399,89 @@ begin
       Img.Disk.Specification.Format = dsFormatInvalid);
   finally
     Img.Free;
+  end;
+end;
+
+// A track states its sector count in a byte, but a 256-byte Track-Info block
+// only has room to describe MaxTrackInfoSectors of them. Reading the entries a
+// malformed count claimed ran off the end of the block, a local on the stack.
+procedure TDskImageTest.TestLoadClampsSectorCount;
+var
+  Header: TDSKInfoBlock;
+  TrackInfo: TTRKInfoBlock;
+  Stream: TFileStream;
+  FileName: string;
+  Img: TDSKImage;
+begin
+  FileName := TempName('.dsk');
+
+  FillChar(Header, SizeOf(Header), 0);
+  Move(DiskInfoExtended[1], Header.DiskInfoBlock, Length(DiskInfoExtended));
+  Header.Disk_NumTracks := 1;
+  Header.Disk_NumSides := 1;
+  Header.Disk_ExtTrackSize[0] := 2; // 512: the Track-Info block, and no sectors
+
+  FillChar(TrackInfo, SizeOf(TrackInfo), 0);
+  Move(DiskInfoTrack[1], TrackInfo.TrackData, Length(DiskInfoTrack));
+  TrackInfo.TIB_NumSectors := 255;
+  // SectorInfoList left zero, so the entries there really are read as empty
+
+  Stream := TFileStream.Create(FileName, fmCreate);
+  try
+    Stream.WriteBuffer(Header, SizeOf(Header));
+    Stream.WriteBuffer(TrackInfo, SizeOf(TrackInfo));
+  finally
+    Stream.Free;
+  end;
+
+  try
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertEquals('sectors capped at what a track can describe',
+        MaxTrackInfoSectors, Img.Disk.Side[0].Track[0].Sectors);
+    finally
+      Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+// The Extended header holds one track size per track per side, so a double
+// sided image can only carry half as many tracks as the table has entries. The
+// guard tested the track count on its own and let the rest index past it.
+procedure TDskImageTest.TestLoadWarnsTooManyTrackSizes;
+var
+  Header: TDSKInfoBlock;
+  Stream: TFileStream;
+  FileName: string;
+  Img: TDSKImage;
+begin
+  FileName := TempName('.dsk');
+
+  FillChar(Header, SizeOf(Header), 0);
+  Move(DiskInfoExtended[1], Header.DiskInfoBlock, Length(DiskInfoExtended));
+  Header.Disk_NumTracks := 200;
+  Header.Disk_NumSides := 2; // 400 track sizes wanted, from a table holding 204
+  // Disk_ExtTrackSize left zero, so there is no track data to go looking for
+
+  Stream := TFileStream.Create(FileName, fmCreate);
+  try
+    Stream.WriteBuffer(Header, SizeOf(Header));
+  finally
+    Stream.Free;
+  end;
+
+  try
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertTrue('warned that the header holds fewer track sizes than that',
+        HasMessageLike(Img.Messages, 'track sizes a header holds'));
+    finally
+      Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
   end;
 end;
 

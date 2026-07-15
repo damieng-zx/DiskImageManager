@@ -15,6 +15,10 @@ const
   MaxTracks = 204;
 
 type
+  // What is left of a 256 byte Track-Info block once its header is accounted
+  // for, and so the only room a track has to describe its sectors
+  TSectorInfoList = array[0..231] of byte;
+
   // DSK file format structure
   TDSKInfoBlock = packed record // Disk
     DiskInfoBlock: array[0..33] of char;
@@ -36,7 +40,7 @@ type
     TIB_NumSectors: byte;
     TIB_GapLength: byte;
     TIB_FillerByte: byte;
-    SectorInfoList: array[0..231] of byte;
+    SectorInfoList: TSectorInfoList;
     //    SectorData: array[0..65535] of byte;     // Read separately to avoid messing where Offset-Info should be
   end;
 
@@ -58,6 +62,10 @@ type
   TOFFTrackEntry = packed record
     OFF_TrackLength: word;
   end;
+
+const
+  // However many sectors a track claims, this is all it has entries for
+  MaxTrackInfoSectors = SizeOf(TSectorInfoList) div SizeOf(TSCTInfoBlock);
 
 implementation
 

@@ -623,9 +623,12 @@ begin
   if (Creator.Trim = '') then
     Messages.Add('Missing Creator signature.');
 
-  if DSKInfoBlock.Disk_NumTracks > MaxTracks then
+  // The Extended header holds one track size byte per track per side, so it is
+  // the two multiplied that has to fit, not the track count alone
+  if DSKInfoBlock.Disk_NumTracks * DSKInfoBlock.Disk_NumSides > MaxTracks then
   begin
-    Messages.Add(SysUtils.Format('Image indicates %d tracks, my limit is %d.', [DSKInfoBlock.Disk_NumTracks, MaxTracks]));
+    Messages.Add(SysUtils.Format('Image indicates %d tracks over %d sides, more than the %d track sizes a header holds.',
+      [DSKInfoBlock.Disk_NumTracks, DSKInfoBlock.Disk_NumSides, MaxTracks]));
     Corrupt := True;
   end;
 
@@ -648,10 +651,20 @@ begin
           diStandardDSK: SizeT := DSKInfoBlock.Disk_StdTrackSize - 256;
           diExtendedDSK:
           begin
+            // Corrupt above does not stop the load and is cleared again at
+            // track 1, so an image claiming more tracks and sides than the
+            // header has sizes for still has to be kept out of the table here.
+            // A track with no size is treated as unformatted, which leaves the
+            // recovery below free to find it if the data is really there.
             TrackSizeIdx := (TIdx * DSKInfoBlock.Disk_NumSides) + SIdx;
-            SizeT := (DSKInfoBlock.Disk_ExtTrackSize[TrackSizeIdx] * 256);
-            if (SizeT > 0) then
-              SizeT := SizeT - 256; // Remove track-info size
+            if TrackSizeIdx > High(DSKInfoBlock.Disk_ExtTrackSize) then
+              SizeT := 0
+            else
+            begin
+              SizeT := (DSKInfoBlock.Disk_ExtTrackSize[TrackSizeIdx] * 256);
+              if (SizeT > 0) then
+                SizeT := SizeT - 256; // Remove track-info size
+            end;
           end;
           else
             SizeT := 0;
@@ -722,7 +735,18 @@ begin
           // Set various track info properties
           Track := TRKInfoBlock.TIB_TrackNum;
           Side := TRKInfoBlock.TIB_SideNum;
-          Sectors := TRKInfoBlock.TIB_NumSectors;
+          // A Track-Info block is 256 bytes and carries its sector entries in
+          // what is left after the header, so the count is capped by the room
+          // for them however many the file claims
+          if TRKInfoBlock.TIB_NumSectors > MaxTrackInfoSectors then
+          begin
+            Messages.Add(SysUtils.Format('Side %d track %d indicated %d sectors, more than the %d a track holds.',
+              [SIdx, TIdx, TRKInfoBlock.TIB_NumSectors, MaxTrackInfoSectors]));
+            Corrupt := True;
+            Sectors := MaxTrackInfoSectors;
+          end
+          else
+            Sectors := TRKInfoBlock.TIB_NumSectors;
           SectorSize := MaxSectorSize;
           if (FileFormat = diStandardDSK) and (TRKInfoBlock.TIB_SectorSize <= 6) then
             SectorSize := FDCSectorSizes[TRKInfoBlock.TIB_SectorSize]
@@ -920,6 +944,18 @@ begin
   Result := False;
   FillChar(DSKInfoBlock, SizeOf(DSKInfoBlock), 0);
 
+  // Both formats describe a track's sectors in its Track-Info block, which has
+  // only so many entries. The track properties window will set a sector count
+  // well past that, and writing one would run off the end of the block.
+  for Side in Disk.Side do
+    for Track in Side.Track do
+      if Track.Sectors > MaxTrackInfoSectors then
+      begin
+        Messages.Add(SysUtils.Format('Side %d track %d has %d sectors, more than the %d a track holds.',
+          [Track.Side, Track.Logical, Track.Sectors, MaxTrackInfoSectors]));
+        exit;
+      end;
+
   // Construct disk info
   with DSKInfoBlock do
   begin
@@ -930,6 +966,16 @@ begin
       diExtendedDSK:
       begin
         DiskInfoBlock := DiskInfoExtended;
+        // One track size byte per track per side has to fit the header, and
+        // there is no honest way to write a disk bigger than that: dropping
+        // the tracks that do not fit would quietly lose them
+        if Disk_NumTracks * Disk_NumSides > MaxTracks then
+        begin
+          Messages.Add(SysUtils.Format('%d tracks over %d sides needs %d track sizes, more than the %d a header holds.',
+            [Disk_NumTracks, Disk_NumSides, Disk_NumTracks * Disk_NumSides, MaxTracks]));
+          exit;
+        end;
+
         for SIdx := 0 to Disk_NumSides - 1 do
           for TIdx := 0 to Disk_NumTracks - 1 do
             if (Compress and (Disk.Side[SIdx].Track[TIdx].Sectors = 0)) then
