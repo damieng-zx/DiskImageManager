@@ -374,10 +374,12 @@ const
     'Formatted (in use)'
     );
 
+  // In the order of TDSKRecordingMode, which is the order the file states them
+  // in: these were the other way round, so FM read as MFM and MFM as FM
   DSKRecordingMode: array[TDSKRecordingMode] of string = (
     'Unknown',
-    'MFM',
-    'FM'
+    'FM',
+    'MFM'
     );
 
   DSKDataRate: array[TDSKDataRate] of string = (
