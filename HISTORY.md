@@ -23,6 +23,7 @@
 - Fix +3DOS files including 128 bytes of header data when viewed or extracted, which also stopped +3DOS SCREEN$ files from displaying
 - Fix attribute-less 6144-byte SCREEN$ files rendering as white on black instead of black on white
 - Open unformatted 256-byte Extended DSK images without crashing
+- Fix the Strings view: identical strings listed once per copy found, the last string on the disk never shown, and a memory leak each time it was viewed
 
 ## 2.11.0 (05 June 2026)
 ### Changes

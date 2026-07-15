@@ -1315,16 +1315,24 @@ var
   Index, CIdx: integer;
   NextByte: byte;
   Uniques: TStringList;
+  Seen: TStringList;
   CurrChar: char;
+  Found: string;
 begin
   Result := TStringList.Create;
-  Result.Duplicates := DupIgnore;
   CurrentText := '';
   Sector := Side[0].Track[0].Sector[0];
   Index := 0;
   Uniques := TStringList.Create;
   Uniques.Duplicates := DupIgnore;
   Uniques.Sorted := True;
+
+  // Strings already reported, so a repeat of one is skipped rather than listed
+  // again. Sorted for the lookup, and cased so only exact repeats are dropped:
+  // 'HELLO' and 'hello' are different bytes on the disk and both worth seeing.
+  Seen := TStringList.Create;
+  Seen.Sorted := True;
+  Seen.CaseSensitive := True;
 
   try
     while Sector <> nil do
@@ -1347,7 +1355,14 @@ begin
           end;
 
           if (Uniques.Count >= MinUniques) then
-            Result.Append(CurrentText.Trim());
+          begin
+            Found := CurrentText.Trim();
+            if Seen.IndexOf(Found) < 0 then
+            begin
+              Seen.Add(Found);
+              Result.Append(Found);
+            end;
+          end;
         end;
         CurrentText := '';
       end;
@@ -1361,6 +1376,7 @@ begin
     end;
   finally
     Uniques.Free;
+    Seen.Free;
   end;
 end;
 

@@ -26,6 +26,8 @@ type
     function MakeFormatted(FormatIndex: integer): TDSKImage;
     function TempName(const Ext: string): string;
     function FileLen(const FileName: string): int64;
+    procedure WriteText(Sector: TDSKSector; Offset: integer; const Text: string);
+    function CountOf(List: TStringList; const Text: string): integer;
   published
     procedure TestFormatGeometryPCW;
     procedure TestFormatSectorData;
@@ -35,6 +37,8 @@ type
     procedure TestRoundTripMGT;
     procedure TestDetectFormatNotEmpty;
     procedure TestLoadUnformattedExtendedDSK;
+    procedure TestGetAllStringsDropsDuplicates;
+    procedure TestGetAllStringsKeepsDifferentCase;
   end;
 
 implementation
@@ -58,6 +62,26 @@ begin
   // suites from colliding.
   Result := IncludeTrailingPathDelimiter(GetTempDir) +
     'dim_test_' + TestName + Ext;
+end;
+
+// Plant readable text in a sector. A formatted sector is filled with E5, which
+// is outside the printable range, so the text is terminated at both ends.
+procedure TDskImageTest.WriteText(Sector: TDSKSector; Offset: integer;
+  const Text: string);
+var
+  Idx: integer;
+begin
+  for Idx := 1 to Length(Text) do
+    Sector.Data[Offset + Idx - 1] := Ord(Text[Idx]);
+end;
+
+function TDskImageTest.CountOf(List: TStringList; const Text: string): integer;
+var
+  Idx: integer;
+begin
+  Result := 0;
+  for Idx := 0 to List.Count - 1 do
+    if List[Idx] = Text then Inc(Result);
 end;
 
 function TDskImageTest.FileLen(const FileName: string): int64;
@@ -252,6 +276,58 @@ begin
     end;
   finally
     DeleteFile(FileName);
+  end;
+end;
+
+procedure TDskImageTest.TestGetAllStringsDropsDuplicates;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+  Strings: TStringList;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    WriteText(Sec, 100, 'HELLO WORLD');
+    WriteText(Sec, 200, 'HELLO WORLD');
+    WriteText(Sec, 300, 'GOODBYE CRUEL WORLD');
+
+    Strings := Img.Disk.GetAllStrings(5, 4);
+    try
+      AssertEquals('repeated string listed once', 1,
+        CountOf(Strings, 'HELLO WORLD'));
+      AssertEquals('other strings kept', 1,
+        CountOf(Strings, 'GOODBYE CRUEL WORLD'));
+    finally
+      Strings.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestGetAllStringsKeepsDifferentCase;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+  Strings: TStringList;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    WriteText(Sec, 100, 'HELLO WORLD');
+    WriteText(Sec, 200, 'hello world');
+
+    // Different bytes on the disk, so both are worth reporting
+    Strings := Img.Disk.GetAllStrings(5, 4);
+    try
+      AssertEquals('upper kept', 1, CountOf(Strings, 'HELLO WORLD'));
+      AssertEquals('lower kept', 1, CountOf(Strings, 'hello world'));
+    finally
+      Strings.Free;
+    end;
+  finally
+    Img.Free;
   end;
 end;
 

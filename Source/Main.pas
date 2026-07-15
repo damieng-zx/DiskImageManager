@@ -1443,24 +1443,23 @@ end;
 
 procedure TfrmMain.RefreshStrings(Disk: TDSKDisk);
 var
-  Idx: integer;
   Strings: TStringList;
 begin
   Strings := Disk.GetAllStrings(Settings.StringMinLength, 4);
-  memo.Clear;
-  lvwMain.Hide;
+  try
+    memo.Clear;
+    lvwMain.Hide;
 
-  if Settings.StringSort = 'Alpha' then
-    Strings.Sort;
-  if Settings.StringSort = 'Size' then
-    Strings.CustomSort(CompareByLength);
+    if Settings.StringSort = 'Alpha' then
+      Strings.Sort;
+    if Settings.StringSort = 'Size' then
+      Strings.CustomSort(CompareByLength);
 
-  for Idx := 0 to Strings.Count - 1 do
-    memo.Lines.Append(Strings[Idx]);
-  if memo.Lines.Count > 0 then
-    memo.Lines.Delete(memo.Lines.Count - 1);
-
-  pnlMemo.Show;
+    memo.Lines.Assign(Strings);
+    pnlMemo.Show;
+  finally
+    Strings.Free;
+  end;
 end;
 
 // Menu: View > Options
