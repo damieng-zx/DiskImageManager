@@ -2193,15 +2193,21 @@ begin
   end;
 
   if FParentDisk.DetectFormat.StartsWith('MGT ') then
-  begin;
+  begin
     FFormat := dsFormatMGT;
     Source := 'Double sided 80 track 10 sectors of 512 bytes';
     SectorSize := 512;
     SectorsPerTrack := 10;
-    TracksPerSide := 40;
+    // 80, as the line above says and as 2 sides x 80 x 10 x 512 = MGTRawSize
+    // requires. 40 described half a disk.
+    TracksPerSide := 80;
     FSide := dsSideDoubleSuccessive;
     ReservedTracks := 0;
     FDirectoryBlocks := 4;
+    // Settled, like the Einstein and TS2068 formats above. Without this the
+    // disk spec probe below had another go at it, and a fresh MGT disk, whose
+    // first sector is all zeroes, came back out of it as a PCW.
+    exit;
   end;
 
   // An image need not have a logical track 0 at all, so there may be no first
