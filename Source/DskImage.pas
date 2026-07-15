@@ -661,9 +661,6 @@ begin
   // Load the tracks in
   for TIdx := 0 to DSKInfoBlock.Disk_NumTracks - 1 do
   begin
-    if (TIdx = 1) then
-     Corrupt := False;
-
     for SIdx := 0 to DSKInfoBlock.Disk_NumSides - 1 do
     begin
       with Disk.Side[SIdx].Track[TIdx] do
@@ -679,11 +676,11 @@ begin
               SizeT := 0;
           diExtendedDSK:
           begin
-            // Corrupt above does not stop the load and is cleared again at
-            // track 1, so an image claiming more tracks and sides than the
-            // header has sizes for still has to be kept out of the table here.
-            // A track with no size is treated as unformatted, which leaves the
-            // recovery below free to find it if the data is really there.
+            // Flagging the image corrupt above does not stop the load, so an
+            // image claiming more tracks and sides than the header has sizes
+            // for still has to be kept out of the table here. A track with no
+            // size is treated as unformatted, which leaves the recovery below
+            // free to find it if the data is really there.
             TrackSizeIdx := (TIdx * DSKInfoBlock.Disk_NumSides) + SIdx;
             if TrackSizeIdx > High(DSKInfoBlock.Disk_ExtTrackSize) then
               SizeT := 0
