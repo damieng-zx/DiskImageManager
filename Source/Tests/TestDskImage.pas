@@ -45,6 +45,9 @@ type
     procedure TestIdentifyOnEmptyDisk;
     procedure TestLoadClampsSectorCount;
     procedure TestLoadWarnsTooManyTrackSizes;
+    procedure TestReloadEmptyStandardDSK;
+    procedure TestLoadTruncatedSectorData;
+    procedure TestFormatClampsSectorSize;
   end;
 
 implementation
@@ -482,6 +485,125 @@ begin
     end;
   finally
     DeleteFile(FileName);
+  end;
+end;
+
+// A standard image with nothing formatted on it records a track size of 0,
+// which is what this app writes for one. Reading it back took the 256 byte
+// Track-Info block off that, and the size is unsigned, so the track came back
+// as 65280 bytes long and the load ran off the end of its own output.
+procedure TDskImageTest.TestReloadEmptyStandardDSK;
+var
+  Img: TDSKImage;
+  FileName: string;
+begin
+  FileName := TempName('.dsk');
+  try
+    Img := TDSKImage.Create;
+    try
+      Img.Disk.Sides := 1;
+      Img.Disk.Side[0].Tracks := 40; // declared, but never formatted
+      AssertTrue('saved', Img.SaveFile(FileName, diStandardDSK, True, False));
+    finally
+      Img.Free;
+    end;
+
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertEquals('tracks', 40, Img.Disk.Side[0].Tracks);
+      AssertEquals('still unformatted', 0, Img.Disk.Side[0].Track[0].Sectors);
+    finally
+      Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+// A track can promise more sector data than the file has left. The truncation
+// was noticed and reported, but the read went ahead for the whole sector
+// anyway and raised instead.
+procedure TDskImageTest.TestLoadTruncatedSectorData;
+const
+  Written = 100; // of the 512 the sector claims
+var
+  Header: TDSKInfoBlock;
+  TrackInfo: TTRKInfoBlock;
+  SectorInfo: TSCTInfoBlock;
+  Stream: TFileStream;
+  FileName: string;
+  Img: TDSKImage;
+  Pad: array[0..Written - 1] of byte;
+begin
+  FileName := TempName('.dsk');
+
+  FillChar(Header, SizeOf(Header), 0);
+  Move(DiskInfoExtended[1], Header.DiskInfoBlock, Length(DiskInfoExtended));
+  Header.Disk_NumTracks := 1;
+  Header.Disk_NumSides := 1;
+  Header.Disk_ExtTrackSize[0] := 3; // 768: the Track-Info block and 512 of data
+
+  FillChar(TrackInfo, SizeOf(TrackInfo), 0);
+  Move(DiskInfoTrack[1], TrackInfo.TrackData, Length(DiskInfoTrack));
+  TrackInfo.TIB_NumSectors := 1;
+
+  FillChar(SectorInfo, SizeOf(SectorInfo), 0);
+  SectorInfo.SIB_ID := 1;
+  SectorInfo.SIB_Size := 2;
+  SectorInfo.SIB_DataLength := 512;
+  Move(SectorInfo, TrackInfo.SectorInfoList[0], SizeOf(SectorInfo));
+
+  FillChar(Pad, SizeOf(Pad), 0);
+
+  Stream := TFileStream.Create(FileName, fmCreate);
+  try
+    Stream.WriteBuffer(Header, SizeOf(Header));
+    Stream.WriteBuffer(TrackInfo, SizeOf(TrackInfo));
+    Stream.WriteBuffer(Pad, SizeOf(Pad)); // the sector cut short
+  finally
+    Stream.Free;
+  end;
+
+  try
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertEquals('sector cut to what the file had left', Written,
+        Img.Disk.Side[0].Track[0].Sector[0].DataSize);
+      AssertEquals('size it claimed kept as advertised', 512,
+        Img.Disk.Side[0].Track[0].Sector[0].AdvertisedSize);
+    finally
+      Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+// A sector's buffer is a fixed MaxSectorSize but a format specification states
+// its sector size in a word, and formatting filled each sector to that size
+// without checking it fit.
+procedure TDskImageTest.TestFormatClampsSectorSize;
+var
+  Img: TDSKImage;
+  Spec: TDSKFormatSpecification;
+begin
+  Img := TDSKImage.Create;
+  try
+    Img.Disk.Sides := 1;
+    Img.Disk.Side[0].Tracks := 1;
+
+    Spec := TDSKFormatSpecification.Create(0);
+    try
+      Spec.SectorSize := High(word);
+      Img.Disk.Side[0].Track[0].Format(Spec);
+    finally
+      Spec.Free;
+    end;
+
+    AssertEquals('sector size capped at the buffer', MaxSectorSize,
+      Img.Disk.Side[0].Track[0].Sector[0].DataSize);
+  finally
+    Img.Free;
   end;
 end;
 

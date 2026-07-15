@@ -410,6 +410,9 @@ constructor TDSKImage.CreateFromFile(FileName: TFileName);
 var
   FileStream: TFileStream;
   GZStream: TGZFileStream;
+  MemStream: TMemoryStream;
+  Buffer: array[0..65535] of byte;
+  BytesRead: integer;
 const
   fmShareDenyNoneWrite = $0070; // Enables READ + WRITE + DELETE sharing
 begin
@@ -419,8 +422,24 @@ begin
   begin
     GZStream := TGZFileStream.Create(FileName, gzopenread);
     try
-      self.FileName := FileName;
-      CreateFromStream(GZStream, FileName);
+      // Unpack before loading. A gz stream cannot say how long it is, which
+      // left FileSize unset and every truncation check below switched off, and
+      // the loader seeks back over the track it has just read.
+      MemStream := TMemoryStream.Create;
+      try
+        repeat
+          BytesRead := GZStream.Read(Buffer, SizeOf(Buffer));
+          if BytesRead > 0 then
+            MemStream.WriteBuffer(Buffer, BytesRead);
+        until BytesRead < SizeOf(Buffer);
+        MemStream.Position := 0;
+
+        self.FileName := FileName;
+        FileSize := MemStream.Size;
+        CreateFromStream(MemStream, FileName);
+      finally
+        MemStream.Free;
+      end;
     finally
       GZStream.Free;
     end;
@@ -648,7 +667,14 @@ begin
       with Disk.Side[SIdx].Track[TIdx] do
       begin
         case FileFormat of
-          diStandardDSK: SizeT := DSKInfoBlock.Disk_StdTrackSize - 256;
+          // A standard image with nothing formatted on it records a track size
+          // of 0, which this app writes itself, and SizeT is unsigned: taking
+          // the Track-Info block off a size that never counted one wraps round
+          diStandardDSK:
+            if DSKInfoBlock.Disk_StdTrackSize > 256 then
+              SizeT := DSKInfoBlock.Disk_StdTrackSize - 256
+            else
+              SizeT := 0;
           diExtendedDSK:
           begin
             // Corrupt above does not stop the load and is cleared again at
@@ -697,6 +723,17 @@ begin
               ' but file had only %d bytes left.', [SIdx, TIdx, SizeT, FileSize - TOff]));
             Corrupt := True;
             ReadSize := FileSize - TOff;
+          end;
+
+          // Noticing the truncation is no use if the read then asks for the
+          // bytes regardless, and there is nothing to load from a track whose
+          // header is not all there
+          if ReadSize < SizeOf(TRKInfoBlock) then
+          begin
+            Messages.Add(SysUtils.Format('Side %d track %d has no room left for a track header. Load stopped.',
+              [SIdx, TIdx]));
+            Corrupt := True;
+            exit;
           end;
 
           DiskFile.ReadBuffer(TRKInfoBlock, SizeOf(TRKInfoBlock));
@@ -794,6 +831,15 @@ begin
                   [TIdx, SIdx, EIdx, MaxSectorSize]));
                 Corrupt := True;
                 DataSize := MaxSectorSize;
+              end;
+
+              // The file can equally run out part way through a track's sectors
+              if (FileSize > 0) and (DiskFile.Position + DataSize > FileSize) then
+              begin
+                Messages.Add(SysUtils.Format('Side %d track %d sector %d ran past the end of the file.',
+                  [SIdx, TIdx, EIdx]));
+                Corrupt := True;
+                DataSize := FileSize - DiskFile.Position;
               end;
 
               if DataSize > 0 then
@@ -1723,9 +1769,17 @@ end;
 procedure TDSKTrack.Format(Formatter: TDSKFormatSpecification);
 var
   EIdx: byte;
+  FormatSectorSize: word;
 begin
+  // A sector's buffer is a fixed MaxSectorSize but a specification states its
+  // sector size in a word, and filling one to a size the buffer has not got
+  // writes straight past it. The load path caps this; formatting has to too.
+  FormatSectorSize := Formatter.SectorSize;
+  if FormatSectorSize > MaxSectorSize then
+    FormatSectorSize := MaxSectorSize;
+
   Filler := Formatter.FillerByte;
-  SectorSize := Formatter.SectorSize;
+  SectorSize := FormatSectorSize;
   Sectors := Formatter.SectorsPerTrack;
   GapLength := Formatter.GapFormat;
   DataRate := Formatter.DataRate;
@@ -1748,7 +1802,7 @@ begin
     Sector[EIdx].Track := Track;
     Sector[EIdx].Sector := EIdx;
     Sector[EIdx].FDCSize := Formatter.FDCSectorSize;
-    Sector[EIdx].DataSize := Formatter.SectorSize;
+    Sector[EIdx].DataSize := FormatSectorSize;
     Sector[EIdx].ID := Formatter.GetSectorID(Side, Logical, Sector[EIdx].Sector);
     Sector[EIdx].FillSector(Formatter.FillerByte);
   end;
