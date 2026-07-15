@@ -48,6 +48,7 @@ type
     procedure TestReloadEmptyStandardDSK;
     procedure TestLoadTruncatedSectorData;
     procedure TestFormatClampsSectorSize;
+    procedure TestFindText;
   end;
 
 implementation
@@ -605,6 +606,33 @@ begin
 
     AssertEquals('sector size capped at the buffer', MaxSectorSize,
       Img.Disk.Side[0].Track[0].Sector[0].DataSize);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestFindText;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    WriteText(Sec, 100, 'AAB');
+    WriteText(Sec, 200, 'HELLO');
+
+    // The search walked the data once and restarted the needle on a mismatch
+    // without retrying the byte it failed on, so a match whose start repeats
+    // its own first byte was stepped over: AB really is in AAB, at 101.
+    AssertEquals('AB found in AAB', 102, Sec.FindText('AB', True));
+
+    AssertEquals('plain match', 204, Sec.FindText('HELLO', True));
+    AssertEquals('matches without case', 204, Sec.FindText('hello', False));
+    AssertEquals('case sensitive misses', -1, Sec.FindText('hello', True));
+    AssertEquals('absent text', -1, Sec.FindText('NOTHERE', True));
+    // Text[1] of an empty needle is not a character at all
+    AssertEquals('empty needle finds nothing', -1, Sec.FindText('', True));
   finally
     Img.Free;
   end;

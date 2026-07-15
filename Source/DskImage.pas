@@ -1939,43 +1939,45 @@ begin
     Result := (Result + Data[Idx]) mod ModValue;
 end;
 
+// Index of the last byte of the first match, or -1. Each starting position is
+// tried in full: walking the data once and restarting the search on a mismatch
+// skipped the byte that failed, so a match whose start repeats its own first
+// byte was missed entirely, and 'AB' was not found in 'AAB'.
 function TDSKSector.FindText(Text: string; CaseSensitive: boolean): integer;
 var
-  Idx: integer;
-  SIdx: integer;
-  CharFound: boolean;
-  TestChar: char;
+  Start, Idx: integer;
+  Matched: boolean;
+  TestChar, WantChar: char;
 begin
-  if DataSize = 0 then
-  begin
-    Result := -1;
+  Result := -1;
+  if (DataSize = 0) or (Length(Text) = 0) or (Length(Text) > DataSize) then
     exit;
-  end;
 
-  SIdx := 1;
-  for Idx := 0 to DataSize - 1 do
+  for Start := 0 to DataSize - Length(Text) do
   begin
-    CharFound := False;
-    TestChar := char(Data[Idx]);
-
-    if (CaseSensitive) and (TestChar = Text[SIdx]) then
-      CharFound := True;
-    if (not CaseSensitive) and (UpperCase(TestChar) = UpperCase(Text[SIdx])) then
-      CharFound := True;
-
-    if CharFound then
-      Inc(SIdx)
-    else
-      SIdx := 1;
-
-    if SIdx = Length(Text) + 1 then
+    Matched := True;
+    for Idx := 1 to Length(Text) do
     begin
-      Result := Idx;
+      TestChar := char(Data[Start + Idx - 1]);
+      WantChar := Text[Idx];
+      if not CaseSensitive then
+      begin
+        TestChar := UpCase(TestChar);
+        WantChar := UpCase(WantChar);
+      end;
+      if TestChar <> WantChar then
+      begin
+        Matched := False;
+        break;
+      end;
+    end;
+
+    if Matched then
+    begin
+      Result := Start + Length(Text) - 1;
       exit;
     end;
   end;
-
-  Result := -1;
 end;
 
 // Disk specification                                        .
