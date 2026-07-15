@@ -20,6 +20,7 @@ type
   published
     procedure TestPrintString;
     procedure TestNumberMarkerSkipped;
+    procedure TestTildeIsNotANumberMarker;
     procedure TestModeDependentToken128K;
     procedure TestModeDependentToken48K;
     procedure TestPoundSign;
@@ -27,6 +28,7 @@ type
     procedure TestStringArrayTwoDimensions;
     procedure TestStringArraySingleString;
     procedure TestStringArrayTrimsPadding;
+    procedure TestStringArrayHeaderClampedToData;
   end;
 
 implementation
@@ -60,6 +62,23 @@ begin
     // 30 PRINT 1  -- the ASCII '1' is kept, the 5-byte $0E number marker dropped
     AssertEquals('30 PRINT 1' + CRLF,
       P.Decode([$00, $1E, $09, $00, tPRINT, $31, $0E, $00, $00, $01, $00, $00, $0D]));
+  finally
+    P.Free;
+  end;
+end;
+
+// $7E was taken for a second number marker, but the format only has $0E and
+// $7E is an ordinary tilde, so a line holding one lost it and the five bytes
+// after it: this decoded as '10 PRINT "A"'.
+procedure TSinclairBasicTest.TestTildeIsNotANumberMarker;
+var
+  P: TSinclairBasicParser;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    // 10 PRINT "~HELLO"
+    AssertEquals('10 PRINT "~HELLO"' + CRLF,
+      P.Decode([$00, $0A, $0B, $00, tPRINT, $22, $7E, $48, $45, $4C, $4C, $4F, $22, $0D]));
   finally
     P.Free;
   end;
@@ -167,6 +186,23 @@ begin
     AssertEquals('HI' + CRLF + 'BYE' + CRLF,
       P.DecodeStringArray([$02, $02, $00, $04, $00,
                            $48, $49, $20, $20, $42, $59, $45, $20]));
+  finally
+    P.Free;
+  end;
+end;
+
+// The dimensions are words and were believed whatever the file held, so a
+// corrupt header asked the decoder for billions of items over data that had
+// long run out. Only what is really there can be decoded.
+procedure TSinclairBasicTest.TestStringArrayHeaderClampedToData;
+var
+  P: TSinclairBasicParser;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    // Claims 65535 x 65535 elements, with four bytes of data behind it
+    AssertEquals('AB' + CRLF + 'CD' + CRLF,
+      P.DecodeStringArray([$02, $FF, $FF, $02, $00, $41, $42, $43, $44]));
   finally
     P.Free;
   end;

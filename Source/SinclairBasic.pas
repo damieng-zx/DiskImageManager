@@ -199,19 +199,11 @@ begin
       $0D:
         Break;
 
-      // Number marker (integral format) - skip 5 bytes
-      // The ASCII representation precedes this, so we just skip the binary
+      // Number marker - skip 5 bytes. The ASCII representation precedes this,
+      // so we just skip the binary. $0E is the only marker the format has:
+      // $7E was taken for one too, but it is an ordinary tilde, so every line
+      // holding one lost it and the five bytes that followed it.
       $0E:
-        begin
-          if Pos + 5 <= EndPos then
-            Inc(Pos, 5)  // Skip the 5-byte number representation
-          else
-            Pos := EndPos;  // Not enough data, skip to end
-        end;
-
-      // Number marker (floating point format) - skip 5 bytes
-      // Same as above - ASCII already displayed
-      $7E:
         begin
           if Pos + 5 <= EndPos then
             Inc(Pos, 5)  // Skip the 5-byte number representation
@@ -237,8 +229,8 @@ begin
           LastWasSpace := True;
         end;
 
-      // Regular printable ASCII (excluding 0x7E which is the float marker)
-      $20..$7D, $7F:
+      // Regular printable ASCII
+      $20..$7F:
         begin
           if B = $7F then
             Result := Result + GetSpecialChar(B)  // Copyright symbol
@@ -377,14 +369,14 @@ begin
     if InREM then
     begin
       case B of
-        $0E, $7E:
+        $0E:
           begin
             if Pos + 5 <= EndPos then
               Inc(Pos, 5)
             else
               Pos := EndPos;
           end;
-        $20..$7D:
+        $20..$7E:
           Result := Result + EscapeRTF(Chr(B));
         $7F..$A2:
           Result := Result + EscapeRTF(GetSpecialChar(B));
@@ -394,8 +386,8 @@ begin
       Continue;
     end;
 
-    // Number markers - skip 5 bytes
-    if (B = $0E) or (B = $7E) then
+    // Number marker - skip 5 bytes
+    if B = $0E then
     begin
       if Pos + 5 <= EndPos then
         Inc(Pos, 5)
@@ -425,7 +417,7 @@ begin
     if InString then
     begin
       case B of
-        $20..$7D, $7F:
+        $20..$7F:
           if B = $7F then
             Result := Result + EscapeRTF(GetSpecialChar(B))
           else
@@ -457,7 +449,7 @@ begin
     end;
 
     // Regular printable ASCII
-    if (B >= $20) and (B <= $7D) then
+    if (B >= $20) and (B <= $7E) then
     begin
       Result := Result + EscapeRTF(Chr(B));
       LastWasSpace := (B = $20);
@@ -609,7 +601,13 @@ begin
   begin
     DimSize := Data[Pos] or (word(Data[Pos + 1]) shl 8);
     Inc(Pos, 2);
+    if DimSize < 1 then
+      Exit;  // a dimension of nothing leaves no elements to read
     TotalElems := TotalElems * DimSize;
+    // Each dimension is a word and there can be 255 of them, so left alone the
+    // product runs away well past what any file could hold
+    if TotalElems > DataLen then
+      TotalElems := DataLen;
     StringLen := DimSize;  // last dimension wins = string length
   end;
 
@@ -617,6 +615,13 @@ begin
     Exit;
 
   StartPos := Pos;
+
+  // The header says how big the array is, but a corrupt one says anything, and
+  // only the elements actually in the file can be decoded. Without this a bad
+  // header had the decoder loop billions of times over data that ran out.
+  if TotalElems > DataLen - StartPos then
+    TotalElems := DataLen - StartPos;
+
   NumStrings := TotalElems div StringLen;
   Result := True;
 end;
