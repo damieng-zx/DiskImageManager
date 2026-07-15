@@ -362,6 +362,9 @@ var
   RowData, RowHex: string;
 begin
   FListView.Font := FSettings.SectorFont;
+  // A hex dump is a sequence, not a table of rows that stand alone: the variant
+  // markers below label the lines that follow them, so it must not be sorted
+  FListView.SortType := stNone;
 
   with FListView.Columns do
   begin

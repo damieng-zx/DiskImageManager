@@ -1302,6 +1302,12 @@ begin
     ParentFont := True;
     ShowColumnHeaders := True;
 
+    // Every view builds its own columns, so drop any sort the last one left
+    // behind and let the first header click here sort ascending
+    SortType := stText;
+    SortColumn := -1;
+    SortDirection := sdAscending;
+
     if tvwMain.Selected <> nil then
       with tvwMain.Selected do
       begin

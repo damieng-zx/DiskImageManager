@@ -13,6 +13,7 @@
 - List the contents of +3DOS character (string) arrays in the file viewer, one string per line
 - View +3DOS custom type 0x04 files as plain text in the file viewer
 - Remember the last folders used for opening and saving files between sessions
+- Sort the list by clicking a column header, clicking again to reverse it; numeric columns sort by value rather than as text
 ### Fixes
 - Fix the New disk dialog: working filler byte, DPB preview, memory leaks and options
 - Fix mode-0 CPC screens being misdetected as mode 1

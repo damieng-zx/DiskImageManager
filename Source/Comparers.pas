@@ -10,6 +10,7 @@ uses
 function CompareItems(Item1, Item2: TListItem; ListView: TListView): integer;
 function CompareValues(Value1, Value2: string): integer;
 function TryStrToFileBytes(const S: ansistring; out Value: integer): boolean;
+function TryStrToLeadingInt(const S: ansistring; out Value: int64): boolean;
 
 implementation
 
@@ -27,22 +28,52 @@ begin
   if ListView.SortDirection = sdDescending then Result := -Result;
 end;
 
+// Compare two column values, sorting them as numbers whenever both are numeric
+// and falling back to text otherwise. Only when both sides parse do we sort
+// numerically, so a column of fixed-width hex ('0A', '20', 'FF') stays on the
+// text path where its ordering is already correct.
 function CompareValues(Value1, Value2: string): integer;
 var
-  Date1, Date2: TDateTime;
-  Float1, Float2: double;
+  Num1, Num2: int64;
   Size1, Size2: integer;
 begin
   if TryStrToFileBytes(Value1, Size1) and TryStrToFileBytes(Value2, Size2) then
-    Result := Trunc(Size1 - Size2)
-  else
-  if TryStrToDateTime(Value1, Date1) and TryStrToDateTime(Value2, Date2) then
-    Result := Trunc(Date1 - Date2)
-  else
-  if TryStrToFloat(Value1, Float1) and TryStrToFloat(Value2, Float2) then
-    Result := Trunc(Float1 - Float2)
-  else
-    Result := CompareText(Value1, Value2);
+  begin
+    if Size1 < Size2 then exit(-1);
+    if Size1 > Size2 then exit(1);
+    exit(0);
+  end;
+
+  if TryStrToLeadingInt(Value1, Num1) and TryStrToLeadingInt(Value2, Num2) then
+  begin
+    if Num1 < Num2 then exit(-1);
+    if Num1 > Num2 then exit(1);
+    // Equal leading numbers ('2 (512)' vs '2 (1024)') settle on the text below
+  end;
+
+  Result := CompareText(Value1, Value2);
+end;
+
+// Parse the number a value starts with, ignoring any trailing detail, so that
+// '512', '+42', '2 (512)' and '0, 0' all sort numerically. Digits butted up
+// against a letter are part of a wider token ('0A' is hex, not 10) and are
+// rejected so such columns fall back to text.
+function TryStrToLeadingInt(const S: ansistring; out Value: int64): boolean;
+var
+  First, Last: integer;
+begin
+  Result := False;
+
+  First := 1;
+  if (First <= Length(S)) and (S[First] in ['+', '-']) then Inc(First);
+
+  Last := First;
+  while (Last <= Length(S)) and (S[Last] in ['0'..'9']) do Inc(Last);
+
+  if Last = First then exit;
+  if (Last <= Length(S)) and (S[Last] in ['A'..'Z', 'a'..'z']) then exit;
+
+  Result := TryStrToInt64(Copy(S, 1, Last - 1), Value);
 end;
 
 function TryStrToFileBytes(const S: ansistring; out Value: integer): boolean;

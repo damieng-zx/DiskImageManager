@@ -112,7 +112,6 @@ object frmMain: TfrmMain
           AutoSize = True
           Width = 0
         end>
-      ColumnClick = False
       GridLines = True
       HideSelection = False
       MultiSelect = True
