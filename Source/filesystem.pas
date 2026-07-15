@@ -388,7 +388,10 @@ begin
           Dec(SectorsLeft);
         end;
       end
-    until SectorsLeft = 0;
+    until (SectorsLeft = 0) or (Sector = nil);
+    // A block can run past the last sector of a truncated image, leaving the
+    // rest of FileData as the zeroes SetLength gave it rather than crashing
+    if Sector = nil then break;
   end;
 
   // Strip any header: the headerless copy takes the payload that follows the

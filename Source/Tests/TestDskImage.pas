@@ -39,6 +39,9 @@ type
     procedure TestLoadUnformattedExtendedDSK;
     procedure TestGetAllStringsDropsDuplicates;
     procedure TestGetAllStringsKeepsDifferentCase;
+    procedure TestGetAllStringsOnEmptyDisk;
+    procedure TestHighTrackCountOnEmptySide;
+    procedure TestIdentifyOnEmptyDisk;
   end;
 
 implementation
@@ -326,6 +329,61 @@ begin
     finally
       Strings.Free;
     end;
+  finally
+    Img.Free;
+  end;
+end;
+
+// A disk with no sides at all has no first sector to start the walk from.
+// GetAllStrings used to reach straight for Side[0].Track[0].Sector[0].
+procedure TDskImageTest.TestGetAllStringsOnEmptyDisk;
+var
+  Img: TDSKImage;
+  Strings: TStringList;
+begin
+  Img := TDSKImage.Create;
+  try
+    AssertEquals('no sides to walk', 0, Img.Disk.Sides);
+    Strings := Img.Disk.GetAllStrings(5, 4);
+    try
+      AssertEquals('nothing found', 0, Strings.Count);
+    finally
+      Strings.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+// A side can exist with no tracks on it. GetHighTrackCount counts down from
+// Tracks, and used to read the track before testing the count, so an empty
+// side indexed Track[-1] on its way to answering 0.
+procedure TDskImageTest.TestHighTrackCountOnEmptySide;
+var
+  Img: TDSKImage;
+begin
+  Img := TDSKImage.Create;
+  try
+    Img.Disk.Sides := 1;
+    AssertEquals('side has no tracks', 0, Img.Disk.Side[0].Tracks);
+    AssertEquals('high track count', 0, Img.Disk.Side[0].HighTrackCount);
+  finally
+    Img.Free;
+  end;
+end;
+
+// Identify fingerprints the first logical sector, but an image need not have a
+// logical track 0 to take one from; it used to dereference the missing track.
+procedure TDskImageTest.TestIdentifyOnEmptyDisk;
+var
+  Img: TDSKImage;
+begin
+  Img := TDSKImage.Create;
+  try
+    AssertTrue('no logical track 0', Img.Disk.GetLogicalTrack(0) = nil);
+    Img.Disk.Specification.Identify;
+    AssertTrue('format left invalid',
+      Img.Disk.Specification.Format = dsFormatInvalid);
   finally
     Img.Free;
   end;

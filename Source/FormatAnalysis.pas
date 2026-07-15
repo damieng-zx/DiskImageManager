@@ -49,6 +49,7 @@ function DetectUniformFormat(Disk: TDSKDisk): string;
 var
   FirstTrack: TDSKTrack;
   FirstSector: TDSKSector;
+  SecondTrackFirstID: integer;
 begin
   Result := '';
 
@@ -109,10 +110,17 @@ begin
     // HiForm/Ultra208 (Chris Pile) + Ian Collier's skewed versions
     if (FirstSector.DataSize > 10) then
     begin
+      // The skew tests below read the first sector of track 1, which a
+      // single-track image has not got. An ID no sector can hold leaves the
+      // skew unidentified rather than indexing past the side.
+      SecondTrackFirstID := -1;
+      if (Disk.Side[0].Tracks > 1) and (Disk.Side[0].Track[1].Sectors > 0) then
+        SecondTrackFirstID := Disk.Side[0].Track[1].Sector[0].ID;
+
       if (FirstSector.Data[2] = 42) and (FirstSector.Data[8] = 12) then
         case FirstSector.Data[5] of
           0: if (FirstTrack.Sector[1].ID = 8) then
-              case Disk.Side[0].Track[1].Sector[0].ID of
+              case SecondTrackFirstID of
                 7: Result := 'Ultra 208/Ian Max';
                 8: Result := 'Maybe Ultra 208 or Ian Max (skew lost)';
                 else
@@ -121,7 +129,7 @@ begin
             else
               Result := 'Possibly Ultra 208 or Ian Max (interleave lost)';
           1: if (FirstTrack.Sector[1].ID = 8) then
-              case Disk.Side[0].Track[1].Sector[0].ID of
+              case SecondTrackFirstID of
                 7: Result := 'Ian High';
                 1: Result := 'HiForm 203';
                 else

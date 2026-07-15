@@ -86,6 +86,8 @@ begin
     if (SectorOffset + DIR_ENTRY_SIZE > Sector.GetCopySize) then
     begin
       Sector := FParentDisk.GetNextLogicalSector(Sector);
+      // The directory can run off the end of a truncated image
+      if Sector = nil then break;
       SectorOffset := 0;
     end;
 

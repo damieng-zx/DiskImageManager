@@ -1323,7 +1323,8 @@ var
 begin
   Result := TStringList.Create;
   CurrentText := '';
-  Sector := Side[0].Track[0].Sector[0];
+  // Nil on a disk with no sectors to walk, which ends the loop below at once
+  Sector := GetFirstSector();
   Index := 0;
   Uniques := TStringList.Create;
   Uniques.Duplicates := DupIgnore;
@@ -1471,8 +1472,10 @@ end;
 
 function TDSKSide.GetHighTrackCount: byte;
 begin
+  // Test the count before the track it indexes: a side with no tracks at all
+  // would otherwise read Track[-1] on the way to answering 0
   Result := Tracks;
-  while (not Track[Result - 1].IsFormatted) and (Result > 1) do
+  while (Result > 1) and (not Track[Result - 1].IsFormatted) do
     Result := Result - 1;
 end;
 
@@ -2051,6 +2054,7 @@ end;
 
 procedure TDSKSpecification.Identify;
 var
+  FirstTrack: TDSKTrack;
   FirstSector: TDSKSector;
   CheckByte: byte;
   Idx: integer;
@@ -2098,7 +2102,11 @@ begin
     FDirectoryBlocks := 4;
   end;
 
-  FirstSector := FParentDisk.GetLogicalTrack(0).GetFirstLogicalSector();
+  // An image need not have a logical track 0 at all, so there may be no first
+  // sector to identify the format from
+  FirstTrack := FParentDisk.GetLogicalTrack(0);
+  if FirstTrack = nil then exit;
+  FirstSector := FirstTrack.GetFirstLogicalSector();
   if FirstSector = nil then exit;
 
   with FirstSector do

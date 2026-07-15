@@ -1060,6 +1060,9 @@ var
 begin
   FirstSector := nil;
 
+  // Info rows carry no Data, so there is nothing to jump to from one
+  if (lvwMain.Selected = nil) or (lvwMain.Selected.Data = nil) then exit;
+
   // Jump to the first sector for this file
   if TObject(lvwMain.Selected.Data).ClassType = TCPMFile then
     FirstSector := TCPMFile((lvwMain.Selected).Data).FirstSector
@@ -1848,19 +1851,23 @@ var
   Node: TTreeNode;
   Obj: TObject;
 begin
-  if tvwMain.Selected.Data = nil then exit;
+  if (tvwMain.Selected = nil) or (tvwMain.Selected.Data = nil) then exit;
 
-  // Find out where to start searching
+  // Find out where to start searching. Each starting point may hold nothing to
+  // search: an image with no sectors, an empty side, an unformatted track.
   Obj := TObject(tvwMain.Selected.Data);
   StartSector := nil;
   if Obj.ClassType = TDSKImage then
-    StartSector := TDSKImage(Obj).Disk.Side[0].Track[0].Sector[0];
+    StartSector := TDSKImage(Obj).Disk.GetFirstSector();
   if Obj.ClassType = TDSKDisk then
-    StartSector := TDSKDisk(Obj).Side[0].Track[0].Sector[0];
+    StartSector := TDSKDisk(Obj).GetFirstSector();
   if Obj.ClassType = TDSKSide then
-    StartSector := TDSKSide(Obj).Track[0].Sector[0];
+    with TDSKSide(Obj) do
+      if (Tracks > 0) and (Track[0].Sectors > 0) then
+        StartSector := Track[0].Sector[0];
   if Obj.ClassType = TDSKTrack then
-    StartSector := TDSKTrack(Obj).Sector[0];
+    if TDSKTrack(Obj).Sectors > 0 then
+      StartSector := TDSKTrack(Obj).Sector[0];
   if Obj.ClassType = TDSKSector then
     StartSector := TDSKSector(Obj);
 
