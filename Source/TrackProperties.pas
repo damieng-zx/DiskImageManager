@@ -64,6 +64,7 @@ type
     procedure btnCancelClick(Sender: TObject);
     procedure btnApplyClick(Sender: TObject);
     procedure btnOKClick(Sender: TObject);
+    procedure FormClose(Sender: TObject; var CloseAction: TCloseAction);
   private
     FTrack: TDSKTrack;
     procedure MakeChanges;
@@ -126,6 +127,12 @@ begin
   edtSectorFiller.Text := IntToStr(FTrack.Filler);
   cboSectorDataRate.ItemIndex := Ord(FTrack.DataRate);
   cboSectorSize.SelText := IntToStr(FTrack.SectorSize);
+end;
+
+procedure TfrmTrackProperties.FormClose(Sender: TObject; var CloseAction: TCloseAction);
+begin
+  // Each Track Properties opens a fresh modeless instance, so release it on close
+  CloseAction := caFree;
 end;
 
 procedure TfrmTrackProperties.btnCancelClick(Sender: TObject);

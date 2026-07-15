@@ -30,6 +30,7 @@ type
     lblMode: TLabel;
     popZoom: TPopupMenu;
     toolbar: TPanel;
+    procedure FormClose(Sender: TObject; var CloseAction: TCloseAction);
     procedure FormCreate(Sender: TObject);
     procedure cmbModeChange(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
@@ -64,6 +65,12 @@ begin
   Viewer := TfrmCPCScreenViewer.Create(Application);
   Viewer.LoadScreenFile(DiskImage, DiskFile, DiskName);
   Viewer.Show;
+end;
+
+procedure TfrmCPCScreenViewer.FormClose(Sender: TObject; var CloseAction: TCloseAction);
+begin
+  // Each viewed screen opens a fresh modeless instance, so release it on close
+  CloseAction := caFree;
 end;
 
 procedure TfrmCPCScreenViewer.FormCreate(Sender: TObject);

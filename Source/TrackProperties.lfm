@@ -55,6 +55,7 @@ object frmTrackProperties: TfrmTrackProperties
   }
   Position = poMainFormCenter
   LCLVersion = '3.0.0.1'
+  OnClose = FormClose
   object pnlTab: TPanel
     Left = 0
     Height = 437

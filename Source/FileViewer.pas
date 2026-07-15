@@ -19,6 +19,7 @@ uses
 
 type
   TfrmFileViewer = class(TForm)
+    procedure FormClose(Sender: TObject; var CloseAction: TCloseAction);
     procedure FormCreate(Sender: TObject);
     procedure FormResize(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -72,6 +73,12 @@ begin
   Viewer := TfrmFileViewer.Create(Application);
   Viewer.LoadTextFile(DiskImage, DiskFile, DiskName);
   Viewer.Show;
+end;
+
+procedure TfrmFileViewer.FormClose(Sender: TObject; var CloseAction: TCloseAction);
+begin
+  // Each viewed file opens a fresh modeless instance, so release it on close
+  CloseAction := caFree;
 end;
 
 procedure TfrmFileViewer.FormCreate(Sender: TObject);

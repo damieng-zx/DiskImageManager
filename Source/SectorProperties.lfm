@@ -55,6 +55,7 @@ object frmSectorProperties: TfrmSectorProperties
   }
   Position = poMainFormCenter
   LCLVersion = '3.0.0.2'
+  OnClose = FormClose
   object pnlTab: TPanel
     Left = 0
     Height = 437

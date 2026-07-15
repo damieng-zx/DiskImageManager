@@ -67,6 +67,7 @@ type
     procedure btnOKClick(Sender: TObject);
     procedure cboStatusChange(Sender: TObject);
     procedure edtSizeChange(Sender: TObject);
+    procedure FormClose(Sender: TObject; var CloseAction: TCloseAction);
   private
     FSector: TDSKSector;
     SecStat: TDSKSectorStatus;
@@ -132,6 +133,12 @@ begin
     cklFDC1.Checked[FIdx] := (FSector.FDCStatus[1] and Power2[FIdx + 1]) = Power2[FIdx + 1];
     cklFDC2.Checked[FIdx] := (FSector.FDCStatus[2] and Power2[FIdx + 1]) = Power2[FIdx + 1];
   end;
+end;
+
+procedure TfrmSectorProperties.FormClose(Sender: TObject; var CloseAction: TCloseAction);
+begin
+  // Each Sector Properties opens a fresh modeless instance, so release it on close
+  CloseAction := caFree;
 end;
 
 procedure TfrmSectorProperties.btnCancelClick(Sender: TObject);

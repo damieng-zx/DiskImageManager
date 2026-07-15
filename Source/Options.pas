@@ -88,6 +88,7 @@ type
     procedure edtTrackMarksChange(Sender: TObject);
     procedure btnResetClick(Sender: TObject);
     procedure chkDarkBlankSectorsClick(Sender: TObject);
+    procedure FormClose(Sender: TObject; var CloseAction: TCloseAction);
   private
     FontMain, FontSector, FontStrings: TFont;
     Settings: TSettings;
@@ -178,6 +179,14 @@ end;
 procedure TfrmOptions.cbxGridColorChanged(Sender: TObject);
 begin
   DiskMap.GridColor := cbxGrid.ButtonColor;
+end;
+
+procedure TfrmOptions.FormClose(Sender: TObject; var CloseAction: TCloseAction);
+begin
+  // Each View > Options creates a fresh instance, so release it on close. This
+  // is safe despite Show reading the controls after ShowModal returns: caFree
+  // defers to Application.ReleaseComponent, which frees on the next idle.
+  CloseAction := caFree;
 end;
 
 function TfrmOptions.Show: boolean;

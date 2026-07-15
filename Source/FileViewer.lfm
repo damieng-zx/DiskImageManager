@@ -13,6 +13,7 @@ object frmFileViewer: TfrmFileViewer
   Font.Name = 'Tahoma'
   Position = poScreenCenter
   LCLVersion = '4.2.0.0'
+  OnClose = FormClose
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   OnResize = FormResize

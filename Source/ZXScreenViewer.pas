@@ -29,6 +29,7 @@ type
     popZoom: TPopupMenu;
     toolbar: TPanel;
     tmrFlash: TTimer;
+    procedure FormClose(Sender: TObject; var CloseAction: TCloseAction);
     procedure FormCreate(Sender: TObject);
     procedure tmrFlashTimer(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
@@ -71,6 +72,12 @@ begin
   Viewer := TfrmZXScreenViewer.Create(Application);
   Viewer.LoadScreenFile(DiskImage, DiskFile, DiskName);
   Viewer.Show;
+end;
+
+procedure TfrmZXScreenViewer.FormClose(Sender: TObject; var CloseAction: TCloseAction);
+begin
+  // Each viewed screen opens a fresh modeless instance, so release it on close
+  CloseAction := caFree;
 end;
 
 procedure TfrmZXScreenViewer.FormCreate(Sender: TObject);
