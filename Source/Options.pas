@@ -96,6 +96,7 @@ type
     procedure Write;
   public
     constructor Create(Owner: TForm; Settings: TSettings); reintroduce;
+    destructor Destroy; override;
     function Show: boolean;
   end;
 
@@ -114,6 +115,20 @@ constructor TfrmOptions.Create(Owner: TForm; Settings: TSettings);
 begin
   inherited Create(Owner);
   self.Settings := Settings;
+  // The pending choices, held here until OK writes them back to the settings.
+  // They are assigned into so that neither the settings nor the font dialog
+  // ever hands over ownership of a font.
+  FontMain := TFont.Create;
+  FontSector := TFont.Create;
+  FontStrings := TFont.Create;
+end;
+
+destructor TfrmOptions.Destroy;
+begin
+  FontMain.Free;
+  FontSector.Free;
+  FontStrings.Free;
+  inherited Destroy;
 end;
 
 procedure TfrmOptions.cbxBackColorChanged(Sender: TObject);
@@ -129,7 +144,7 @@ begin
     if Execute then
     begin
       edtFontStrings.Text := FontHumanReadable(Font);
-      FontStrings := Font;
+      FontStrings.Assign(Font);
     end;
   end;
 end;
@@ -143,7 +158,7 @@ begin
     if Execute then
     begin
       edtFontMain.Text := FontHumanReadable(Font);
-      FontMain := Font;
+      FontMain.Assign(Font);
     end;
   end;
 end;
@@ -171,7 +186,7 @@ begin
     if Execute then
     begin
       edtFontSector.Text := FontHumanReadable(Font);
-      FontSector := Font;
+      FontSector.Assign(Font);
     end;
   end;
 end;
@@ -205,16 +220,16 @@ procedure TfrmOptions.Read;
 begin
   with Settings do
   begin
-    FontMain := WindowFont;
+    FontMain.Assign(WindowFont);
     edtFontMain.Text := FontHumanReadable(WindowFont);
 
-    FontSector := SectorFont;
+    FontSector.Assign(SectorFont);
     edtFontSector.Text := FontHumanReadable(SectorFont);
 
     DiskMap.Font := DiskMapFont;
     edtFontMap.Text := FontHumanReadable(DiskMapFont);
 
-    FontStrings := StringsFont;
+    FontStrings.Assign(StringsFont);
     edtFontStrings.Text := FontHumanReadable(StringsFont);
 
     chkRestoreWindow.Checked := RestoreWindow;
@@ -242,10 +257,10 @@ procedure TfrmOptions.Write;
 begin
   with Settings do
   begin
-    WindowFont := FontMain;
-    SectorFont := FontSector;
-    DiskMapFont := DiskMap.Font;
-    StringsFont := FontStrings;
+    WindowFont.Assign(FontMain);
+    SectorFont.Assign(FontSector);
+    DiskMapFont.Assign(DiskMap.Font);
+    StringsFont.Assign(FontStrings);
 
     DiskMapBackgroundColor := cbxBack.ButtonColor;
     DarkBlankSectors := chkDarkBlankSectors.Checked;

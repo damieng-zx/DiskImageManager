@@ -112,22 +112,25 @@ var
   Rect: TRect;
 begin
   BufMap := TBitmap.Create;
-  BufMap.Height := Height;
-  BufMap.Width := Width;
-  Rect := ClientRect;
+  try
+    BufMap.Height := Height;
+    BufMap.Width := Width;
+    Rect := ClientRect;
 
-  RenderBitmap(BufMap, Rect, True);
+    RenderBitmap(BufMap, Rect, True);
 
-  // Floating overlay for the hovered sector/track, drawn onto the buffer so
-  // its translucent shadow blends against the map underneath
-  if FHasHover then
-    DrawOverlay(BufMap, FHoverHit, FHoverPos);
+    // Floating overlay for the hovered sector/track, drawn onto the buffer so
+    // its translucent shadow blends against the map underneath
+    if FHasHover then
+      DrawOverlay(BufMap, FHoverHit, FHoverPos);
 
-  BufMap.Canvas.Pen.Style := psSolid;
-  Canvas.CopyMode := cmSrcCopy;
-  Canvas.Draw(0, 0, BufMap);
-  DrawBorder(Canvas, Rect, FBorderStyle);
-  BufMap.Free;
+    BufMap.Canvas.Pen.Style := psSolid;
+    Canvas.CopyMode := cmSrcCopy;
+    Canvas.Draw(0, 0, BufMap);
+    DrawBorder(Canvas, Rect, FBorderStyle);
+  finally
+    BufMap.Free;
+  end;
 end;
 
 // Find the hit-region index under a client point, or -1 if none
@@ -666,9 +669,16 @@ end;
 function TSpinDiskMap.CreateImage(SaveWidth: integer; SaveHeight: integer): TBitmap;
 begin
   Result := TBitmap.Create;
-  Result.Width := SaveWidth;
-  Result.Height := SaveHeight;
-  RenderBitmap(Result, Rect(0, 0, SaveWidth - 1, SaveHeight - 1), False);
+  // The caller only takes ownership if this returns, so drop the bitmap if
+  // rendering into it fails rather than stranding it
+  try
+    Result.Width := SaveWidth;
+    Result.Height := SaveHeight;
+    RenderBitmap(Result, Rect(0, 0, SaveWidth - 1, SaveHeight - 1), False);
+  except
+    Result.Free;
+    raise;
+  end;
 end;
 
 function TSpinDiskMap.SaveMap(FileName: TFileName; SaveWidth: integer; SaveHeight: integer): boolean;
@@ -676,8 +686,11 @@ var
  SaveImage: TBitmap;
 begin
   SaveImage := CreateImage(SaveWidth, SaveHeight);
-  SaveImage.SaveToFile(FileName);
-  SaveImage.Free;
+  try
+    SaveImage.SaveToFile(FileName);
+  finally
+    SaveImage.Free;
+  end;
   Result := True;
 end;
 

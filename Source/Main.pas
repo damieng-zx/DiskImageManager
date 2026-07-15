@@ -373,6 +373,8 @@ end;
 procedure TfrmMain.FormDestroy(Sender: TObject);
 begin
   FNavHistory.Free;
+  // A plain TObject with no owner to collect it
+  Settings.Free;
 end;
 
 procedure TfrmMain.LoadFiles(FileNames: array of string);
@@ -928,9 +930,11 @@ var
   MapImage: TBitmap;
 begin
   MapImage := DiskMap.CreateImage(Settings.SaveDiskMapWidth, Settings.SaveDiskMapHeight);
-  Clipboard.Assign(MapImage);
-  MapImage.Free;
-
+  try
+    Clipboard.Assign(MapImage);
+  finally
+    MapImage.Free;
+  end;
 end;
 
 procedure TfrmMain.itmExpandAllClick(Sender: TObject);

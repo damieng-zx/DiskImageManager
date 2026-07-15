@@ -63,6 +63,7 @@ type
     LastSaveFolder: string;
 
     constructor Create(Owner: TForm);
+    destructor Destroy; override;
     procedure Load(ClearFiles: boolean);
     procedure Apply;
     procedure Save;
@@ -80,9 +81,41 @@ var
 constructor TSettings.Create(Owner: TForm);
 begin
   frmMain := TFrmMain(Owner);
+  // These fonts belong here for the life of the settings. Load runs again on
+  // Reset and the Options dialog writes the chosen fonts back, so both assign
+  // into these rather than replacing them: replacing would strand the old font
+  // and leave this holding one owned by a dialog that is about to close.
+  DiskMapFont := TFont.Create;
+  WindowFont := TFont.Create;
+  SectorFont := TFont.Create;
+  StringsFont := TFont.Create;
   RecentFiles := TStringList.Create;
   NavHistoryRaw := TStringList.Create;
   NavHistoryIndex := -1;
+end;
+
+destructor TSettings.Destroy;
+begin
+  DiskMapFont.Free;
+  WindowFont.Free;
+  SectorFont.Free;
+  StringsFont.Free;
+  RecentFiles.Free;
+  NavHistoryRaw.Free;
+  inherited Destroy;
+end;
+
+// Read a font description into an existing font rather than returning a new one
+procedure ReadFontInto(Target: TFont; const Description: string);
+var
+  Source: TFont;
+begin
+  Source := FontFromDescription(Description);
+  try
+    Target.Assign(Source);
+  finally
+    Source.Free;
+  end;
 end;
 
 // Apply some settings directly to other places
@@ -108,89 +141,90 @@ var
   S: string;
 begin
   Reg := TIniFile.Create(ChangeFileExt(Application.ExeName, '.ini'));
+  try
+    S := 'DiskMap';
+    DarkBlankSectors := Reg.ReadBool(S, 'DarkBlankSectors', True);
+    ReadFontInto(DiskMapFont, Reg.ReadString(S, 'Font', 'Tahoma,7pt,,'));
+    DiskMapBackgroundColor := TColor(Reg.ReadInteger(S, 'BackgroundColour', integer(clGray)));
+    DiskMapGridColor := TColor(Reg.ReadInteger(S, 'GridColour', integer(clSilver)));
+    DiskMapTrackMark := Reg.ReadInteger(S, 'TrackMark', 5);
 
-  S := 'DiskMap';
-  DarkBlankSectors := Reg.ReadBool(S, 'DarkBlankSectors', True);
-  DiskMapFont := FontFromDescription(Reg.ReadString(S, 'Font', 'Tahoma,7pt,,'));
-  DiskMapBackgroundColor := TColor(Reg.ReadInteger(S, 'BackgroundColour', integer(clGray)));
-  DiskMapGridColor := TColor(Reg.ReadInteger(S, 'GridColour', integer(clSilver)));
-  DiskMapTrackMark := Reg.ReadInteger(S, 'TrackMark', 5);
+    S := 'Window';
+    ReadFontInto(WindowFont, Reg.ReadString(S, 'Font', 'Tahoma,8pt,,'));
+    OpenView := Reg.ReadString(S, 'OpenView', 'Image');
+    RestoreWindow := Reg.ReadBool(S, 'Restore', False);
+    if RestoreWindow then
+      with frmMain do
+      begin
+        Left := Reg.ReadInteger(S, 'Left', Left);
+        Top := Reg.ReadInteger(S, 'Top', Top);
+        Height := Reg.ReadInteger(S, 'Height', Height);
+        Width := Reg.ReadInteger(S, 'Width', Width);
+        tvwMain.Width := Reg.ReadInteger(S, 'TreeWidth', tvwMain.Width);
+        toolbar.Visible := Reg.ReadBool(S, 'Toolbar', True);
+        itmToolbar.Checked := toolbar.Visible;
+        statusbar.Visible := Reg.ReadBool(S, 'StatusBar', True);
+        itmStatusBar.Checked := statusBar.Visible;
+      end;
 
-  S := 'Window';
-  WindowFont := FontFromDescription(Reg.ReadString(S, 'Font', 'Tahoma,8pt,,'));
-  OpenView := Reg.ReadString(S, 'OpenView', 'Image');
-  RestoreWindow := Reg.ReadBool(S, 'Restore', False);
-  if RestoreWindow then
-    with frmMain do
+    S := 'SectorView';
+    UnknownASCII := Reg.ReadString(S, 'UnknownASCII', '?');
+    BytesPerLine := Reg.ReadInteger(S, 'BytesPerLine', 8);
+    ReadFontInto(SectorFont, Reg.ReadString(S, 'Font', 'Consolas,8pt,,'));
+    WarnSectorChange := Reg.ReadBool(S, 'WarnSectorChange', True);
+    Mapping := Reg.ReadString(S, 'Mapping', '1252');
+
+    S := 'StringsView';
+    ReadFontInto(StringsFont, Reg.ReadString(S, 'Font', 'Tahoma,8pt,,'));
+    StringMinLength := Reg.ReadInteger(S, 'MinLength', 5);
+    StringSort := Reg.ReadString(S, 'Sort', 'Alpha');
+
+    S := 'Workspace';
+    RestoreWorkspace := Reg.ReadBool(S, 'Restore', False);
+    if RestoreWorkspace and not ClearFiles then
     begin
-      Left := Reg.ReadInteger(S, 'Left', Left);
-      Top := Reg.ReadInteger(S, 'Top', Top);
-      Height := Reg.ReadInteger(S, 'Height', Height);
-      Width := Reg.ReadInteger(S, 'Width', Width);
-      tvwMain.Width := Reg.ReadInteger(S, 'TreeWidth', tvwMain.Width);
-      toolbar.Visible := Reg.ReadBool(S, 'Toolbar', True);
-      itmToolbar.Checked := toolbar.Visible;
-      statusbar.Visible := Reg.ReadBool(S, 'StatusBar', True);
-      itmStatusBar.Checked := statusBar.Visible;
+      Idx := 1;
+      repeat
+        FileName := Reg.ReadString(S, StrInt(Idx), '*end');
+        if (FileName <> '*end') and (FileExistsUTF8(FileName)) then
+          frmMain.LoadImage(FileName);
+        Inc(Idx);
+      until FileName = '*end';
     end;
 
-  S := 'SectorView';
-  UnknownASCII := Reg.ReadString(S, 'UnknownASCII', '?');
-  BytesPerLine := Reg.ReadInteger(S, 'BytesPerLine', 8);
-  SectorFont := FontFromDescription(Reg.ReadString(S, 'Font', 'Consolas,8pt,,'));
-  WarnSectorChange := Reg.ReadBool(S, 'WarnSectorChange', True);
-  Mapping := Reg.ReadString(S, 'Mapping', '1252');
+    S := 'Saving';
+    WarnConversionProblems := Reg.ReadBool(S, 'WarnConversionProblems', True);
+    RemoveEmptyTracks := Reg.ReadBool(S, 'RemoveEmptyTracks', False);
+    SaveDiskMapWidth := Reg.ReadInteger(S, 'MapWidth', 640);
+    SaveDiskMapHeight := Reg.ReadInteger(S, 'MapHeight', 480);
 
-  S := 'StringsView';
-  StringsFont := FontFromDescription(Reg.ReadString(S, 'Font', 'Tahoma,8pt,,'));
-  StringMinLength := Reg.ReadInteger(S, 'MinLength', 5);
-  StringSort := Reg.ReadString(S, 'Sort', 'Alpha');
+    S := 'Folders';
+    LastOpenFolder := Reg.ReadString(S, 'LastOpen', '');
+    LastSaveFolder := Reg.ReadString(S, 'LastSave', '');
 
-  S := 'Workspace';
-  RestoreWorkspace := Reg.ReadBool(S, 'Restore', False);
-  if RestoreWorkspace and not ClearFiles then
-  begin
+    S := 'Recent';
     Idx := 1;
+    RecentFiles.Clear;
     repeat
       FileName := Reg.ReadString(S, StrInt(Idx), '*end');
-      if (FileName <> '*end') and (FileExistsUTF8(FileName)) then
-        frmMain.LoadImage(FileName);
       Inc(Idx);
+      if FileName <> '*end' then
+        RecentFiles.Add(FileName);
     until FileName = '*end';
+
+    S := 'History';
+    NavHistoryIndex := Reg.ReadInteger(S, 'Index', -1);
+    Idx := 1;
+    NavHistoryRaw.Clear;
+    repeat
+      FileName := Reg.ReadString(S, StrInt(Idx), '*end');
+      Inc(Idx);
+      if FileName <> '*end' then
+        NavHistoryRaw.Add(FileName);
+    until FileName = '*end';
+  finally
+    Reg.Free;
   end;
-
-  S := 'Saving';
-  WarnConversionProblems := Reg.ReadBool(S, 'WarnConversionProblems', True);
-  RemoveEmptyTracks := Reg.ReadBool(S, 'RemoveEmptyTracks', False);
-  SaveDiskMapWidth := Reg.ReadInteger(S, 'MapWidth', 640);
-  SaveDiskMapHeight := Reg.ReadInteger(S, 'MapHeight', 480);
-
-  S := 'Folders';
-  LastOpenFolder := Reg.ReadString(S, 'LastOpen', '');
-  LastSaveFolder := Reg.ReadString(S, 'LastSave', '');
-
-  S := 'Recent';
-  Idx := 1;
-  RecentFiles.Clear;
-  repeat
-    FileName := Reg.ReadString(S, StrInt(Idx), '*end');
-    Inc(Idx);
-    if FileName <> '*end' then
-      RecentFiles.Add(FileName);
-  until FileName = '*end';
-
-  S := 'History';
-  NavHistoryIndex := Reg.ReadInteger(S, 'Index', -1);
-  Idx := 1;
-  NavHistoryRaw.Clear;
-  repeat
-    FileName := Reg.ReadString(S, StrInt(Idx), '*end');
-    Inc(Idx);
-    if FileName <> '*end' then
-      NavHistoryRaw.Add(FileName);
-  until FileName = '*end';
-
-  Reg.Free;
 
   Apply;
 end;
@@ -204,78 +238,79 @@ var
   S: string;
 begin
   Reg := TIniFile.Create(ChangeFileExt(Application.ExeName, '.ini'));
+  try
+    S := 'DiskMap';
+    Reg.WriteInteger(S, 'BackgroundColour', integer(DiskMapBackgroundColor));
+    Reg.WriteBool(s, 'DarkBlankSectors', DarkBlankSectors);
+    Reg.WriteInteger(S, 'GridColour', integer(DiskMapGridColor));
+    Reg.WriteInteger(S, 'TrackMark', DiskMapTrackMark);
+    Reg.WriteString(S, 'Font', FontToDescription(DiskMapFont));
 
-  S := 'DiskMap';
-  Reg.WriteInteger(S, 'BackgroundColour', integer(DiskMapBackgroundColor));
-  Reg.WriteBool(s, 'DarkBlankSectors', DarkBlankSectors);
-  Reg.WriteInteger(S, 'GridColour', integer(DiskMapGridColor));
-  Reg.WriteInteger(S, 'TrackMark', DiskMapTrackMark);
-  Reg.WriteString(S, 'Font', FontToDescription(DiskMapFont));
-
-  S := 'Window';
-  with frmMain do
-  begin
-    Reg.WriteBool(S, 'Restore', RestoreWindow);
-    Reg.WriteInteger(S, 'Left', Left);
-    Reg.WriteInteger(S, 'Top', Top);
-    Reg.WriteInteger(S, 'Height', Height);
-    Reg.WriteInteger(S, 'Width', Width);
-    Reg.WriteInteger(S, 'TreeWidth', tvwMain.Width);
-    Reg.WriteString(S, 'Font', FontToDescription(Font));
-    Reg.WriteBool(S, 'Toolbar', toolbar.Visible);
-    Reg.WriteBool(S, 'StatusBar', statusBar.Visible);
-  end;
-  Reg.WriteString(S, 'OpenView', OpenView);
-
-  S := 'SectorView';
-  Reg.WriteString(S, 'UnknownASCII', UnknownASCII);
-  Reg.WriteInteger(S, 'BytesPerLine', BytesPerLine);
-  Reg.WriteString(S, 'Font', FontToDescription(SectorFont));
-  Reg.WriteBool(S, 'WarnSectorChange', WarnSectorChange);
-  Reg.WriteString(S, 'Mapping', Mapping);
-
-  S := 'StringsView';
-  Reg.WriteString(S, 'Font', FontToDescription(StringsFont));
-  Reg.WriteInteger(S, 'MinLength', StringMinLength);
-  Reg.WriteString(S, 'Sort', StringSort);
-
-  S := 'Workspace';
-  Reg.EraseSection(S);
-  Reg.WriteBool(S, 'Restore', RestoreWorkspace);
-  WorkspaceIdx := 1;
-  with frmMain do
-    for Idx := 0 to tvwMain.Items.Count - 1 do
+    S := 'Window';
+    with frmMain do
     begin
-      Node := tvwMain.Items[Idx];
-      if (Node.Data <> nil) and (TObject(Node.Data).ClassType = TDSKImage) then
-      begin
-        Reg.WriteString(S, StrInt(WorkspaceIdx), TDSKImage(Node.Data).FileName);
-        Inc(WorkspaceIdx);
-      end;
+      Reg.WriteBool(S, 'Restore', RestoreWindow);
+      Reg.WriteInteger(S, 'Left', Left);
+      Reg.WriteInteger(S, 'Top', Top);
+      Reg.WriteInteger(S, 'Height', Height);
+      Reg.WriteInteger(S, 'Width', Width);
+      Reg.WriteInteger(S, 'TreeWidth', tvwMain.Width);
+      Reg.WriteString(S, 'Font', FontToDescription(Font));
+      Reg.WriteBool(S, 'Toolbar', toolbar.Visible);
+      Reg.WriteBool(S, 'StatusBar', statusBar.Visible);
     end;
+    Reg.WriteString(S, 'OpenView', OpenView);
 
-  S := 'Saving';
-  Reg.WriteBool(S, 'WarnConversionProblems', WarnConversionProblems);
-  Reg.WriteBool(S, 'RemoveEmptyTracks', RemoveEmptyTracks);
-  Reg.WriteInteger(S, 'MapWidth', SaveDiskMapWidth);
-  Reg.WriteInteger(S, 'MapHeight', SaveDiskMapHeight);
+    S := 'SectorView';
+    Reg.WriteString(S, 'UnknownASCII', UnknownASCII);
+    Reg.WriteInteger(S, 'BytesPerLine', BytesPerLine);
+    Reg.WriteString(S, 'Font', FontToDescription(SectorFont));
+    Reg.WriteBool(S, 'WarnSectorChange', WarnSectorChange);
+    Reg.WriteString(S, 'Mapping', Mapping);
 
-  S := 'Folders';
-  Reg.WriteString(S, 'LastOpen', LastOpenFolder);
-  Reg.WriteString(S, 'LastSave', LastSaveFolder);
+    S := 'StringsView';
+    Reg.WriteString(S, 'Font', FontToDescription(StringsFont));
+    Reg.WriteInteger(S, 'MinLength', StringMinLength);
+    Reg.WriteString(S, 'Sort', StringSort);
 
-  S := 'Recent';
-  Reg.EraseSection(S);
-  for Idx := 0 to RecentFiles.Count - 1 do
-    Reg.WriteString(S, StrInt(Idx + 1), RecentFiles[Idx]);
+    S := 'Workspace';
+    Reg.EraseSection(S);
+    Reg.WriteBool(S, 'Restore', RestoreWorkspace);
+    WorkspaceIdx := 1;
+    with frmMain do
+      for Idx := 0 to tvwMain.Items.Count - 1 do
+      begin
+        Node := tvwMain.Items[Idx];
+        if (Node.Data <> nil) and (TObject(Node.Data).ClassType = TDSKImage) then
+        begin
+          Reg.WriteString(S, StrInt(WorkspaceIdx), TDSKImage(Node.Data).FileName);
+          Inc(WorkspaceIdx);
+        end;
+      end;
 
-  S := 'History';
-  Reg.EraseSection(S);
-  Reg.WriteInteger(S, 'Index', NavHistoryIndex);
-  for Idx := 0 to NavHistoryRaw.Count - 1 do
-    Reg.WriteString(S, StrInt(Idx + 1), NavHistoryRaw[Idx]);
+    S := 'Saving';
+    Reg.WriteBool(S, 'WarnConversionProblems', WarnConversionProblems);
+    Reg.WriteBool(S, 'RemoveEmptyTracks', RemoveEmptyTracks);
+    Reg.WriteInteger(S, 'MapWidth', SaveDiskMapWidth);
+    Reg.WriteInteger(S, 'MapHeight', SaveDiskMapHeight);
 
-  Reg.Free;
+    S := 'Folders';
+    Reg.WriteString(S, 'LastOpen', LastOpenFolder);
+    Reg.WriteString(S, 'LastSave', LastSaveFolder);
+
+    S := 'Recent';
+    Reg.EraseSection(S);
+    for Idx := 0 to RecentFiles.Count - 1 do
+      Reg.WriteString(S, StrInt(Idx + 1), RecentFiles[Idx]);
+
+    S := 'History';
+    Reg.EraseSection(S);
+    Reg.WriteInteger(S, 'Index', NavHistoryIndex);
+    for Idx := 0 to NavHistoryRaw.Count - 1 do
+      Reg.WriteString(S, StrInt(Idx + 1), NavHistoryRaw[Idx]);
+  finally
+    Reg.Free;
+  end;
 end;
 
 procedure TSettings.Reset;
