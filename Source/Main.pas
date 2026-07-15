@@ -246,6 +246,8 @@ type
     function GetCurrentImage: TDSKImage;
     function IsDiskNode(Node: TTreeNode): boolean;
     procedure FreeNodeFileSystems(DiskNode: TTreeNode);
+    function CloseImageNode(Node: TTreeNode; Buttons: TMsgDlgButtons): boolean;
+    procedure DetachImageProperties(Image: TDSKImage);
     function FindTreeNodeFromData(Node: TTreeNode; Data: TObject): TTreeNode;
 
     procedure SaveExtractedFile(WithHeader: boolean);
@@ -983,14 +985,16 @@ var
   ShouldClose: boolean;
   Format: string;
   i: integer;
-  NodesToDelete: TList;
+  NodesToClose: TList;
 begin
   Cursor := crHourGlass;
   Application.ProcessMessages;  // Allow cursor to update
 
-  NodesToDelete := TList.Create;
+  NodesToClose := TList.Create;
   try
-    // First pass: identify nodes to delete and free images
+    // First pass: decide only. Nothing is freed while the tree still holds
+    // these nodes, since a node whose image had gone is one the selection could
+    // land on as its neighbours are deleted.
     for i := 0 to tvwMain.Items.Count - 1 do
     begin
       Current := tvwMain.Items[i];
@@ -1022,27 +1026,25 @@ begin
         end;
 
         if ShouldClose then
-        begin
-          FreeNodeFileSystems(Current);
-          CurrentImage.Free;
-          NodesToDelete.Add(Current);
-        end;
+          NodesToClose.Add(Current);
       end;
     end;
 
-    // Second pass: delete nodes only
-    if NodesToDelete.Count > 0 then
+    // Second pass: close each image and take its node with it, offering to save
+    // any unsaved changes rather than discarding them silently
+    if NodesToClose.Count > 0 then
     begin
       tvwMain.BeginUpdate;
       try
-        for i := 0 to NodesToDelete.Count - 1 do
-          TTreeNode(NodesToDelete[i]).Delete;
+        for i := 0 to NodesToClose.Count - 1 do
+          if not CloseImageNode(TTreeNode(NodesToClose[i]), [mbYes, mbNo, mbCancel]) then
+            Break;
       finally
         tvwMain.EndUpdate;
       end;
     end;
   finally
-    NodesToDelete.Free;
+    NodesToClose.Free;
     Cursor := crDefault;
   end;
 end;
@@ -1393,6 +1395,7 @@ begin
     begin
       if Current.Data = Image then
       begin
+        DetachImageProperties(Image);
         FreeNodeFileSystems(Current);
         TDSKImage(Current.Data).Free;
         Current.Delete;
@@ -1525,10 +1528,58 @@ begin
   end;
 end;
 
-function TfrmMain.CloseAll(AllowCancel: boolean): boolean;
+// The properties windows are modeless and hold the track or sector itself, so
+// any left open over an image being closed have to let go of it first
+procedure TfrmMain.DetachImageProperties(Image: TDSKImage);
+var
+  Idx: integer;
+  Form: TForm;
+begin
+  for Idx := Screen.FormCount - 1 downto 0 do
+  begin
+    Form := Screen.Forms[Idx];
+    if (Form is TfrmTrackProperties) and
+      (TfrmTrackProperties(Form).ParentImage = Image) then
+      TfrmTrackProperties(Form).Detach;
+    if (Form is TfrmSectorProperties) and
+      (TfrmSectorProperties(Form).ParentImage = Image) then
+      TfrmSectorProperties(Form).Detach;
+  end;
+end;
+
+// Close one open image: offer to save it first if it has unsaved changes, then
+// release it along with everything that describes it. The node goes with the
+// image so that the tree is never left holding a node whose image has been
+// freed, which the selection could land on as siblings are removed. False only
+// if the user cancelled.
+function TfrmMain.CloseImageNode(Node: TTreeNode; Buttons: TMsgDlgButtons): boolean;
 var
   Image: TDSKImage;
+begin
+  Result := True;
+  Image := TDSKImage(Node.Data);
+
+  if Image.IsChanged and not Image.Corrupt then
+    case MessageDlg(SysUtils.Format('Save unsaved image "%s" ?', [Image.FileName]),
+        mtWarning, Buttons, 0) of
+      mrYes: SaveImage(Image);
+      mrCancel:
+      begin
+        Result := False;
+        exit;
+      end;
+    end;
+
+  DetachImageProperties(Image);
+  FreeNodeFileSystems(Node);
+  Image.Free;
+  Node.Delete;
+end;
+
+function TfrmMain.CloseAll(AllowCancel: boolean): boolean;
+var
   Buttons: TMsgDlgButtons;
+  Node: TTreeNode;
 begin
   Result := True;
   if AllowCancel then
@@ -1537,27 +1588,21 @@ begin
     Buttons := [mbYes, mbNo];
 
   tvwMain.BeginUpdate;
-  while tvwMain.Items.GetFirstNode <> nil do
-  begin
-    if IsDiskNode(tvwMain.Items.GetFirstNode) then
+  try
+    Node := tvwMain.Items.GetFirstNode;
+    while (Node <> nil) and IsDiskNode(Node) do
     begin
-      Image := TDSKImage(tvwMain.Items.GetFirstNode.Data);
-      if Image.IsChanged and not Image.Corrupt then
-        case MessageDlg(Format('Save unsaved image "%s" ?', [Image.FileName]),
-            mtWarning, Buttons, 0) of
-          mrYes: SaveImage(Image);
-          mrCancel:
-          begin
-            Result := False;
-            exit;
-          end;
-        end;
-      FreeNodeFileSystems(tvwMain.Items.GetFirstNode);
-      Image.Free;
-      tvwMain.Items.GetFirstNode.Delete;
+      if not CloseImageNode(Node, Buttons) then
+      begin
+        Result := False;
+        Break;
+      end;
+      Node := tvwMain.Items.GetFirstNode;
     end;
+  finally
+    tvwMain.EndUpdate;
   end;
-  tvwMain.EndUpdate;
+
   RefreshList;
   UpdateMenus;
 end;
@@ -1710,8 +1755,10 @@ var
 begin
   Sector := GetSelectedSector(popSector.PopupComponent);
 
+  // The sector the menu was raised on, which from the sector list is not what
+  // the tree has selected: that is the track holding it
   if (Sector <> nil) and (ConfirmChange('reset FDC flags for', 'sector')) then
-    TDSKSector(tvwMain.Selected.Data).ResetFDC;
+    Sector.ResetFDC;
 
   if (popSector.PopupComponent = tvwMain) and (tvwMain.Selected <> nil) then
     if (TObject(tvwMain.Selected.Data).ClassType = TDSKTrack) and
@@ -1723,12 +1770,17 @@ begin
   UpdateMenus;
 end;
 
+// The list holds whatever the current view put there, which is a file or an
+// info row as often as a sector, so it is worth as much of a check as the tree
 function TfrmMain.GetSelectedSector(Sender: TObject): TDSKSector;
 begin
   Result := nil;
-  if (Sender = lvwMain) and (lvwMain.Selected <> nil) then
-    Result := TDSKSector(lvwMain.Selected.Data);
-  if (Sender = tvwMain) and (tvwMain.Selected <> nil) then
+  if (Sender = lvwMain) and (lvwMain.Selected <> nil) and
+    (lvwMain.Selected.Data <> nil) then
+    if TObject(lvwMain.Selected.Data).ClassType = TDSKSector then
+      Result := TDSKSector(lvwMain.Selected.Data);
+  if (Sender = tvwMain) and (tvwMain.Selected <> nil) and
+    (tvwMain.Selected.Data <> nil) then
     if TObject(tvwMain.Selected.Data).ClassType = TDSKSector then
       Result := TDSKSector(tvwMain.Selected.Data);
 end;
@@ -1736,9 +1788,12 @@ end;
 function TfrmMain.GetSelectedTrack(Sender: TObject): TDSKTrack;
 begin
   Result := nil;
-  if (Sender = lvwMain) and (lvwMain.Selected <> nil) then
-    Result := TDSKTrack(lvwMain.Selected.Data);
-  if (Sender = tvwMain) and (tvwMain.Selected <> nil) then
+  if (Sender = lvwMain) and (lvwMain.Selected <> nil) and
+    (lvwMain.Selected.Data <> nil) then
+    if TObject(lvwMain.Selected.Data).ClassType = TDSKTrack then
+      Result := TDSKTrack(lvwMain.Selected.Data);
+  if (Sender = tvwMain) and (tvwMain.Selected <> nil) and
+    (tvwMain.Selected.Data <> nil) then
     if TObject(tvwMain.Selected.Data).ClassType = TDSKTrack then
       Result := TDSKTrack(tvwMain.Selected.Data);
 end;
@@ -1895,8 +1950,15 @@ begin
 end;
 
 procedure TfrmMain.tvwMainDblClick(Sender: TObject);
+var
+  Sector: TDSKSector;
 begin
-  itmSectorPropertiesClick(Sender);
+  // Ask the tree what was double clicked rather than going through the sector
+  // popup, which points at wherever it was last raised: another control
+  // entirely, or nothing at all if it has yet to be used
+  Sector := GetSelectedSector(tvwMain);
+  if Sector <> nil then
+    TfrmSectorProperties.Create(Self, Sector);
 end;
 
 // Select the node under the cursor on right-click so context-menu actions

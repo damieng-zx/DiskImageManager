@@ -71,6 +71,8 @@ type
   public
     constructor Create(AOwner: TComponent; Track: TDSKTrack); reintroduce;
     procedure Refresh;
+    function ParentImage: TDSKImage;
+    procedure Detach;
   end;
 
 var
@@ -101,6 +103,8 @@ procedure TfrmTrackProperties.Refresh;
 var
   isExtended: boolean;
 begin
+  if FTrack = nil then exit;
+
   // Some track details not available depending on format
   isExtended := FTrack.ParentSide.ParentDisk.ParentImage.FileFormat = diExtendedDSK;
   lblSectorSize.Visible := not isExtended;
@@ -151,8 +155,28 @@ begin
   Close;
 end;
 
+// The image this window describes part of, or nil once it has let go
+function TfrmTrackProperties.ParentImage: TDSKImage;
+begin
+  if FTrack = nil then
+    Result := nil
+  else
+    Result := FTrack.ParentSide.ParentDisk.ParentImage;
+end;
+
+// The track is about to be freed along with its image, so drop it and close.
+// Nulling it matters as well as closing: the close only releases this window on
+// the next idle, and Apply until then would write through the freed track.
+procedure TfrmTrackProperties.Detach;
+begin
+  FTrack := nil;
+  Close;
+end;
+
 procedure TfrmTrackProperties.MakeChanges;
 begin
+  if FTrack = nil then exit;
+
   if frmMain.ConfirmChange('change', 'track') then
     with FTrack do
     begin

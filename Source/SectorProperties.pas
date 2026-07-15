@@ -77,6 +77,8 @@ type
   public
     constructor Create(AOwner: TComponent; Sector: TDSKSector); reintroduce;
     procedure Refresh;
+    function ParentImage: TDSKImage;
+    procedure Detach;
   end;
 
 var
@@ -107,6 +109,8 @@ procedure TfrmSectorProperties.Refresh;
 var
   FIdx: integer;
 begin
+  if FSector = nil then exit;
+
   // Identity
   edtImage.Text := ExtractFileName(FSector.ParentTrack.ParentSide.ParentDisk.ParentImage.FileName);
   edtPhysical.Text := 'Side ' + IntToStr(FSector.Side + 1) + ' > Track ' + IntToStr(FSector.Track) +
@@ -157,12 +161,32 @@ begin
   Close;
 end;
 
+// The image this window describes part of, or nil once it has let go
+function TfrmSectorProperties.ParentImage: TDSKImage;
+begin
+  if FSector = nil then
+    Result := nil
+  else
+    Result := FSector.ParentTrack.ParentSide.ParentDisk.ParentImage;
+end;
+
+// The sector is about to be freed along with its image, so drop it and close.
+// Nulling it matters as well as closing: the close only releases this window on
+// the next idle, and Apply until then would write through the freed sector.
+procedure TfrmSectorProperties.Detach;
+begin
+  FSector := nil;
+  Close;
+end;
+
 procedure TfrmSectorProperties.MakeChanges;
 var
   FIdx: integer;
   OldLength: word;
   SecData: array[0..MaxSectorSize] of byte;
 begin
+  if FSector = nil then exit;
+
   if frmMain.ConfirmChange('change', 'sector') then
     with FSector do
     begin
