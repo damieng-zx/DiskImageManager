@@ -105,7 +105,10 @@ function TMGTFileSystem.ReadFileEntry(Data: array of byte; Offset: integer): TMG
 var
   Track: TDSKTrack;
 begin
-  Track := FParentDisk.GetLogicalTrack(Data[13]);
+  // Every field is read from Offset, the start of this entry. Only the file
+  // name was, so a sector's second entry showed its own name beside the type,
+  // size and location of the first.
+  Track := FParentDisk.GetLogicalTrack(Data[Offset + 13]);
   if Track = nil then
   begin
     Result := nil;
@@ -118,7 +121,7 @@ begin
     FileName := StrBlockClean(Data, Offset + 1, 10).TrimRight();
     if FileName = '' then exit;
 
-    case Data[0] and 63 of
+    case Data[Offset] and 63 of
       0: Meta := 'Erased';
       1: Meta := 'BASIC';
       2: Meta := 'Numeric array';
@@ -149,16 +152,16 @@ begin
       30: Meta := 'HDOS Hdisk';
       31: Meta := 'HDOS Hfree/Htmp';
       else
-        Meta := Format('Custom 0x%x', [Data[0] and 63]);
+        Meta := Format('Custom 0x%x', [Data[Offset] and 63]);
     end;
 
-    if Data[0] and 64 <> 0 then  Meta := Meta + ' (protected)';
-    if Data[0] and 128 <> 0 then Meta := Meta + ' (hidden)';
+    if Data[Offset] and 64 <> 0 then  Meta := Meta + ' (protected)';
+    if Data[Offset] and 128 <> 0 then Meta := Meta + ' (hidden)';
 
-    SectorsAllocated := Data[11] * 256 + Data[12];
+    SectorsAllocated := Data[Offset + 11] * 256 + Data[Offset + 12];
     AllocatedSize := SectorsAllocated * FParentDisk.GetFirstSector().AdvertisedSize;
 
-    FirstSector := Track.GetLogicalSectorByID(Data[14]);
+    FirstSector := Track.GetLogicalSectorByID(Data[Offset + 14]);
   end;
 end;
 
