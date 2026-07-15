@@ -482,6 +482,7 @@ end;
 destructor TDSKImage.Destroy;
 begin
   Disk.Free;
+  Messages.Free;
   inherited Destroy;
 end;
 
@@ -1102,6 +1103,7 @@ end;
 
 destructor TDSKDisk.Destroy;
 begin
+  SetSides(0);
   FParentImage := nil;
   FSpecification.Free;
   inherited Destroy;
@@ -1652,12 +1654,6 @@ var
   OldSectors: byte;
   SIdx: byte;
 begin
-  if NewSectors = 0 then
-  begin
-    SetLength(Sector, 0);
-    exit;
-  end;
-
   OldSectors := Sectors;
 
   if OldSectors > NewSectors then
