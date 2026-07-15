@@ -122,10 +122,14 @@ begin
   edtIndexPos.Text := StrInt(FSector.IndexPointOffset);
   udFDCSize.Position := FSector.FDCSize;
   udSize.Position := FSector.DataSize;
+  // A uniformly filled sector is shown the byte it is actually filled with.
+  // Only when there is no single such byte is the track's filler offered, and
+  // these were the wrong way round: OK re-fills the sector with what is shown,
+  // so a filled sector was being overwritten with the track filler instead.
   if (FSector.GetFillByte >= 0) then
-    udFill.Position := FSector.ParentTrack.Filler
+    udFill.Position := FSector.GetFillByte
   else
-    udFill.Position := FSector.GetFillByte;
+    udFill.Position := FSector.ParentTrack.Filler;
   udPad.Position := udFill.Position;
 
   SecStat := FSector.Status;
