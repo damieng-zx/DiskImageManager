@@ -784,11 +784,14 @@ begin
           end
           else
             Sectors := TRKInfoBlock.TIB_NumSectors;
-          SectorSize := MaxSectorSize;
-          if (FileFormat = diStandardDSK) and (TRKInfoBlock.TIB_SectorSize <= 6) then
+          // The track's sector size is written back out from this, so it has to
+          // be read whatever the format. Taking it only from standard images
+          // left every extended track at 0, and saving turned that back into a
+          // size code of 0, which says 128 bytes, for every track on the disk.
+          if TRKInfoBlock.TIB_SectorSize <= High(FDCSectorSizes) then
             SectorSize := FDCSectorSizes[TRKInfoBlock.TIB_SectorSize]
           else
-            SectorSize := 0;
+            SectorSize := MaxSectorSize;
           GapLength := TRKInfoBlock.TIB_GapLength;
           Filler := TRKInfoBlock.TIB_FillerByte;
 

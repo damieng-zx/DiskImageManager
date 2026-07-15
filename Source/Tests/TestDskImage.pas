@@ -180,6 +180,9 @@ begin
     AssertEquals('tracks', 80, Reloaded.Disk.Side[0].Tracks);
     AssertEquals('sectors', 9, Reloaded.Disk.Side[0].Track[0].Sectors);
     AssertEquals('sector size', 512, Reloaded.Disk.Side[0].Track[0].Sector[0].DataSize);
+    // The track header carries a sector size of its own, which came back as 0
+    // and was written back out as a size code meaning 128 bytes
+    AssertEquals('track sector size', 512, Reloaded.Disk.Side[0].Track[0].SectorSize);
   finally
     Reloaded.Free;
     DeleteFile(FileName);
