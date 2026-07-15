@@ -118,12 +118,13 @@ begin
   MaxEntries := Spec.DirectoryBlocks * Spec.GetBlockSize() div DIR_ENTRY_SIZE;
 
   Result := TFPGList<TCPMFile>.Create;
-  Extents := TFPGList<TCPMFile>.Create;
 
   Track := FParentDisk.GetLogicalTrack(Spec.ReservedTracks);
   if Track = nil then exit;
   Sector := Track.GetFirstLogicalSector();
   if Sector = nil then exit;
+
+  Extents := TFPGList<TCPMFile>.Create;
 
   SectorOffset := 0;
   for Index := 0 to MaxEntries - 1 do

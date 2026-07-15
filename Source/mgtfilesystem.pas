@@ -91,7 +91,9 @@ begin
 
     DiskFile := ReadFileEntry(Sector.Data, SectorOffset);
     if (DiskFile <> nil) and (DiskFile.FileName <> '') and (DiskFile.SectorsAllocated > 0) then
-       Result.Add(DiskFile);
+       Result.Add(DiskFile)
+    else
+       DiskFile.Free;
 
     SectorOffset := SectorOffset + DIR_ENTRY_SIZE;
   end;

@@ -15,7 +15,7 @@ interface
 
 uses
   DskImage, FileSystem, MGTFileSystem, Utils, Settings,
-  Classes, SysUtils, ComCtrls, Graphics, LConvEncoding, FGL;
+  Classes, SysUtils, ComCtrls, Contnrs, Graphics, LConvEncoding, FGL;
 
 type
   ItemType = (itDisk, itSpecification, itTracksAll, itTrack, itFiles, itSector,
@@ -27,6 +27,11 @@ type
   private
     FListView: TListView;
     FSettings: TSettings;
+    // The file objects the Files views hand to the list as ListItem.Data.
+    // The list keeps raw pointers to them, so they must outlive the refresh
+    // that created them and are released by ClearOwnedFiles when the list is
+    // rebuilt or the presenter goes away.
+    FOwnedFiles: TObjectList;
 
     procedure SetListSimple;
     function AddColumn(Caption: string): TListColumn;
@@ -41,7 +46,9 @@ type
     function MapByte(Raw: byte): string;
   public
     constructor Create(AListView: TListView; ASettings: TSettings);
+    destructor Destroy; override;
 
+    procedure ClearOwnedFiles;
     procedure RefreshImage(Image: TDSKImage);
     procedure RefreshSpecification(Specification: TDSKSpecification);
     procedure RefreshTrack(Side: TDSKSide);
@@ -59,6 +66,22 @@ begin
   inherited Create;
   FListView := AListView;
   FSettings := ASettings;
+  FOwnedFiles := TObjectList.Create(True);
+end;
+
+destructor TListViewPresenter.Destroy;
+begin
+  FOwnedFiles.Free;
+  FListView := nil;
+  FSettings := nil;
+  inherited Destroy;
+end;
+
+// Release the file objects behind the current list contents. Call this as the
+// list is cleared: any ListItem.Data still pointing at them is about to go.
+procedure TListViewPresenter.ClearOwnedFiles;
+begin
+  FOwnedFiles.Clear;
 end;
 
 procedure TListViewPresenter.SetListSimple;
@@ -445,6 +468,7 @@ begin
 
   for DiskFile in Files do
   begin
+    FOwnedFiles.Add(DiskFile);
     if DiskFile.User > 0 then HasUserAreas := True;
     if DiskFile.HeaderType <> 'None' then HasHeaders := True;
   end;
@@ -523,6 +547,7 @@ begin
     EndUpdate;
   end;
 
+  // The list container only: the entries themselves belong to FOwnedFiles now
   Files.Free;
 end;
 
@@ -532,6 +557,9 @@ var
   Files: TFPGList<TMGTFile>;
 begin
   Files := FileSystem.Directory;
+
+  for DiskFile in Files do
+    FOwnedFiles.Add(DiskFile);
 
   with FListView.Columns do
   begin
@@ -567,6 +595,7 @@ begin
     EndUpdate;
   end;
 
+  // The list container only: the entries themselves belong to FOwnedFiles now
   Files.Free;
 end;
 

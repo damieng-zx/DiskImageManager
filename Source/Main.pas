@@ -245,6 +245,7 @@ type
     function GetTitle(Data: TTreeNode): string;
     function GetCurrentImage: TDSKImage;
     function IsDiskNode(Node: TTreeNode): boolean;
+    procedure FreeNodeFileSystems(DiskNode: TTreeNode);
     function FindTreeNodeFromData(Node: TTreeNode; Data: TObject): TTreeNode;
 
     procedure SaveExtractedFile(WithHeader: boolean);
@@ -1018,6 +1019,7 @@ begin
 
         if ShouldClose then
         begin
+          FreeNodeFileSystems(Current);
           CurrentImage.Free;
           NodesToDelete.Add(Current);
         end;
@@ -1295,6 +1297,9 @@ begin
     OldViewStyle := ViewStyle;
     Items.BeginUpdate;
     ViewStyle := vsList;
+    // Clearing the items drops the Data pointers to any file objects the last
+    // Files view produced, so release them before they become unreachable
+    FPresenter.ClearOwnedFiles;
     Items.Clear;
     Columns.BeginUpdate;
     Columns.Clear;
@@ -1381,6 +1386,7 @@ begin
     begin
       if Current.Data = Image then
       begin
+        FreeNodeFileSystems(Current);
         TDSKImage(Current.Data).Free;
         Current.Delete;
         if tvwMain.Selected = nil then
@@ -1492,6 +1498,26 @@ begin
   Result := (node.ImageIndex = Ord(itDisk)) or (node.ImageIndex = Ord(itDiskCorrupt));
 end;
 
+// The Files node owns the file system built for it in AddImageTree, and nothing
+// else refers to it, so it has to go when the image it describes is closed.
+procedure TfrmMain.FreeNodeFileSystems(DiskNode: TTreeNode);
+var
+  Child: TTreeNode;
+begin
+  Child := DiskNode.GetFirstChild;
+  while Child <> nil do
+  begin
+    if (Child.Data <> nil) and
+      ((TObject(Child.Data).ClassType = TCPMFileSystem) or
+      (TObject(Child.Data).ClassType = TMGTFileSystem)) then
+    begin
+      TObject(Child.Data).Free;
+      Child.Data := nil;
+    end;
+    Child := Child.GetNextSibling;
+  end;
+end;
+
 function TfrmMain.CloseAll(AllowCancel: boolean): boolean;
 var
   Image: TDSKImage;
@@ -1519,6 +1545,7 @@ begin
             exit;
           end;
         end;
+      FreeNodeFileSystems(tvwMain.Items.GetFirstNode);
       Image.Free;
       tvwMain.Items.GetFirstNode.Delete;
     end;
