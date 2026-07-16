@@ -214,10 +214,8 @@ begin
   // Set summary details
   if lvwSummary.Items.Count > 0 then
   begin
-    lvwSummary.Items[0].SubItems[0] :=
-      Format('%d KB', [CurrentFormat.GetCapacityBytes div 1024]);
-    lvwSummary.Items[1].SubItems[0] :=
-      Format('%d KB', [CurrentFormat.GetUsableBytes div 1024]);
+    lvwSummary.Items[0].SubItems[0] := StrFileSize(CurrentFormat.GetCapacityBytes);
+    lvwSummary.Items[1].SubItems[0] := StrFileSize(CurrentFormat.GetUsableBytes);
     lvwSummary.Items[2].SubItems[0] :=
       Format('%d', [CurrentFormat.GetDirectoryEntries]);
     if CurrentFormat.ResTracks > 0 then

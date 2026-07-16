@@ -268,8 +268,7 @@ begin
               StrInt(Disk.Side[SIdx].Tracks));
         end;
         AddListInfo('Tracks total', StrInt(Disk.TrackTotal));
-        AddListInfo('Formatted capacity', SysUtils.Format('%d KB',
-          [Disk.FormattedCapacity div BytesPerKB]));
+        AddListInfo('Formatted capacity', StrFileSize(Disk.FormattedCapacity));
         if Disk.IsTrackSizeUniform then
           AddListInfo('Track size', SysUtils.Format('%d bytes',
             [Disk.Side[0].Track[0].Size]))
