@@ -130,7 +130,11 @@ begin
   edtSectorGap.Text := IntToStr(FTrack.GapLength);
   edtSectorFiller.Text := IntToStr(FTrack.Filler);
   cboSectorDataRate.ItemIndex := Ord(FTrack.DataRate);
-  cboSectorSize.SelText := IntToStr(FTrack.SectorSize);
+  // A drop-down list has no edit box, so SelText is the selection within
+  // something that is not there: assigning it moved nothing and reading it back
+  // handed StrToInt an empty string. The list is worked by index; a size with
+  // no entry for it selects nothing rather than the wrong thing.
+  cboSectorSize.ItemIndex := cboSectorSize.Items.IndexOf(IntToStr(FTrack.SectorSize));
 end;
 
 procedure TfrmTrackProperties.FormClose(Sender: TObject; var CloseAction: TCloseAction);
@@ -190,7 +194,8 @@ begin
       GapLength := udSectorGap.Position;
       Filler := udSectorFiller.Position;
       DataRate := TDSKDataRate(cboSectorDataRate.ItemIndex);
-      SectorSize := StrToInt(cboSectorSize.SelText);
+      if cboSectorSize.ItemIndex >= 0 then
+        SectorSize := StrToInt(cboSectorSize.Items[cboSectorSize.ItemIndex]);
     end;
   frmMain.RefreshList;
 end;

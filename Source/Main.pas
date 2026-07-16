@@ -456,13 +456,24 @@ end;
 procedure TfrmMain.itmTrackUnformatClick(Sender: TObject);
 var
   Track: TDSKTrack;
+  Node: TTreeNode;
 begin
   Track := GetSelectedTrack(popTrack.PopupComponent);
 
   if (Track <> nil) and (ConfirmChange('unformat', 'track')) then
   begin
     Track.Unformat;
-    tvwMain.Selected.DeleteChildren;
+
+    // The sector nodes to drop are the ones under the track just unformatted,
+    // which from the track list is not what the tree has selected: that is the
+    // Tracks node holding every track on the side, and emptying it took all of
+    // them away.
+    if tvwMain.Selected.Data = Pointer(Track) then
+      Node := tvwMain.Selected
+    else
+      Node := FindTreeNodeFromData(tvwMain.Selected, Track);
+    if Node <> nil then
+      Node.DeleteChildren;
   end;
 
   RefreshList;
