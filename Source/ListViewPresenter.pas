@@ -402,6 +402,7 @@ begin
       Caption := 'Hex';
     with Add do
       Caption := 'ASCII';
+    EndUpdate;
   end;
 
   RowOffset := 0;
