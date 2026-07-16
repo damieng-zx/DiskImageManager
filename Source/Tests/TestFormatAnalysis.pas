@@ -22,6 +22,7 @@ type
   TFormatAnalysisTest = class(TTestCase)
   private
     function MakeFormatted(FormatIndex: integer): TDSKImage;
+    function BuildUniform(Sides, Tracks, Sectors, SectorSize, FirstID: integer): TDSKImage;
     procedure BreakSector(Sector: TDSKSector);
   published
     procedure TestCleanUniformDiskIsUnprotected;
@@ -30,6 +31,10 @@ type
     procedure TestGenuinelyNonUniformDiskWithErrorsIsReported;
     procedure TestEmptyTrack1IsStillProtection;
     procedure TestBadHighTracksAreNotProtection;
+    procedure TestSupermat192XCF2StillDetected;
+    procedure TestSupermat192TwoEightyTwoVariantDetected;
+    procedure TestUnknownXDPBReportsCapacity;
+    procedure TestUnknownNonXDPBStaysBlank;
   end;
 
 implementation
@@ -44,6 +49,44 @@ begin
     Result.Disk.Format(Spec);
   finally
     Spec.Free;
+  end;
+end;
+
+// A uniform single/double sided disk built by hand, sector IDs running up from
+// FirstID so the logically-first sector is index 0. Lets a test set the boot
+// sector's spec bytes without depending on a stored image.
+function TFormatAnalysisTest.BuildUniform(Sides, Tracks, Sectors, SectorSize, FirstID: integer): TDSKImage;
+var
+  SIdx, TIdx, EIdx: integer;
+  Trk: TDSKTrack;
+  Sec: TDSKSector;
+begin
+  Result := TDSKImage.Create;
+  Result.Disk.Sides := Sides;
+  for SIdx := 0 to Sides - 1 do
+  begin
+    Result.Disk.Side[SIdx].Side := SIdx;
+    Result.Disk.Side[SIdx].Tracks := Tracks;
+    for TIdx := 0 to Tracks - 1 do
+    begin
+      Trk := Result.Disk.Side[SIdx].Track[TIdx];
+      Trk.Track := TIdx;
+      Trk.Side := SIdx;
+      Trk.Logical := (SIdx * Tracks) + TIdx;
+      Trk.Sectors := Sectors;
+      Trk.SectorSize := SectorSize;
+      for EIdx := 0 to Sectors - 1 do
+      begin
+        Sec := Trk.Sector[EIdx];
+        Sec.Sector := EIdx;
+        Sec.Track := TIdx;
+        Sec.Side := SIdx;
+        Sec.ID := FirstID + EIdx;
+        Sec.FDCSize := GetFDCSectorSize(SectorSize);
+        Sec.DataSize := SectorSize;
+        Sec.AdvertisedSize := SectorSize;
+      end;
+    end;
   end;
 end;
 
@@ -149,6 +192,82 @@ begin
     BreakSector(Img.Disk.Side[0].Track[39].Sector[0]);
     AssertEquals('damaged high tracks are not protection', '',
       DetectProtection(Img.Disk.Side[0]));
+  finally
+    Img.Free;
+  end;
+end;
+
+// The original XCF2 variant: three directory blocks, format gap 23.
+procedure TFormatAnalysisTest.TestSupermat192XCF2StillDetected;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := BuildUniform(1, 40, 10, 512, 1);
+  try
+    Sec := Img.Disk.Side[0].Track[0].GetFirstLogicalSector;
+    Sec.Data[2] := 40;
+    Sec.Data[7] := 3;
+    Sec.Data[9] := 23;
+    AssertEquals('Supermat 192/XCF2', 'Supermat 192/XCF2', Img.Disk.DetectFormat);
+  finally
+    Img.Free;
+  end;
+end;
+
+// The other variant Ian Cull's 192K Format program writes: two directory
+// blocks and the standard +3 format gap. Same program, same boot banner, but
+// the XDPB differs, so it was falling through to nothing.
+procedure TFormatAnalysisTest.TestSupermat192TwoEightyTwoVariantDetected;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := BuildUniform(1, 40, 10, 512, 1);
+  try
+    Sec := Img.Disk.Side[0].Track[0].GetFirstLogicalSector;
+    Sec.Data[2] := 40;
+    Sec.Data[7] := 2;
+    Sec.Data[9] := 82;
+    AssertEquals('Supermat 192 2/82', 'Supermat 192 2/82', Img.Disk.DetectFormat);
+  finally
+    Img.Free;
+  end;
+end;
+
+// An unrecognised disk whose boot sector is nonetheless a valid disk
+// specification is described by its formatted capacity rather than left blank.
+// 40 tracks x 9 x 256 = 90KB, and 9 x 256 matches no named format.
+procedure TFormatAnalysisTest.TestUnknownXDPBReportsCapacity;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := BuildUniform(1, 40, 9, 256, 1);
+  try
+    Sec := Img.Disk.Side[0].Track[0].GetFirstLogicalSector;
+    Sec.Data[0] := 0;   // PCW single-sided spec id
+    Sec.Data[3] := 9;   // sectors per track
+    Sec.Data[4] := 1;   // sector size code: 128 shl 1 = 256
+    AssertEquals('capacity named from the spec block', 'Unknown 90KB XDPB format',
+      Img.Disk.DetectFormat);
+  finally
+    Img.Free;
+  end;
+end;
+
+// The capacity fallback speaks only for a real spec block. A disk whose boot
+// sector is not one is still reported as nothing rather than guessed at.
+procedure TFormatAnalysisTest.TestUnknownNonXDPBStaysBlank;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := BuildUniform(1, 40, 9, 256, 1);
+  try
+    Sec := Img.Disk.Side[0].Track[0].GetFirstLogicalSector;
+    Sec.Data[0] := 200;  // not a spec id, so not an XDPB
+    AssertEquals('no spec block, no guess', '', Img.Disk.DetectFormat);
   finally
     Img.Free;
   end;

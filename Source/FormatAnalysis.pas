@@ -45,6 +45,34 @@ end;
 const
   EINSTEIN_SIGNATURE: array[0..4] of byte = ($00, $E1, $00, $FB, $00);
 
+// Whether the boot sector looks like a PCW/CPC disk specification (XDPB): a
+// known spec id, and a sector size and count that agree with the track it sits
+// on. Enough to trust the geometry it describes without naming the format.
+function BootSectorIsXDPB(Track: TDSKTrack; Sector: TDSKSector): boolean;
+begin
+  Result := (Track <> nil) and (Sector <> nil)
+    and (Sector.DataSize >= 10)               // room for the ten spec bytes
+    and (Sector.Data[0] <= 3)                 // 0..3 PCW/CPC single/double
+    and (Sector.Data[4] <= 6)                 // sector size code, 128..8192
+    and (Sector.Data[3] = Track.Sectors)      // sectors per track agrees
+    and ((128 shl Sector.Data[4]) = Sector.DataSize);
+end;
+
+// The disk's formatted size in whole KB: every sector's data across every
+// track, rounded to nearest. Unformatted tracks contribute nothing.
+function FormattedCapacityKB(Disk: TDSKDisk): integer;
+var
+  Side: TDSKSide;
+  Track: TDSKTrack;
+  Bytes: int64;
+begin
+  Bytes := 0;
+  for Side in Disk.Side do
+    for Track in Side.Track do
+      Bytes := Bytes + Track.Size;
+  Result := (Bytes + 512) div 1024;
+end;
+
 function DetectUniformFormat(Disk: TDSKDisk): string;
 var
   FirstTrack: TDSKTrack;
@@ -141,6 +169,11 @@ begin
       // Supermat 192 (Ian Cull)
       if (FirstSector.Data[7] = 3) and (FirstSector.Data[9] = 23) and (FirstSector.Data[2] = 40) then
         Result := 'Supermat 192/XCF2';
+      // The same 192K Format program (identical boot banner) writes some disks
+      // with two directory blocks and the standard +3 format gap instead of
+      // XCF2's three and 23, so the spec block alone tells the variants apart.
+      if (FirstSector.Data[7] = 2) and (FirstSector.Data[9] = 82) and (FirstSector.Data[2] = 40) then
+        Result := 'Supermat 192 2/82';
     end;
   end;
 
@@ -167,6 +200,12 @@ begin
   // Timex/Sinclair TS2068
   if ((FirstTrack.Sectors = 16) and (FirstSector.DataSize = 256) and (FirstSector.ID = 0)) then
      Result := 'TS2068';
+
+  // Named nothing above, but a boot sector that is a valid disk specification
+  // still says how big the disk it describes is. Report that rather than
+  // nothing, so an unrecognised but well-formed disk is at least placed.
+  if (Result = '') and BootSectorIsXDPB(FirstTrack, FirstSector) then
+    Result := SysUtils.Format('Unknown %dKB XDPB format', [FormattedCapacityKB(Disk)]);
 end;
 
 // ===========================================================================
