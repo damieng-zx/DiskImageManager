@@ -49,6 +49,8 @@ type
     procedure TestLoadTruncatedSectorData;
     procedure TestFormatClampsSectorSize;
     procedure TestFindText;
+    procedure TestExtendedDSKPadsTracksToTrackSizeTable;
+    procedure TestStandardDSKSizesTracksByTheLargest;
   end;
 
 implementation
@@ -635,6 +637,109 @@ begin
     AssertEquals('empty needle finds nothing', -1, Sec.FindText('', True));
   finally
     Img.Free;
+  end;
+end;
+
+// An extended image's track size table is written in whole 256-byte blocks and
+// rounded up to reach one, but only the sectors were written, so the file fell
+// short of what the table promised and every track after a short one sat
+// somewhere other than where the table said.
+procedure TDskImageTest.TestExtendedDSKPadsTracksToTrackSizeTable;
+var
+  Img: TDSKImage;
+  FileName: string;
+  Header: TDSKInfoBlock;
+  Stream: TFileStream;
+  Promised: int64;
+  Idx: integer;
+begin
+  FileName := TempName('.dsk');
+  try
+    Img := MakeFormatted(0); // 40 tracks, 1 side, 9 x 512
+    try
+      // Leave track 0 short of filling its last block
+      Img.Disk.Side[0].Track[0].Sector[0].DataSize := 300;
+      AssertTrue('saved', Img.SaveFile(FileName, diExtendedDSK, True, False));
+    finally
+      Img.Free;
+    end;
+
+    Stream := TFileStream.Create(FileName, fmOpenRead or fmShareDenyNone);
+    try
+      Stream.ReadBuffer(Header, SizeOf(Header));
+    finally
+      Stream.Free;
+    end;
+
+    Promised := SizeOf(Header);
+    for Idx := 0 to (Header.Disk_NumTracks * Header.Disk_NumSides) - 1 do
+      Promised := Promised + (Header.Disk_ExtTrackSize[Idx] * TrackBlockSize);
+    AssertEquals('file holds every byte the track size table promises',
+      Promised, FileLen(FileName));
+
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertEquals('short sector kept its length', 300,
+        Img.Disk.Side[0].Track[0].Sector[0].DataSize);
+      AssertEquals('the track after it is still whole', 9,
+        Img.Disk.Side[0].Track[1].Sectors);
+      AssertEquals('and holds its own data', 512,
+        Img.Disk.Side[0].Track[1].Sector[0].DataSize);
+    finally
+      Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+// A standard image gives every track the one size, and it was taken from track
+// 0 alone: the test meant to raise it for a larger track compared sector data
+// against a size that counts the track header too, so it never fired. The
+// tracks were written at their own sizes regardless, so nothing after the first
+// one differing landed where the header said.
+procedure TDskImageTest.TestStandardDSKSizesTracksByTheLargest;
+var
+  Img: TDSKImage;
+  FileName: string;
+  Header: TDSKInfoBlock;
+  Stream: TFileStream;
+begin
+  FileName := TempName('.dsk');
+  try
+    Img := MakeFormatted(0); // 40 tracks, 1 side, 9 x 512
+    try
+      // Make track 0 the smallest, so the largest track is not the one asked
+      Img.Disk.Side[0].Track[0].Sector[0].FDCSize := 1; // 256 bytes
+      Img.Disk.Side[0].Track[0].Sector[0].DataSize := 256;
+      AssertTrue('saved', Img.SaveFile(FileName, diStandardDSK, True, False));
+    finally
+      Img.Free;
+    end;
+
+    Stream := TFileStream.Create(FileName, fmOpenRead or fmShareDenyNone);
+    try
+      Stream.ReadBuffer(Header, SizeOf(Header));
+    finally
+      Stream.Free;
+    end;
+
+    AssertEquals('track size fits the largest track', 4864, Header.Disk_StdTrackSize);
+    AssertEquals('every track takes the size the header gives',
+      SizeOf(Header) + (Header.Disk_NumTracks * Header.Disk_NumSides *
+      Header.Disk_StdTrackSize), FileLen(FileName));
+
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertEquals('the largest track is still whole', 9,
+        Img.Disk.Side[0].Track[39].Sectors);
+      AssertEquals('and holds its own data', 512,
+        Img.Disk.Side[0].Track[39].Sector[0].DataSize);
+    finally
+      Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
   end;
 end;
 

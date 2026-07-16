@@ -18,6 +18,14 @@ const
 
   MaxTracks = 204;
 
+  // Both formats measure a track in whole blocks of this size, counting the
+  // Track-Info block as the first of them
+  TrackBlockSize = 256;
+
+  // Extended images give each track one byte of block count, so this is the
+  // largest a track can be described as whatever the format
+  MaxTrackFileSize = 255 * TrackBlockSize;
+
 type
   // What is left of a 256 byte Track-Info block once its header is accounted
   // for, and so the only room a track has to describe its sectors

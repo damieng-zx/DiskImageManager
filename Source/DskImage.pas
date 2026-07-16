@@ -393,6 +393,7 @@ const
   DirEntSize = 32;
 
 function GetFDCSectorSize(SectorSize: word): byte;
+function GetTrackFileSize(TrackDataSize: word): integer;
 
 implementation
 
@@ -977,6 +978,24 @@ begin
   end;
 end;
 
+// Pad a track out to the size its header gives, with the byte the track is
+// filled with so the padding looks like the rest of the unused track
+procedure WriteFiller(DiskFile: TFileStream; Count: integer; Filler: byte);
+var
+  Block: array[0..TrackBlockSize - 1] of byte;
+  Chunk: integer;
+begin
+  if Count <= 0 then exit;
+  FillChar(Block, SizeOf(Block), Filler);
+  while Count > 0 do
+  begin
+    Chunk := Count;
+    if Chunk > SizeOf(Block) then Chunk := SizeOf(Block);
+    DiskFile.WriteBuffer(Block, Chunk);
+    Dec(Count, Chunk);
+  end;
+end;
+
 // Save a DSK file
 function TDSKImage.SaveFileDSK(DiskFile: TFileStream; SaveFileFormat: TDSKImageFormat; Compress: boolean): boolean;
 var
@@ -985,7 +1004,6 @@ var
   SCTInfoBlock: TSCTInfoBlock;
   OFFInfoBlock: TOFFInfoBlock;
   SIdx, TIdx, EIdx: integer;
-  TrackSize: word;
   Side: TDSKSide;
   Track: TDSKTrack;
 begin
@@ -997,12 +1015,24 @@ begin
   // well past that, and writing one would run off the end of the block.
   for Side in Disk.Side do
     for Track in Side.Track do
+    begin
       if Track.Sectors > MaxTrackInfoSectors then
       begin
         Messages.Add(SysUtils.Format('Side %d track %d has %d sectors, more than the %d a track holds.',
           [Track.Side, Track.Logical, Track.Sectors, MaxTrackInfoSectors]));
         exit;
       end;
+
+      // A header records a track's size in 256-byte blocks, in one byte per
+      // track for extended and one word for the whole disk for standard, so a
+      // track past that cannot be described in either
+      if GetTrackFileSize(Track.Size) > MaxTrackFileSize then
+      begin
+        Messages.Add(SysUtils.Format('Side %d track %d holds %d bytes, more than the %d a track can be described as.',
+          [Track.Side, Track.Logical, Track.Size, MaxTrackFileSize - TrackBlockSize]));
+        exit;
+      end;
+    end;
 
   // Construct disk info
   with DSKInfoBlock do
@@ -1030,32 +1060,28 @@ begin
               Disk_ExtTrackSize[(TIdx * Disk_NumSides) + SIdx] := 0
             else
             if Disk.Side[SIdx].Track[TIdx].Size > 0 then
-            begin
-              TrackSize := (Disk.Side[SIdx].Track[TIdx].Size div 256) + 1;
-              // Track info 256
-              if Disk.Side[SIdx].Track[TIdx].Size mod 256 > 0 then
-                TrackSize := TrackSize + 1;
-              Disk_ExtTrackSize[(TIdx * Disk_NumSides) + SIdx] := TrackSize;
-            end
+              Disk_ExtTrackSize[(TIdx * Disk_NumSides) + SIdx] :=
+                GetTrackFileSize(Disk.Side[SIdx].Track[TIdx].Size) div TrackBlockSize
             else
               Disk_ExtTrackSize[(TIdx * Disk_NumSides) + SIdx] := 0;
       end;
       else
       begin
         DiskInfoBlock := DiskInfoStandard;
-        if Disk.Side[0].Track[0].Size > 0 then
-          Disk_StdTrackSize := Disk.Side[0].Track[0].Size + 256
-        else
-          Disk_StdTrackSize := 0;
-
+        // A standard image gives every track the one size, so the largest track
+        // has to set it. Track.Size counts only sector data where the header's
+        // size also counts the Track-Info block, and comparing the two straight
+        // let a track larger than the first go unnoticed and be written past
+        // where the header said the next one starts.
+        Disk_StdTrackSize := 0;
         for SIdx := 0 to Disk_NumSides - 1 do
           for TIdx := 0 to Disk_NumTracks - 1 do
           begin
             Track := Disk.Side[SIdx].Track[TIdx];
             Track.DataRate := drUnknown;
             Track.RecordingMode := rmUnknown;
-            if (Track.Size > Disk_StdTrackSize) then
-              Disk_StdTrackSize := Track.Size + 256;
+            if (Track.Size > 0) and (GetTrackFileSize(Track.Size) > Disk_StdTrackSize) then
+              Disk_StdTrackSize := GetTrackFileSize(Track.Size);
           end;
       end;
     end;
@@ -1112,9 +1138,25 @@ begin
           DiskFile.WriteBuffer(TRKInfoBlock, SizeOf(TRKInfoBlock));
 
           // Now write actual sector data
-          if not (Compress and (Sectors = 0)) then
-            for EIdx := 0 to Sectors - 1 do
-              DiskFile.WriteBuffer(Sector[EIdx].Data, Sector[EIdx].DataSize);
+          for EIdx := 0 to Sectors - 1 do
+            DiskFile.WriteBuffer(Sector[EIdx].Data, Sector[EIdx].DataSize);
+
+          // The size a header gives a track is a promise about where the next
+          // one starts, and it is made in whole 256-byte blocks. Writing only
+          // the sectors broke that promise for any track that did not fill its
+          // last block, leaving every track after it at the wrong offset.
+          if SaveFileFormat = diStandardDSK then
+            WriteFiller(DiskFile, DSKInfoBlock.Disk_StdTrackSize - TrackBlockSize - Size, Filler)
+          else
+            WriteFiller(DiskFile, GetTrackFileSize(Size) - TrackBlockSize - Size, Filler);
+        end
+        else
+        if (SaveFileFormat = diStandardDSK) and (DSKInfoBlock.Disk_StdTrackSize > 0) then
+        begin
+          // A standard image has no way to say a track is not there: they all
+          // take the header's size, so an unformatted one still has to fill it
+          DiskFile.WriteBuffer(TRKInfoBlock, SizeOf(TRKInfoBlock));
+          WriteFiller(DiskFile, DSKInfoBlock.Disk_StdTrackSize - TrackBlockSize, Filler);
         end;
       end;
     end;
@@ -2552,6 +2594,14 @@ begin
   for Idx := High(FDCSectorSizes) downto Low(FDCSectorSizes) do
     if SectorSize <= FDCSectorSizes[Idx] then
       Result := Idx;
+end;
+
+// The room a track takes in the file: its Track-Info block, plus its sector
+// data rounded up to whole blocks. Both formats size tracks in these blocks, so
+// this is what a header says about a track however much its sectors add up to.
+function GetTrackFileSize(TrackDataSize: word): integer;
+begin
+  Result := ((TrackDataSize + TrackBlockSize - 1) div TrackBlockSize + 1) * TrackBlockSize;
 end;
 
 end.
