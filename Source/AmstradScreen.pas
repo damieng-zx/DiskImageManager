@@ -59,9 +59,7 @@ type
 implementation
 
 type
-  TCPCColor = record
-    R, G, B: byte;
-  end;
+  TCPCColor = TRGB;
 
 const
   // The 27 CPC hardware colours indexed by firmware colour number.

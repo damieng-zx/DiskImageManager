@@ -16,7 +16,7 @@ unit SpectrumScreen;
 interface
 
 uses
-  Graphics, Classes, SysUtils;
+  Graphics, Classes, SysUtils, Utils;
 
 const
   ScreenWidth = 256;
@@ -28,9 +28,7 @@ const
   ScreenSizeNoColor = 6144;
 
 type
-  TSpectrumColor = record
-    R, G, B: byte;
-  end;
+  TSpectrumColor = TRGB;
 
   TSpectrumColorPair = array[0..1] of TSpectrumColor;
 
@@ -212,7 +210,7 @@ begin
             Color := Colors[0]; // Paper
 
           // Draw pixel with scaling
-          Canvas.Brush.Color := TColor(Color.R or (Color.G shl 8) or (Color.B shl 16));
+          Canvas.Brush.Color := RGBToColor(Color.R, Color.G, Color.B);
           Canvas.Pen.Color := Canvas.Brush.Color;
 
           if Scale = 1 then

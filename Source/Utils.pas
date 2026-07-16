@@ -25,6 +25,10 @@ const
 type
   TSpinBorderStyle = (bsRaised, bsLowered, bsNone);
   TDiskByteArray = array of byte;
+  // An 8-bit-per-channel colour, shared by the screen decoders' palettes
+  TRGB = record
+    R, G, B: byte;
+  end;
 
 function StrInt(I: integer): string;
 function StrHex(I: integer): string;
