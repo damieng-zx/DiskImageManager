@@ -65,6 +65,42 @@ type
     function GetEnumerator: TDSKDirEntryEnumerator;
   end;
 
+  // Whole-disk walks, so a method that just visits every track or every sector
+  // can say 'for Track in Disk.AllTracks' rather than hand-roll the nested
+  // side/track/sector loop. Both visit in side-major order, exactly as the
+  // hand-rolled loops did.
+  TDSKTrackEnumerator = class(TObject)
+  private
+    FDisk: TDSKDisk;
+    FSideIdx, FTrackIdx: integer;
+    FCurrent: TDSKTrack;
+  public
+    constructor Create(ADisk: TDSKDisk);
+    function MoveNext: boolean;
+    property Current: TDSKTrack read FCurrent;
+  end;
+
+  TDSKTrackWalk = record
+    Disk: TDSKDisk;
+    function GetEnumerator: TDSKTrackEnumerator;
+  end;
+
+  TDSKSectorEnumerator = class(TObject)
+  private
+    FDisk: TDSKDisk;
+    FSideIdx, FTrackIdx, FSectorIdx: integer;
+    FCurrent: TDSKSector;
+  public
+    constructor Create(ADisk: TDSKDisk);
+    function MoveNext: boolean;
+    property Current: TDSKSector read FCurrent;
+  end;
+
+  TDSKSectorWalk = record
+    Disk: TDSKDisk;
+    function GetEnumerator: TDSKSectorEnumerator;
+  end;
+
   // Image
   TDSKImageFormat = (diStandardDSK, diExtendedDSK, diRawMGT, diNotYetSaved, diInvalid);
 
@@ -128,6 +164,8 @@ type
     function GetNextLogicalSector(Sector: TDSKSector): TDSKSector;
     function GetSectorByBlock(Block: integer): TDSKSector;
     function DirectoryEntries(Start: TDSKSector; EntrySize, MaxEntries: integer): TDSKDirEntryWalk;
+    function AllTracks: TDSKTrackWalk;
+    function AllSectors: TDSKSectorWalk;
     function GetAllStrings(MinLength: integer; MinUniques: integer): TStringList;
     function HasFDCErrors: boolean;
     function IsTrackSizeUniform: boolean;
@@ -160,6 +198,7 @@ type
     destructor Destroy; override;
 
     function GetLargestTrackSize: integer;
+    function SafeTrack(Index: integer): TDSKTrack;
     function HasDataRate: boolean;
     function HasRecordingMode: boolean;
     function HasVariantSectors: boolean;
@@ -200,6 +239,7 @@ type
     procedure Unformat;
     function GetTrackSizeFromSectors: word;
     function GetFirstLogicalSector: TDSKSector;
+    function SafeSector(Index: integer): TDSKSector;
     function GetLogicalSectorByID(SectorID: byte): TDSKSector;
     function HasMultiSectoredSector: boolean;
     function HasIndexPointOffsets: boolean;
@@ -1360,6 +1400,84 @@ begin
   Result.MaxEntries := MaxEntries;
 end;
 
+constructor TDSKTrackEnumerator.Create(ADisk: TDSKDisk);
+begin
+  inherited Create;
+  FDisk := ADisk;
+  FSideIdx := 0;
+  FTrackIdx := -1;
+end;
+
+function TDSKTrackEnumerator.MoveNext: boolean;
+begin
+  Inc(FTrackIdx);
+  while FSideIdx < FDisk.Sides do
+  begin
+    if FTrackIdx < FDisk.Side[FSideIdx].Tracks then
+    begin
+      FCurrent := FDisk.Side[FSideIdx].Track[FTrackIdx];
+      exit(True);
+    end;
+    Inc(FSideIdx);
+    FTrackIdx := 0;
+  end;
+  Result := False;
+end;
+
+function TDSKTrackWalk.GetEnumerator: TDSKTrackEnumerator;
+begin
+  Result := TDSKTrackEnumerator.Create(Disk);
+end;
+
+constructor TDSKSectorEnumerator.Create(ADisk: TDSKDisk);
+begin
+  inherited Create;
+  FDisk := ADisk;
+  FSideIdx := 0;
+  FTrackIdx := 0;
+  FSectorIdx := -1;
+end;
+
+function TDSKSectorEnumerator.MoveNext: boolean;
+begin
+  Inc(FSectorIdx);
+  while FSideIdx < FDisk.Sides do
+  begin
+    if FTrackIdx < FDisk.Side[FSideIdx].Tracks then
+    begin
+      if FSectorIdx < FDisk.Side[FSideIdx].Track[FTrackIdx].Sectors then
+      begin
+        FCurrent := FDisk.Side[FSideIdx].Track[FTrackIdx].Sector[FSectorIdx];
+        exit(True);
+      end;
+      Inc(FTrackIdx);
+      FSectorIdx := 0;
+    end
+    else
+    begin
+      Inc(FSideIdx);
+      FTrackIdx := 0;
+      FSectorIdx := 0;
+    end;
+  end;
+  Result := False;
+end;
+
+function TDSKSectorWalk.GetEnumerator: TDSKSectorEnumerator;
+begin
+  Result := TDSKSectorEnumerator.Create(Disk);
+end;
+
+function TDSKDisk.AllTracks: TDSKTrackWalk;
+begin
+  Result.Disk := Self;
+end;
+
+function TDSKDisk.AllSectors: TDSKSectorWalk;
+begin
+  Result.Disk := Self;
+end;
+
 function TDSKDisk.GetNextLogicalSector(Sector: TDSKSector): TDSKSector;
 var
   NextSectorID: integer;
@@ -1437,13 +1555,11 @@ end;
 
 function TDSKDisk.GetFormattedCapacity: integer;
 var
-  Side: TDSKSide;
   Track: TDSKTrack;
 begin
   Result := 0;
-  for Side in self.Side do
-    for Track in Side.Track do
-      Result := Result + Track.Size;
+  for Track in AllTracks do
+    Result := Result + Track.Size;
 end;
 
 function TDSKDisk.GetTrackTotal: word;
@@ -1457,37 +1573,30 @@ end;
 
 function TDSKDisk.GetLogicalTrack(LogicalTrack: word): TDSKTrack;
 var
-  Side: TDSKSide;
   Track: TDSKTrack;
 begin
-  for Side in self.Side do
-    for Track in Side.Track do
-    begin
-      if Track.Logical = LogicalTrack then
-      begin
-        Result := Track;
-        exit;
-      end;
-    end;
-
   Result := nil;
+  for Track in AllTracks do
+    if Track.Logical = LogicalTrack then
+    begin
+      Result := Track;
+      exit;
+    end;
 end;
 
 function TDSKDisk.IsTrackSizeUniform: boolean;
 var
-  Side: TDSKSide;
   Track: TDSKTrack;
   Size: integer;
 begin
   Result := True;
   Size := self.Side[0].Track[0].Size;
-  for Side in self.Side do
-    for Track in Side.Track do
-      if Size <> Track.Size then
-      begin
-        Result := False;
-        exit;
-      end;
+  for Track in AllTracks do
+    if Size <> Track.Size then
+    begin
+      Result := False;
+      exit;
+    end;
 end;
 
 function TDSKDisk.DetectFormat: string;
@@ -1611,19 +1720,15 @@ end;
 
 function TDSKDisk.HasFDCErrors: boolean;
 var
-  Side: TDSKSide;
-  Track: TDSKTrack;
   Sector: TDSKSector;
 begin
   Result := False;
-  for Side in self.Side do
-    for Track in Side.Track do
-      for Sector in Track.Sector do
-        if ((Sector.FDCStatus[1] <> 0) and (Sector.FDCStatus[1] <> 128)) or (Sector.FDCStatus[2] <> 0) then
-        begin
-          Result := True;
-          exit;
-        end;
+  for Sector in AllSectors do
+    if ((Sector.FDCStatus[1] <> 0) and (Sector.FDCStatus[1] <> 128)) or (Sector.FDCStatus[2] <> 0) then
+    begin
+      Result := True;
+      exit;
+    end;
 end;
 
 function TDSKDisk.IsUniform(IgnoreEmptyTracks: boolean): boolean;
@@ -1717,6 +1822,15 @@ begin
     if Size > Result then
       Result := Size;
   end;
+end;
+
+// Track by index, or nil when the index is out of range
+function TDSKSide.SafeTrack(Index: integer): TDSKTrack;
+begin
+  if (Index >= 0) and (Index < Tracks) then
+    Result := Track[Index]
+  else
+    Result := nil;
 end;
 
 function TDSKSide.HasTrackProperty(Prop: TDSKTrackProperty): boolean;
@@ -1825,6 +1939,15 @@ begin
   for Sector in self.Sector do
     if Sector.ID < Result.ID then
       Result := Sector;
+end;
+
+// Sector by index, or nil when the index is out of range
+function TDSKTrack.SafeSector(Index: integer): TDSKSector;
+begin
+  if (Index >= 0) and (Index < Sectors) then
+    Result := Sector[Index]
+  else
+    Result := nil;
 end;
 
 function TDSKTrack.GetLogicalSectorByID(SectorID: byte): TDSKSector;

@@ -302,18 +302,15 @@ end;
 
 function GetTrk(Side: TDSKSide; T: integer): TDSKTrack;
 begin
-  if (T >= 0) and (T < Side.Tracks) then
-    Result := Side.Track[T]
-  else
-    Result := nil;
+  Result := Side.SafeTrack(T);
 end;
 
 function GetSec(Track: TDSKTrack; I: integer): TDSKSector;
 begin
-  if (Track <> nil) and (I >= 0) and (I < Track.Sectors) then
-    Result := Track.Sector[I]
+  if Track = nil then
+    Result := nil
   else
-    Result := nil;
+    Result := Track.SafeSector(I);
 end;
 
 function IsCpcDisk(T0: TDSKTrack): boolean;
