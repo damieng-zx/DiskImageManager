@@ -253,9 +253,11 @@ type
     procedure SaveNavHistory;
     function AddTree(Parent: TTreeNode; Text: string; ImageIdx: integer;
       NodeObject: TObject): TTreeNode;
+    function GetSelectedData(Sender: TObject; AClass: TClass): TObject;
     function GetSelectedSector(Sender: TObject): TDSKSector;
     function GetSelectedTrack(Sender: TObject): TDSKTrack;
     function GetTitle(Data: TTreeNode): string;
+    function GetOwningImageNode(Node: TTreeNode): TTreeNode;
     function GetCurrentImage: TDSKImage;
     function IsDiskNode(Node: TTreeNode): boolean;
     procedure FreeNodeFileSystems(DiskNode: TTreeNode);
@@ -1449,20 +1451,23 @@ begin
   end;
 end;
 
+// Walk up from a tree node to the TDSKImage node that owns it, or nil
+function TfrmMain.GetOwningImageNode(Node: TTreeNode): TTreeNode;
+begin
+  Result := Node;
+  while (Result <> nil) and (TObject(Result.Data).ClassType <> TDskImage) do
+    Result := Result.Parent;
+end;
+
 // Get the current image
 function TfrmMain.GetCurrentImage: TDSKImage;
 var
   Node: TTreeNode;
 begin
   Result := nil;
-  Node := tvwMain.Selected;
-  if (Node = nil) then
-    exit;
-
-  while (TObject(Node.Data).ClassType <> TDskImage) do
-    Node := Node.Parent;
-
-  Result := TDskImage(Node.Data);
+  Node := GetOwningImageNode(tvwMain.Selected);
+  if Node <> nil then
+    Result := TDskImage(Node.Data);
 end;
 
 procedure TfrmMain.itmCloseClick(Sender: TObject);
@@ -1761,13 +1766,11 @@ var
   selectedImage: TDSKImage;
   Node: TTreeNode;
 begin
-  Node := tvwMain.Selected;
+  Node := GetOwningImageNode(tvwMain.Selected);
   if Node <> nil then
   begin
     selectedImage := GetCurrentImage;
     SaveImage(selectedImage);
-    while (TObject(Node.Data).ClassType <> TDskImage) do
-      Node := Node.Parent;
     Node.Text := ExtractFileName(selectedImage.FileName);
   end;
 end;
@@ -1808,31 +1811,30 @@ begin
 end;
 
 // The list holds whatever the current view put there, which is a file or an
-// info row as often as a sector, so it is worth as much of a check as the tree
-function TfrmMain.GetSelectedSector(Sender: TObject): TDSKSector;
+// info row as often as the object wanted, so it is worth as much of a check as
+// the tree. Returns the selection of Sender (the list or the tree) only when it
+// is of the wanted class.
+function TfrmMain.GetSelectedData(Sender: TObject; AClass: TClass): TObject;
 begin
   Result := nil;
   if (Sender = lvwMain) and (lvwMain.Selected <> nil) and
     (lvwMain.Selected.Data <> nil) then
-    if TObject(lvwMain.Selected.Data).ClassType = TDSKSector then
-      Result := TDSKSector(lvwMain.Selected.Data);
+    if TObject(lvwMain.Selected.Data).ClassType = AClass then
+      Result := TObject(lvwMain.Selected.Data);
   if (Sender = tvwMain) and (tvwMain.Selected <> nil) and
     (tvwMain.Selected.Data <> nil) then
-    if TObject(tvwMain.Selected.Data).ClassType = TDSKSector then
-      Result := TDSKSector(tvwMain.Selected.Data);
+    if TObject(tvwMain.Selected.Data).ClassType = AClass then
+      Result := TObject(tvwMain.Selected.Data);
+end;
+
+function TfrmMain.GetSelectedSector(Sender: TObject): TDSKSector;
+begin
+  Result := TDSKSector(GetSelectedData(Sender, TDSKSector));
 end;
 
 function TfrmMain.GetSelectedTrack(Sender: TObject): TDSKTrack;
 begin
-  Result := nil;
-  if (Sender = lvwMain) and (lvwMain.Selected <> nil) and
-    (lvwMain.Selected.Data <> nil) then
-    if TObject(lvwMain.Selected.Data).ClassType = TDSKTrack then
-      Result := TDSKTrack(lvwMain.Selected.Data);
-  if (Sender = tvwMain) and (tvwMain.Selected <> nil) and
-    (tvwMain.Selected.Data <> nil) then
-    if TObject(tvwMain.Selected.Data).ClassType = TDSKTrack then
-      Result := TDSKTrack(tvwMain.Selected.Data);
+  Result := TDSKTrack(GetSelectedData(Sender, TDSKTrack));
 end;
 
 procedure TfrmMain.itmSectorBlankDataClick(Sender: TObject);

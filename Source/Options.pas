@@ -94,6 +94,7 @@ type
     Settings: TSettings;
     procedure Read;
     procedure Write;
+    function PickFont(Current: TFont; Edit: TEdit; FixedOnly: boolean): boolean;
   public
     constructor Create(Owner: TForm; Settings: TSettings); reintroduce;
     destructor Destroy; override;
@@ -136,59 +137,46 @@ begin
   DiskMap.Color := cbxBack.ButtonColor;
 end;
 
-procedure TfrmOptions.btnFontStringsClick(Sender: TObject);
+// Show the font dialog seeded with Current, honouring the fixed-pitch filter,
+// and reflect the chosen font's name in Edit. Returns True when the user
+// accepted a font; the caller then applies dlgFont.Font to its own target.
+function TfrmOptions.PickFont(Current: TFont; Edit: TEdit; FixedOnly: boolean): boolean;
 begin
   with dlgFont do
   begin
-    Font := FontStrings;
-    if Execute then
-    begin
-      edtFontStrings.Text := FontHumanReadable(Font);
-      FontStrings.Assign(Font);
-    end;
+    Font := Current;
+    if FixedOnly then
+      Options := Options + [fdFixedPitchOnly]
+    else
+      Options := Options - [fdFixedPitchOnly];
+    Result := Execute;
+    if Result then
+      Edit.Text := FontHumanReadable(Font);
   end;
+end;
+
+procedure TfrmOptions.btnFontStringsClick(Sender: TObject);
+begin
+  if PickFont(FontStrings, edtFontStrings, False) then
+    FontStrings.Assign(dlgFont.Font);
 end;
 
 procedure TfrmOptions.btnFontMainClick(Sender: TObject);
 begin
-  with dlgFont do
-  begin
-    Font := FontMain;
-    Options := Options - [fdFixedPitchOnly];
-    if Execute then
-    begin
-      edtFontMain.Text := FontHumanReadable(Font);
-      FontMain.Assign(Font);
-    end;
-  end;
+  if PickFont(FontMain, edtFontMain, False) then
+    FontMain.Assign(dlgFont.Font);
 end;
 
 procedure TfrmOptions.btnFontMapClick(Sender: TObject);
 begin
-  with dlgFont do
-  begin
-    Font := DiskMap.Font;
-    Options := Options - [fdFixedPitchOnly];
-    if Execute then
-    begin
-      edtFontMap.Text := FontHumanReadable(Font);
-      DiskMap.Font := Font;
-    end;
-  end;
+  if PickFont(DiskMap.Font, edtFontMap, False) then
+    DiskMap.Font := dlgFont.Font;
 end;
 
 procedure TfrmOptions.btnFontSectorClick(Sender: TObject);
 begin
-  with dlgFont do
-  begin
-    Font := FontSector;
-    Options := Options + [fdFixedPitchOnly];
-    if Execute then
-    begin
-      edtFontSector.Text := FontHumanReadable(Font);
-      FontSector.Assign(Font);
-    end;
-  end;
+  if PickFont(FontSector, edtFontSector, True) then
+    FontSector.Assign(dlgFont.Font);
 end;
 
 procedure TfrmOptions.cbxGridColorChanged(Sender: TObject);
