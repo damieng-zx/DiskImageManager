@@ -66,38 +66,24 @@ end;
 function TMGTFileSystem.Directory: TFPGList<TMGTFile>;
 const
   DIR_ENTRY_SIZE: integer = 256;
+  MAX_ENTRIES = 80;
 var
-  MaxEntries, SectorOffset: integer;
   Sector: TDSKSector;
-  Index: integer;
+  Entry: TDSKDirEntry;
   DiskFile: TMGTFile;
 begin
-  MaxEntries := 80;
-
   Result := TFPGList<TMGTFile>.Create;
 
   Sector := FParentDisk.GetFirstSector();
   if Sector = nil then exit;
 
-  SectorOffset := 0;
-  for Index := 0 to MaxEntries - 1 do
+  for Entry in FParentDisk.DirectoryEntries(Sector, DIR_ENTRY_SIZE, MAX_ENTRIES) do
   begin
-    // Move to next sector if out of data
-    if (SectorOffset + DIR_ENTRY_SIZE > Sector.GetCopySize) then
-    begin
-      Sector := FParentDisk.GetNextLogicalSector(Sector);
-      // The directory can run off the end of a truncated image
-      if Sector = nil then break;
-      SectorOffset := 0;
-    end;
-
-    DiskFile := ReadFileEntry(Sector.Data, SectorOffset);
+    DiskFile := ReadFileEntry(Entry.Sector.Data, Entry.Offset);
     if (DiskFile <> nil) and (DiskFile.FileName <> '') and (DiskFile.SectorsAllocated > 0) then
        Result.Add(DiskFile)
     else
        DiskFile.Free;
-
-    SectorOffset := SectorOffset + DIR_ENTRY_SIZE;
   end;
 end;
 

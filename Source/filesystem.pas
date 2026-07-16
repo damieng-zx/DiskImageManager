@@ -104,11 +104,11 @@ function TCPMFileSystem.Directory: TFPGList<TCPMFile>;
 const
   DIR_ENTRY_SIZE: integer = 32;
 var
-  MaxEntries, SectorOffset: integer;
+  MaxEntries: integer;
   Sector: TDSKSector;
   Track: TDSKTrack;
   Spec: TDSKSpecification;
-  Index: integer;
+  Entry: TDSKDirEntry;
   Extents: TFPGList<TCPMFile>;
   PrimaryDiskFile, ExtentEntry, DiskFile: TCPMFile;
 begin
@@ -126,21 +126,12 @@ begin
 
   Extents := TFPGList<TCPMFile>.Create;
 
-  SectorOffset := 0;
-  for Index := 0 to MaxEntries - 1 do
+  for Entry in FParentDisk.DirectoryEntries(Sector, DIR_ENTRY_SIZE, MaxEntries) do
   begin
-    // Move to next sector if out of data
-    if (SectorOffset + DIR_ENTRY_SIZE > Sector.GetCopySize) then
+    if Entry.Sector.Data[Entry.Offset] < 32 then
     begin
-      Sector := FParentDisk.GetNextLogicalSector(Sector);
-      if Sector = nil then break;
-      SectorOffset := 0;
-    end;
-
-    if Sector.Data[SectorOffset] < 32 then
-    begin
-      DiskFile := ReadFileEntry(Sector.Data, SectorOffset);
-      DiskFile.EntryIndex := Index;
+      DiskFile := ReadFileEntry(Entry.Sector.Data, Entry.Offset);
+      DiskFile.EntryIndex := Entry.Index;
       if (DiskFile.FileName <> '') and (DiskFile.Blocks.Count > 0) then
       begin
         if DiskFile.Extent = 0 then
@@ -152,10 +143,8 @@ begin
         DiskFile.Free;
     end;
 
-    if Sector.Data[SectorOffset] = 32 then
-      DiskLabel := ReadLabelEntry(Sector.Data, SectorOffset);
-
-    SectorOffset := SectorOffset + DIR_ENTRY_SIZE;
+    if Entry.Sector.Data[Entry.Offset] = 32 then
+      DiskLabel := ReadLabelEntry(Entry.Sector.Data, Entry.Offset);
   end;
 
   Extents.Sort(CompareByExtent);

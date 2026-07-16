@@ -34,6 +34,37 @@ type
   TDSKFormatSpecification = class;
   TDSKSpecification = class;
 
+  // Directory entry cursor: walks fixed-size entries packed across the logical
+  // sectors of a disk, crossing sector boundaries as it goes. Shared by the
+  // CP/M and MGT file systems, whose directories differ only in the entry size,
+  // the entry count and which sector the walk starts from.
+  TDSKDirEntry = record
+    Sector: TDSKSector;
+    Offset: integer;
+    Index: integer;
+  end;
+
+  TDSKDirEntryEnumerator = class(TObject)
+  private
+    FDisk: TDSKDisk;
+    FSector: TDSKSector;
+    FOffset, FIndex, FEntrySize, FMaxEntries: integer;
+    FStarted: boolean;
+    FCurrent: TDSKDirEntry;
+  public
+    constructor Create(ADisk: TDSKDisk; AStart: TDSKSector; AEntrySize, AMaxEntries: integer);
+    function MoveNext: boolean;
+    property Current: TDSKDirEntry read FCurrent;
+  end;
+
+  TDSKDirEntryWalk = record
+    Disk: TDSKDisk;
+    Start: TDSKSector;
+    EntrySize: integer;
+    MaxEntries: integer;
+    function GetEnumerator: TDSKDirEntryEnumerator;
+  end;
+
   // Image
   TDSKImageFormat = (diStandardDSK, diExtendedDSK, diRawMGT, diNotYetSaved, diInvalid);
 
@@ -96,6 +127,7 @@ type
     function GetLogicalTrack(LogicalTrack: word): TDSKTrack;
     function GetNextLogicalSector(Sector: TDSKSector): TDSKSector;
     function GetSectorByBlock(Block: integer): TDSKSector;
+    function DirectoryEntries(Start: TDSKSector; EntrySize, MaxEntries: integer): TDSKDirEntryWalk;
     function GetAllStrings(MinLength: integer; MinUniques: integer): TStringList;
     function HasFDCErrors: boolean;
     function IsTrackSizeUniform: boolean;
@@ -1268,6 +1300,64 @@ begin
   end;
 
   Result := Sector;
+end;
+
+constructor TDSKDirEntryEnumerator.Create(ADisk: TDSKDisk; AStart: TDSKSector;
+  AEntrySize, AMaxEntries: integer);
+begin
+  inherited Create;
+  FDisk := ADisk;
+  FSector := AStart;
+  FEntrySize := AEntrySize;
+  FMaxEntries := AMaxEntries;
+  FOffset := 0;
+  FIndex := 0;
+  FStarted := False;
+end;
+
+function TDSKDirEntryEnumerator.MoveNext: boolean;
+begin
+  // The first call yields entry 0; later calls step on by one entry, so the
+  // sector-boundary check below sees the same offsets the hand-rolled loops did
+  if FStarted then
+  begin
+    Inc(FIndex);
+    FOffset := FOffset + FEntrySize;
+  end
+  else
+    FStarted := True;
+
+  Result := False;
+  if (FSector = nil) or (FIndex >= FMaxEntries) then exit;
+
+  // Cross into the next logical sector when this one has no room left for a
+  // whole entry; the directory can run off the end of a truncated image
+  if FOffset + FEntrySize > FSector.GetCopySize then
+  begin
+    FSector := FDisk.GetNextLogicalSector(FSector);
+    if FSector = nil then exit;
+    FOffset := 0;
+  end;
+
+  FCurrent.Sector := FSector;
+  FCurrent.Offset := FOffset;
+  FCurrent.Index := FIndex;
+  Result := True;
+end;
+
+function TDSKDirEntryWalk.GetEnumerator: TDSKDirEntryEnumerator;
+begin
+  Result := TDSKDirEntryEnumerator.Create(Disk, Start, EntrySize, MaxEntries);
+end;
+
+// Walk fixed-size directory entries packed across the disk's logical sectors,
+// starting at Start and stopping after MaxEntries or when the data runs out.
+function TDSKDisk.DirectoryEntries(Start: TDSKSector; EntrySize, MaxEntries: integer): TDSKDirEntryWalk;
+begin
+  Result.Disk := Self;
+  Result.Start := Start;
+  Result.EntrySize := EntrySize;
+  Result.MaxEntries := MaxEntries;
 end;
 
 function TDSKDisk.GetNextLogicalSector(Sector: TDSKSector): TDSKSector;
