@@ -22,7 +22,8 @@ uses
   TestComparers,
   TestSinclairBasic,
   TestAmstradBasic,
-  TestDskImage;
+  TestDskImage,
+  TestFormatAnalysis;
 
 type
   TDIMTestRunner = class(TTestRunner)

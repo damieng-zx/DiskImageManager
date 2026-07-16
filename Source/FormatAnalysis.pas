@@ -333,9 +333,33 @@ begin
   Result := First;
 end;
 
+function LastFormattedTrack(Side: TDSKSide): integer;
+var
+  T: integer;
+  Track: TDSKTrack;
+begin
+  Result := -1;
+  for T := 0 to Side.Tracks - 1 do
+  begin
+    Track := GetTrk(Side, T);
+    if (Track <> nil) and (Track.Sectors > 0) then Result := T;
+  end;
+end;
+
+// Whether every formatted track has the shape the first one has.
+//
+// The tracks past the last formatted one are not part of that shape. An imager
+// reads a fixed number of tracks, so a 40 track disk read as 42 ends in a tail
+// of unformatted ones that says nothing about the disk. Counting the tail as a
+// shape of its own made every such disk non-uniform, and a bad sector anywhere
+// on one was then reported as unknown copy protection.
+//
+// An unformatted track with formatted tracks still to come is a hole, not a
+// tail, and does mean something: an empty track 1 is how the P.M.S. and Paul
+// Owens loaders show up, so it has to go on counting as non-uniform.
 function SideIsUniform(Side: TDSKSide): boolean;
 var
-  Sc, Sz, T: integer;
+  Sc, Sz, T, Last: integer;
   First: TDSKTrack;
   Track: TDSKTrack;
 begin
@@ -345,7 +369,8 @@ begin
   if First = nil then exit;
   Sc := First.Sectors;
   Sz := UniformAdvSize(First);
-  for T := 1 to Side.Tracks - 1 do
+  Last := LastFormattedTrack(Side);
+  for T := 1 to Last do
   begin
     Track := GetTrk(Side, T);
     if Track = nil then continue;
@@ -400,19 +425,6 @@ begin
     if not ((S.ID = I) and (S.FDCSize = I)) then exit;
   end;
   Result := True;
-end;
-
-function IntInArray(Value: integer; const Arr: array of integer): boolean;
-var
-  I: integer;
-begin
-  Result := False;
-  for I := 0 to High(Arr) do
-    if Arr[I] = Value then
-    begin
-      Result := True;
-      exit;
-    end;
 end;
 
 function LargestTrackDataSize(Side: TDSKSide): integer;
@@ -1342,56 +1354,18 @@ end;
 
 // --- Unknown-protection fallback (non-uniform disk with FDC errors) ---------
 
+// Every known protection has been ruled out by the time this is reached, so
+// all that is left to go on is the shape of the disk. Errors on a disk whose
+// tracks are all alike are damage, and damage is not worth reporting; it takes
+// a disk that is also shaped like nothing a formatter would produce to be
+// worth saying anything about.
 function UnknownFallback(Side: TDSKSide): TProtectionResult;
-var
-  T, Used, MaxValid: integer;
-  ErrorTracks: array of integer;
-  IsLoneHigh, AllOk: boolean;
-  Track: TDSKTrack;
 begin
   Result := ProtNone;
   if SideIsUniform(Side) then exit;
+  if not SideHasFDCErrors(Side) then exit;
 
-  Used := 0;
-  for T := 0 to Side.Tracks - 1 do
-    if GetTrk(Side, T).Sectors > 0 then Inc(Used);
-  if Used < 40 then MaxValid := Used else MaxValid := 40;
-
-  SetLength(ErrorTracks, 0);
-  for T := 0 to MaxValid - 1 do
-    if TrackHasError(GetTrk(Side, T)) then
-    begin
-      SetLength(ErrorTracks, Length(ErrorTracks) + 1);
-      ErrorTracks[High(ErrorTracks)] := T;
-    end;
-
-  if Length(ErrorTracks) = 0 then exit;
-
-  // A lone high-track CRC error on an otherwise standard disk is not protection.
-  IsLoneHigh := False;
-  if Length(ErrorTracks) <= 2 then
-  begin
-    AllOk := True;
-    for T := 0 to High(ErrorTracks) do
-      if ErrorTracks[T] < 35 then AllOk := False;
-    if AllOk then
-    begin
-      AllOk := True;
-      for T := 0 to Side.Tracks - 1 do
-      begin
-        Track := GetTrk(Side, T);
-        if (Track = nil) or (Track.Sectors = 0) then continue;
-        if IntInArray(T, ErrorTracks) then continue;
-        if (Track.Sectors = 9) and (UniformAdvSize(Track) = 512) and (not AnyDeleted(Track)) then continue;
-        AllOk := False;
-        break;
-      end;
-      IsLoneHigh := AllOk;
-    end;
-  end;
-
-  if not IsLoneHigh then
-    Result := ProtConfirmed('Unknown copy protection', 'non-uniform disk with FDC errors');
+  Result := ProtConfirmed('Unknown copy protection', 'non-uniform disk with FDC errors');
 end;
 
 // --- Main detection flow (spec 2) ------------------------------------------
