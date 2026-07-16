@@ -1833,11 +1833,15 @@ begin
     dsSideSingle: Logical := Track;
     dsSideDoubleAlternate: Logical := (Track * Formatter.GetSidesCount) + Side;
     dsSideDoubleSuccessive: Logical := (Side * Formatter.TracksPerSide) + Track;
+    // Side 1 is numbered from the outside back in, so it carries on from the
+    // last track of side 0 rather than counting down into it: numbering it
+    // TracksPerSide - Track gave side 1 the numbers side 0 already had, and
+    // every track but the first answered to two tracks at once
     dsSideDoubleReverse:
       if Side = 0 then
         Logical := Track
       else
-        Logical := Formatter.TracksPerSide - Track;
+        Logical := (Formatter.TracksPerSide * 2) - 1 - Track;
   end;
 
   for EIdx := 0 to Sectors - 1 do
@@ -2027,7 +2031,10 @@ constructor TDSKSpecification.Create(ParentDisk: TDSKDisk);
 begin
   inherited Create;
   FParentDisk := ParentDisk;
-  Read;
+  // This class has no Read, so the bare Read left here resolved to the one in
+  // System and did nothing at all, leaving a new specification's fields as
+  // whatever they happened to be until something called Identify
+  SetDefaults;
 end;
 
 destructor TDSKSpecification.Destroy;
@@ -2446,12 +2453,12 @@ begin
       TrackSkewIdx := TrackSkewIdx + (SkewSide * Side);
     end;
 
+    // The skew follows the track the head is over, and on side 1 of a reversed
+    // disk that is not what the logical number counts. This sat in the case's
+    // else branch, which only dsSideInvalid ever reaches, so it never ran.
     dsSideDoubleReverse:
-    else
-    begin
       if (Side = 1) then
-        TrackSkewIdx := ((TracksPerSide - LogicalTrack) * SkewTrack) + (SkewSide * Side);
-    end;
+        TrackSkewIdx := ((((TracksPerSide * 2) - 1 - LogicalTrack) * SkewTrack)) + SkewSide;
   end;
 
   Result := FSectorIDs[(TrackSkewIdx + Sector) mod SectorsPerTrack];
