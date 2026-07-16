@@ -328,9 +328,11 @@ object frmMain: TfrmMain
         Caption = 'Close All Except'
         object itmCloseAllExceptModified: TMenuItem
           Caption = 'Modified Images'
+          OnClick = itmCloseAllExceptClick
         end
         object itmCloseAllExceptV5: TMenuItem
           Caption = 'Extended DSK (v5) Images'
+          OnClick = itmCloseAllExceptClick
         end
         object itmCloseAllExceptFDCError: TMenuItem
           Caption = 'Images with Sector Errors'
