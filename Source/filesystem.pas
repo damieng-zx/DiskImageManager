@@ -166,7 +166,11 @@ begin
     Extents.Remove(ExtentEntry);
     for PrimaryDiskFile in Result do
     begin
-      if PrimaryDiskFile.FileName = ExtentEntry.FileName then
+      // The name alone does not say which file an extent belongs to: the same
+      // name under another user number is another file, and matching on the
+      // name only handed one user's extents to whoever held the name first
+      if (PrimaryDiskFile.User = ExtentEntry.User) and
+        (PrimaryDiskFile.FileName = ExtentEntry.FileName) then
       begin
         PrimaryDiskFile.Blocks.AddList(ExtentEntry.Blocks);
         PrimaryDiskFile.SizeOnDisk := PrimaryDiskFile.SizeOnDisk + ExtentEntry.SizeOnDisk;
