@@ -271,7 +271,7 @@ begin
       Break;
 
     // Read line number (2 bytes, big-endian)
-    LineNum := (word(Data[Pos]) shl 8) or word(Data[Pos + 1]);
+    LineNum := ReadWordBE(Data, Pos);
     Inc(Pos, 2);
 
     // Valid Spectrum BASIC line numbers are 0-9999
@@ -279,7 +279,7 @@ begin
       Break;
 
     // Read line length (2 bytes, little-endian)
-    LineLen := word(Data[Pos]) or (word(Data[Pos + 1]) shl 8);
+    LineLen := ReadWordLE(Data, Pos);
     Inc(Pos, 2);
 
     // Validate line length
@@ -315,7 +315,7 @@ begin
 
   // PLUS3DOS header bytes 20-21 contain the offset to the variable area
   // which is the length of just the BASIC program (excluding variables)
-  ProgLength := word(FileData[20]) or (word(FileData[21]) shl 8);
+  ProgLength := ReadWordLE(FileData, 20);
   if ProgLength = 0 then
     Exit;
   if ProgLength > System.Length(FileData) - 128 then
@@ -502,13 +502,13 @@ begin
     if Pos + 4 > DataLen then
       Break;
 
-    LineNum := (word(Data[Pos]) shl 8) or word(Data[Pos + 1]);
+    LineNum := ReadWordBE(Data, Pos);
     Inc(Pos, 2);
 
     if LineNum > 9999 then
       Break;
 
-    LineLen := word(Data[Pos]) or (word(Data[Pos + 1]) shl 8);
+    LineLen := ReadWordLE(Data, Pos);
     Inc(Pos, 2);
 
     if LineLen < 1 then
@@ -543,7 +543,7 @@ begin
   if System.Length(FileData) < 128 then
     Exit;
 
-  ProgLength := word(FileData[20]) or (word(FileData[21]) shl 8);
+  ProgLength := ReadWordLE(FileData, 20);
   if ProgLength = 0 then
     Exit;
   if ProgLength > System.Length(FileData) - 128 then
@@ -599,7 +599,7 @@ begin
   TotalElems := 1;
   for I := 0 to DimCount - 1 do
   begin
-    DimSize := Data[Pos] or (word(Data[Pos + 1]) shl 8);
+    DimSize := ReadWordLE(Data, Pos);
     Inc(Pos, 2);
     if DimSize < 1 then
       Exit;  // a dimension of nothing leaves no elements to read

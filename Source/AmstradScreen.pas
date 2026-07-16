@@ -194,7 +194,7 @@ begin
   while (Pos + 5 <= Len) and (Data[Pos] = Ord('M')) and
         (Data[Pos + 1] = Ord('J')) and (Data[Pos + 2] = Ord('H')) do
   begin
-    BlockLen := Data[Pos + 3] or (Data[Pos + 4] shl 8);  // uncompressed length
+    BlockLen := ReadWordLE(Data, Pos + 3);  // uncompressed length
     Pos := Pos + 5;
     SetLength(Result, OutLen + BlockLen);
 
@@ -384,7 +384,7 @@ begin
 
   // Sanity-check the stored width against the row length so we don't mistake an
   // arbitrary file for a window: width is in mode-2 pixels, ~8 per stored byte.
-  Width := Data[Len - 4] or (Data[Len - 3] shl 8);
+  Width := ReadWordLE(Data, Len - 4);
   if (Width > BytesPerRow * 8) or (Width <= (BytesPerRow - 2) * 8) then
     Exit;
 

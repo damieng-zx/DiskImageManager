@@ -302,14 +302,14 @@ begin
       $1A:  // 16-bit integer
         if Pos + 1 < EndPos then
         begin
-          Result := Result + IntToStr(Data[Pos] or (Data[Pos + 1] shl 8));
+          Result := Result + IntToStr(ReadWordLE(Data, Pos));
           Inc(Pos, 2);
         end;
 
       $1B:  // 16-bit binary
         if Pos + 1 < EndPos then
         begin
-          Value := Data[Pos] or (Data[Pos + 1] shl 8);
+          Value := ReadWordLE(Data, Pos);
           Result := Result + '&X' + FormatBinary(Value);
           Inc(Pos, 2);
         end;
@@ -317,7 +317,7 @@ begin
       $1C:  // 16-bit hexadecimal
         if Pos + 1 < EndPos then
         begin
-          Value := Data[Pos] or (Data[Pos + 1] shl 8);
+          Value := ReadWordLE(Data, Pos);
           Result := Result + '&' + Format('%X', [Value]);
           Inc(Pos, 2);
         end;
@@ -328,7 +328,7 @@ begin
       $1E:  // line number
         if Pos + 1 < EndPos then
         begin
-          Result := Result + IntToStr(Data[Pos] or (Data[Pos + 1] shl 8));
+          Result := Result + IntToStr(ReadWordLE(Data, Pos));
           Inc(Pos, 2);
         end;
 
@@ -380,13 +380,13 @@ begin
 
   while Pos + 4 <= DataLen do
   begin
-    LineLen := Data[Pos] or (Data[Pos + 1] shl 8);
+    LineLen := ReadWordLE(Data, Pos);
     if LineLen = 0 then
       Break;  // end of program
     if LineLen < 4 then
       Break;  // malformed
 
-    LineNum := Data[Pos + 2] or (Data[Pos + 3] shl 8);
+    LineNum := ReadWordLE(Data, Pos + 2);
     LineEnd := Pos + LineLen;
     if LineEnd > DataLen then
       LineEnd := DataLen;
@@ -514,14 +514,14 @@ begin
       $1A:
         if Pos + 1 < EndPos then
         begin
-          Result := Result + IntToStr(Data[Pos] or (Data[Pos + 1] shl 8));
+          Result := Result + IntToStr(ReadWordLE(Data, Pos));
           Inc(Pos, 2);
         end;
 
       $1B:
         if Pos + 1 < EndPos then
         begin
-          Value := Data[Pos] or (Data[Pos + 1] shl 8);
+          Value := ReadWordLE(Data, Pos);
           Result := Result + '&X' + FormatBinary(Value);
           Inc(Pos, 2);
         end;
@@ -529,7 +529,7 @@ begin
       $1C:
         if Pos + 1 < EndPos then
         begin
-          Value := Data[Pos] or (Data[Pos + 1] shl 8);
+          Value := ReadWordLE(Data, Pos);
           Result := Result + '&' + Format('%X', [Value]);
           Inc(Pos, 2);
         end;
@@ -540,7 +540,7 @@ begin
       $1E:
         if Pos + 1 < EndPos then
         begin
-          Result := Result + IntToStr(Data[Pos] or (Data[Pos + 1] shl 8));
+          Result := Result + IntToStr(ReadWordLE(Data, Pos));
           Inc(Pos, 2);
         end;
 
@@ -604,13 +604,13 @@ begin
 
   while Pos + 4 <= DataLen do
   begin
-    LineLen := Data[Pos] or (Data[Pos + 1] shl 8);
+    LineLen := ReadWordLE(Data, Pos);
     if LineLen = 0 then
       Break;
     if LineLen < 4 then
       Break;
 
-    LineNum := Data[Pos + 2] or (Data[Pos + 3] shl 8);
+    LineNum := ReadWordLE(Data, Pos + 2);
     LineEnd := Pos + LineLen;
     if LineEnd > DataLen then
       LineEnd := DataLen;

@@ -223,7 +223,7 @@ begin
         end
         else
         begin
-          AllocBlock := Data[AllocOffset] + (Data[AllocOffset + 1] << 8);
+          AllocBlock := ReadWordLE(Data, AllocOffset);
           AllocOffset := AllocOffset + 2;
         end;
         if AllocBlock > 0 then
@@ -258,15 +258,15 @@ begin
   CalcChecksum := 0;
   for Idx := 0 to 66 do
     CalcChecksum := CalcChecksum + Data[Idx];
-  if CalcCheckSum <> Data[67] + (Data[68] << 8) then exit;
+  if CalcCheckSum <> ReadWordLE(Data, 67) then exit;
 
   DiskFile.Checksum := True;
   DiskFile.HeaderType := 'AMSDOS';
-  DiskFile.Size := Data[64] + (Data[65] << 8) + (Data[66] << 16);
+  DiskFile.Size := Read24LE(Data, 64);
   DiskFile.HeaderSize := 128;
 
-  LoadAddr := Data[21] + (Data[22] << 8);
-  ExecAddr := Data[26] + (Data[27] << 8);
+  LoadAddr := ReadWordLE(Data, 21);
+  ExecAddr := ReadWordLE(Data, 26);
 
   case Data[18] of
     0: DiskFile.Meta := 'BASIC';
@@ -305,10 +305,10 @@ begin
 
   DiskFile.Checksum := CalcChecksum = Data[127];
   DiskFile.HeaderType := Sig;
-  DiskFile.Size := Data[11] + (Data[12] << 8) + (Data[13] << 16) + (Data[14] << 24);
+  DiskFile.Size := Read32LE(Data, 11);
   DiskFile.HeaderSize := 128;
 
-  Param1 := Data[18] + (Data[19] << 8);
+  Param1 := ReadWordLE(Data, 18);
 
   case Data[15] of
     0: begin
@@ -317,9 +317,9 @@ begin
       else
         DiskFile.Meta := 'BASIC';
     end;
-    1: DiskFile.Meta := Format('DATA %s(%d)', [char(Data[19] - 64), Data[129] + (Data[130] << 8)]);
-    2: DiskFile.Meta := Format('DATA %s$(%d)', [char(Data[19] - 128), Data[129] + (Data[130] << 8)]);
-    3: DiskFile.Meta := Format('CODE %d,%d', [Param1,  Data[16] + (Data[17] << 8)]);
+    1: DiskFile.Meta := Format('DATA %s(%d)', [char(Data[19] - 64), ReadWordLE(Data, 129)]);
+    2: DiskFile.Meta := Format('DATA %s$(%d)', [char(Data[19] - 128), ReadWordLE(Data, 129)]);
+    3: DiskFile.Meta := Format('CODE %d,%d', [Param1,  ReadWordLE(Data, 16)]);
     else
       DiskFile.Meta := Format('Custom 0x%x', [Data[15]]);
   end;

@@ -158,7 +158,7 @@ begin
     if Data[Offset] and 64 <> 0 then  Meta := Meta + ' (protected)';
     if Data[Offset] and 128 <> 0 then Meta := Meta + ' (hidden)';
 
-    SectorsAllocated := Data[Offset + 11] * 256 + Data[Offset + 12];
+    SectorsAllocated := ReadWordBE(Data, Offset + 11);
     AllocatedSize := SectorsAllocated * FParentDisk.GetFirstSector().AdvertisedSize;
 
     FirstSector := Track.GetLogicalSectorByID(Data[Offset + 14]);

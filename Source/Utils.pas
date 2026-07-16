@@ -35,6 +35,11 @@ function StrInByteArray(ByteArray: array of byte; SubString: string;
   Start: integer): boolean;
 function StrBufPos(ByteArray: array of byte; SubString: string): integer;
 
+function ReadWordLE(const Data: array of byte; Offset: integer): word;
+function ReadWordBE(const Data: array of byte; Offset: integer): word;
+function Read24LE(const Data: array of byte; Offset: integer): longword;
+function Read32LE(const Data: array of byte; Offset: integer): longword;
+
 function CompareBlock(A: array of char; B: string): boolean;
 function CompareBlockStart(A: array of char; B: string; Start: integer): boolean;
 function CompareBlockInsensitive(A: array of char; B: string): boolean;
@@ -143,6 +148,32 @@ begin
       Result := False;
     Inc(Idx);
   end;
+end;
+
+// Read a little-endian 16-bit word from two consecutive bytes (low byte first)
+function ReadWordLE(const Data: array of byte; Offset: integer): word;
+begin
+  Result := Data[Offset] or (Data[Offset + 1] shl 8);
+end;
+
+// Read a big-endian 16-bit word from two consecutive bytes (high byte first)
+function ReadWordBE(const Data: array of byte; Offset: integer): word;
+begin
+  Result := (Data[Offset] shl 8) or Data[Offset + 1];
+end;
+
+// Read a little-endian 24-bit value from three consecutive bytes (low byte first)
+function Read24LE(const Data: array of byte; Offset: integer): longword;
+begin
+  Result := longword(Data[Offset]) or (longword(Data[Offset + 1]) shl 8) or
+    (longword(Data[Offset + 2]) shl 16);
+end;
+
+// Read a little-endian 32-bit value from four consecutive bytes (low byte first)
+function Read32LE(const Data: array of byte; Offset: integer): longword;
+begin
+  Result := longword(Data[Offset]) or (longword(Data[Offset + 1]) shl 8) or
+    (longword(Data[Offset + 2]) shl 16) or (longword(Data[Offset + 3]) shl 24);
 end;
 
 // Draw a windows style 3D border
