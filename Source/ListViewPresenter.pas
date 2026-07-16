@@ -34,7 +34,7 @@ type
     FOwnedFiles: TObjectList;
 
     procedure SetListSimple;
-    function AddColumn(Caption: string): TListColumn;
+    function AddColumn(Caption: string; Alignment: TAlignment = taRightJustify): TListColumn;
     function AddColumns(Captions: array of string): TListColumnArray;
     function AddListInfo(Key: string; Value: string): TListItem;
     function AddListTrack(Track: TDSKTrack; ShowModulation: boolean;
@@ -97,11 +97,11 @@ begin
   end;
 end;
 
-function TListViewPresenter.AddColumn(Caption: string): TListColumn;
+function TListViewPresenter.AddColumn(Caption: string; Alignment: TAlignment): TListColumn;
 begin
   Result := FListView.Columns.Add;
   Result.Caption := Caption;
-  Result.Alignment := taRightJustify;
+  Result.Alignment := Alignment;
 end;
 
 function TListViewPresenter.AddColumns(Captions: array of string): TListColumnArray;
@@ -369,8 +369,7 @@ begin
   if Track.HasIndexPointOffsets then
     AddColumn('Index Point');
 
-  with FListView.Columns.Add do
-    Caption := 'Status';
+  AddColumn('Status', taLeftJustify);
 
   for Sector in Track.Sector do
     AddListSector(Sector, Track.HasMultiSectoredSector, Track.HasIndexPointOffsets);
@@ -473,49 +472,18 @@ begin
     if DiskFile.HeaderType <> 'None' then HasHeaders := True;
   end;
 
-  with FListView.Columns do
+  AddColumn('File name', taLeftJustify);
+  if HasUserAreas then AddColumn('User Area');
+  AddColumn('Index');
+  AddColumn('Blocks');
+  AddColumn('Allocated');
+  AddColumn('Actual');
+  AddColumn('Attributes', taLeftJustify);
+  if HasHeaders then
   begin
-    with Add do
-      Caption := 'File name';
-    if HasUserAreas then
-      with Add do
-      begin
-        Caption := 'User Area';
-        Alignment := taRightJustify;
-      end;
-
-    with Add do
-    begin
-      Caption := 'Index';
-      Alignment := taRightJustify;
-    end;
-    with Add do
-    begin
-      Caption := 'Blocks';
-      Alignment := taRightJustify;
-    end;
-    with Add do
-    begin
-      Caption := 'Allocated';
-      Alignment := taRightJustify;
-    end;
-    with Add do
-    begin
-      Caption := 'Actual';
-      Alignment := taRightJustify;
-    end;
-    with Add do
-      Caption := 'Attributes';
-
-    if HasHeaders then
-    begin
-      with Add do
-        Caption := 'Header';
-      with Add do
-        Caption := 'Checksum';
-      with Add do
-        Caption := 'Meta';
-    end;
+    AddColumn('Header', taLeftJustify);
+    AddColumn('Checksum', taLeftJustify);
+    AddColumn('Meta', taLeftJustify);
   end;
 
   with FListView do
@@ -561,23 +529,10 @@ begin
   for DiskFile in Files do
     FOwnedFiles.Add(DiskFile);
 
-  with FListView.Columns do
-  begin
-    with Add do
-      Caption := 'File name';
-    with Add do
-    begin
-      Caption := 'Sectors';
-      Alignment := taRightJustify;
-    end;
-    with Add do
-    begin
-      Caption := 'Allocated';
-      Alignment := taRightJustify;
-    end;
-    with Add do
-      Caption := 'Meta';
-  end;
+  AddColumn('File name', taLeftJustify);
+  AddColumn('Sectors');
+  AddColumn('Allocated');
+  AddColumn('Meta', taLeftJustify);
 
   with FListView do
   begin
