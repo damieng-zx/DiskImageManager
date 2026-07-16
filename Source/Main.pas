@@ -17,7 +17,7 @@ uses
   DiskMap, DskImage, Utils, About, Options, SectorProperties,
   TrackProperties, Settings, FileSystem, MGTFileSystem, ListViewPresenter,
   Comparers, FileViewer, SinclairBasic, ZXScreenViewer, SpectrumScreen,
-  CPCScreenViewer, AmstradScreen,
+  CPCScreenViewer, AmstradScreen, ShellDragDrop,
   Classes, Graphics, SysUtils, Forms, Dialogs, Menus,
   ComCtrls, ExtCtrls, Controls, Contnrs,
   Clipbrd, StdCtrls, FileUtil, StrUtils, LazFileUtils, LConvEncoding, CommCtrl;
@@ -215,6 +215,14 @@ type
     procedure tvwMainDblClick(Sender: TObject);
     procedure tvwMainMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: integer);
+    procedure tvwMainMouseMove(Sender: TObject; Shift: TShiftState; X, Y: integer);
+    procedure tvwMainMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: integer);
+    procedure lvwMainMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: integer);
+    procedure lvwMainMouseMove(Sender: TObject; Shift: TShiftState; X, Y: integer);
+    procedure lvwMainMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: integer);
     procedure itmBackClick(Sender: TObject);
     procedure itmForwardClick(Sender: TObject);
     procedure lvwMainSelectItem(Sender: TObject; Item: TListItem;
@@ -228,6 +236,11 @@ type
     FNavHistory: TObjectList;
     FNavIndex: integer;
     FNavigating: boolean;
+    // Drag-out gesture: which control armed it on mouse-down, and from where, so
+    // a move past the threshold can begin an Explorer-style file drag.
+    FDragArmedTree: boolean;
+    FDragArmedList: boolean;
+    FDragStart: TPoint;
     function BuildNavLocation: TNavLocation;
     function ResolveNavLocation(Loc: TNavLocation): TTreeNode;
     function SameNavLocation(A, B: TNavLocation): boolean;
@@ -252,6 +265,9 @@ type
 
     procedure SaveExtractedFile(WithHeader: boolean);
     procedure SaveExtractedFilesToFolder(WithHeader: boolean; AllFiles: boolean);
+    function DraggableImageFile(Node: TTreeNode; out FileName: string): boolean;
+    procedure StartTreeFileDrag;
+    procedure StartListFileDrag;
     procedure OnApplicationDropFiles(Sender: TObject; const FileNames: array of string);
     procedure UpdateRecentFilesMenu;
   public
@@ -345,6 +361,13 @@ begin
   DiskMap.OnSectorClick := DiskMapSectorClick;
   DiskMap.OnTrackClick := DiskMapTrackClick;
   Application.AddOnDropFilesHandler(OnApplicationDropFiles);
+
+  // Drag files out to other applications, like dragging from Explorer
+  tvwMain.OnMouseMove := tvwMainMouseMove;
+  tvwMain.OnMouseUp := tvwMainMouseUp;
+  lvwMain.OnMouseDown := lvwMainMouseDown;
+  lvwMain.OnMouseMove := lvwMainMouseMove;
+  lvwMain.OnMouseUp := lvwMainMouseUp;
 
   // Navigation history (browser-style back/forward)
   FNavHistory := TObjectList.Create(True);
@@ -1981,6 +2004,7 @@ procedure TfrmMain.tvwMainMouseDown(Sender: TObject; Button: TMouseButton;
   Shift: TShiftState; X, Y: integer);
 var
   Node: TTreeNode;
+  FileName: string;
 begin
   if Button = mbRight then
   begin
@@ -1991,7 +2015,130 @@ begin
   else if Button = mbExtra1 then
     GoBack
   else if Button = mbExtra2 then
-    GoForward;
+    GoForward
+  else if Button = mbLeft then
+  begin
+    // Arm a possible drag-out of the disk image under the cursor. The drag only
+    // begins if the mouse then moves past the threshold, so a plain click still
+    // just selects.
+    Node := tvwMain.GetNodeAt(X, Y);
+    FDragArmedTree := (Node <> nil) and DraggableImageFile(Node, FileName);
+    FDragStart := Point(X, Y);
+  end;
+end;
+
+procedure TfrmMain.tvwMainMouseMove(Sender: TObject; Shift: TShiftState; X, Y: integer);
+begin
+  if FDragArmedTree and (ssLeft in Shift) then
+    if (Abs(X - FDragStart.X) >= Mouse.DragThreshold) or
+      (Abs(Y - FDragStart.Y) >= Mouse.DragThreshold) then
+    begin
+      FDragArmedTree := False;
+      StartTreeFileDrag;
+    end;
+end;
+
+procedure TfrmMain.tvwMainMouseUp(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: integer);
+begin
+  FDragArmedTree := False;
+end;
+
+// The disk image a node stands for, when it can be dragged out: a disk node
+// whose image is saved to a file that is still there. An unsaved or changed
+// image has no on-disk file to hand over, so it is not draggable.
+function TfrmMain.DraggableImageFile(Node: TTreeNode; out FileName: string): boolean;
+var
+  Image: TDSKImage;
+begin
+  FileName := '';
+  Result := False;
+  if (Node = nil) or (Node.Data = nil) or not IsDiskNode(Node) then exit;
+  if not (TObject(Node.Data) is TDSKImage) then exit;
+  Image := TDSKImage(Node.Data);
+  if Image.IsChanged or (Image.FileName = '') or not FileExists(Image.FileName) then exit;
+  FileName := Image.FileName;
+  Result := True;
+end;
+
+procedure TfrmMain.StartTreeFileDrag;
+var
+  FileName: string;
+begin
+  if (tvwMain.Selected <> nil) and DraggableImageFile(tvwMain.Selected, FileName) then
+    DragFilesAsCopy([FileName]);
+end;
+
+procedure TfrmMain.lvwMainMouseDown(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: integer);
+var
+  Item: TListItem;
+begin
+  if Button <> mbLeft then exit;
+  Item := lvwMain.GetItemAt(X, Y);
+  FDragArmedList := (Item <> nil) and (Item.Data <> nil) and
+    (TObject(Item.Data).ClassType = TCPMFile);
+  FDragStart := Point(X, Y);
+end;
+
+procedure TfrmMain.lvwMainMouseMove(Sender: TObject; Shift: TShiftState; X, Y: integer);
+begin
+  if FDragArmedList and (ssLeft in Shift) then
+    if (Abs(X - FDragStart.X) >= Mouse.DragThreshold) or
+      (Abs(Y - FDragStart.Y) >= Mouse.DragThreshold) then
+    begin
+      FDragArmedList := False;
+      StartListFileDrag;
+    end;
+end;
+
+procedure TfrmMain.lvwMainMouseUp(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: integer);
+begin
+  FDragArmedList := False;
+end;
+
+// Extract every selected file to a fresh temporary folder and drag those out.
+// A file inside an image is not a file on disk, so it has to be written before
+// another application can be handed it. Only CP/M files can be extracted.
+procedure TfrmMain.StartListFileDrag;
+var
+  ListItem: TListItem;
+  DiskFile: TCPMFile;
+  Data: TDiskByteArray;
+  Stream: TFileStream;
+  TempRoot, Path: string;
+  Paths: array of string;
+begin
+  Paths := nil;
+  TempRoot := GetTempFileName('', 'DIM');
+  DeleteFile(TempRoot);              // reuse the unique name as a folder
+  if not ForceDirectories(TempRoot) then exit;
+
+  for ListItem in lvwMain.Items do
+    if ListItem.Selected and (ListItem.Data <> nil) and
+      (TObject(ListItem.Data).ClassType = TCPMFile) then
+    begin
+      DiskFile := TCPMFile(ListItem.Data);
+      Path := TempRoot + PathDelim + DiskFile.FileName;
+      try
+        Stream := TFileStream.Create(Path, fmCreate);
+        try
+          Data := DiskFile.GetData(False);
+          if Length(Data) > 0 then
+            Stream.WriteBuffer(Pointer(Data)^, Length(Data));
+        finally
+          Stream.Free;
+        end;
+        SetLength(Paths, Length(Paths) + 1);
+        Paths[High(Paths)] := Path;
+      except
+        // A file that will not extract is simply left out of the drag
+      end;
+    end;
+
+  if Length(Paths) > 0 then
+    DragFilesAsCopy(Paths);
 end;
 
 procedure TfrmMain.ShowFile(Sender: TObject);
