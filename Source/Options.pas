@@ -234,6 +234,7 @@ begin
 
     chkRestoreWindow.Checked := RestoreWindow;
     chkRestoreWorkspace.Checked := RestoreWorkspace;
+    chkExpandRestoredFiles.Checked := ExpandRestoredFiles;
     udBytes.Position := BytesPerLine;
     udTrackMarks.Position := DiskMapTrackMark;
     chkDarkBlankSectors.Checked := DarkBlankSectors;
@@ -269,14 +270,23 @@ begin
     RestoreWindow := chkRestoreWindow.Checked;
     BytesPerLine := udBytes.Position;
     UnknownASCII := edtNonDisplay.Text;
-    Mapping := HighASCIIOptions[cboHighASCII.ItemIndex];
+    // Read leaves the box on nothing when the settings hold a value that is not
+    // one of the choices, and nothing is not an entry in the list to read back
+    if cboHighASCII.ItemIndex >= 0 then
+      Mapping := HighASCIIOptions[cboHighASCII.ItemIndex];
     RestoreWorkspace := chkRestoreWorkspace.Checked;
+    ExpandRestoredFiles := chkExpandRestoredFiles.Checked;
     WarnConversionProblems := chkWarnConversionProblems.Checked;
     WarnSectorChange := chkWarnSectorChange.Checked;
     RemoveEmptyTracks := chkSaveRemoveEmptyTracks.Checked;
     SaveDiskMapWidth := udMapX.Position;
     SaveDiskMapHeight := udMapY.Position;
     OpenView := cboOpenView.Text;
+    // The Strings tab was read but never written back, so every choice made on
+    // it was thrown away when the dialog closed
+    StringMinLength := udMinString.Position;
+    if cboStringSorting.ItemIndex >= 0 then
+      StringSort := StringSortOptions[cboStringSorting.ItemIndex];
   end;
 end;
 

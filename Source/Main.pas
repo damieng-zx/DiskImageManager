@@ -257,7 +257,7 @@ type
   public
     Settings: TSettings;
 
-    procedure AddWorkspaceImage(Image: TDSKImage);
+    procedure AddWorkspaceImage(Image: TDSKImage; Expand: boolean = True);
     procedure CloseImage(Image: TDSKImage);
     procedure LoadFiles(FileNames: array of string);
     procedure SaveImage(Image: TDSKImage);
@@ -269,7 +269,7 @@ type
 
     function CloseAll(AllowCancel: boolean): boolean;
     function ConfirmChange(Action: string; Upon: string): boolean;
-    function LoadImage(FileName: TFileName): boolean;
+    function LoadImage(FileName: TFileName; Expand: boolean = True): boolean;
     function GetNextNewFile: integer;
   end;
 
@@ -1093,7 +1093,7 @@ begin
     tvwMain.Selected := FoundNode;
 end;
 
-function TfrmMain.LoadImage(FileName: TFileName): Boolean;
+function TfrmMain.LoadImage(FileName: TFileName; Expand: boolean = True): Boolean;
 var
   NewImage: TDSKImage;
 begin
@@ -1105,7 +1105,7 @@ begin
 
     if NewImage <> nil then
     begin
-      AddWorkspaceImage(NewImage);
+      AddWorkspaceImage(NewImage, Expand);
       Result := True;
     end;
   except
@@ -1120,7 +1120,10 @@ begin
   end;
 end;
 
-procedure TfrmMain.AddWorkspaceImage(Image: TDSKImage);
+// Expand says whether to open the image's node up. Restoring a workspace of
+// several images can leave the tree unusably long, which is what the option to
+// leave them shut is for; anything the user opens themselves is opened up.
+procedure TfrmMain.AddWorkspaceImage(Image: TDSKImage; Expand: boolean = True);
 var
   SIdx, TIdx, EIdx: integer;
   ImageNode, SideNode, TrackNode, TracksNode, SpecsNode, SectorNode, MapNode: TTreeNode;
@@ -1193,8 +1196,8 @@ begin
   end;
   tvwMain.Items.EndUpdate;
 
-  ImageNode.Expanded := True;
-  if (Image.Disk.Sides = 1) and (SideNode <> nil) then
+  ImageNode.Expanded := Expand;
+  if Expand and (Image.Disk.Sides = 1) and (SideNode <> nil) then
     SideNode.Expanded := True;
 end;
 

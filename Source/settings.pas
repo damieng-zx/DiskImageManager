@@ -41,6 +41,7 @@ type
 
     // Workspace
     RestoreWorkspace: boolean;
+    ExpandRestoredFiles: boolean;
     OpenView: string;
     RecentFiles: TStringList;
 
@@ -181,13 +182,14 @@ begin
 
     S := 'Workspace';
     RestoreWorkspace := Reg.ReadBool(S, 'Restore', False);
+    ExpandRestoredFiles := Reg.ReadBool(S, 'ExpandRestored', True);
     if RestoreWorkspace and not ClearFiles then
     begin
       Idx := 1;
       repeat
         FileName := Reg.ReadString(S, StrInt(Idx), '*end');
         if (FileName <> '*end') and (FileExistsUTF8(FileName)) then
-          frmMain.LoadImage(FileName);
+          frmMain.LoadImage(FileName, ExpandRestoredFiles);
         Inc(Idx);
       until FileName = '*end';
     end;
@@ -276,6 +278,7 @@ begin
     S := 'Workspace';
     Reg.EraseSection(S);
     Reg.WriteBool(S, 'Restore', RestoreWorkspace);
+    Reg.WriteBool(S, 'ExpandRestored', ExpandRestoredFiles);
     WorkspaceIdx := 1;
     with frmMain do
       for Idx := 0 to tvwMain.Items.Count - 1 do
