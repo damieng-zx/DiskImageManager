@@ -236,8 +236,8 @@ begin
 end;
 
 // An unrecognised disk whose boot sector is nonetheless a valid disk
-// specification is described by its formatted capacity rather than left blank.
-// 40 tracks x 9 x 256 = 90KB, and 9 x 256 matches no named format.
+// specification is described by its usable capacity rather than left blank.
+// (40 - 1 reserved) x 9 x 256 = 89856 bytes = 87KB, and 9 x 256 names nothing.
 procedure TFormatAnalysisTest.TestUnknownXDPBReportsCapacity;
 var
   Img: TDSKImage;
@@ -247,9 +247,11 @@ begin
   try
     Sec := Img.Disk.Side[0].Track[0].GetFirstLogicalSector;
     Sec.Data[0] := 0;   // PCW single-sided spec id
+    Sec.Data[2] := 40;  // tracks per side
     Sec.Data[3] := 9;   // sectors per track
     Sec.Data[4] := 1;   // sector size code: 128 shl 1 = 256
-    AssertEquals('capacity named from the spec block', 'Unknown 90KB XDPB format',
+    Sec.Data[5] := 1;   // reserved tracks
+    AssertEquals('usable capacity named from the spec block', 'Unknown 87KB XDPB format',
       Img.Disk.DetectFormat);
   finally
     Img.Free;

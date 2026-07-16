@@ -58,19 +58,20 @@ begin
     and ((128 shl Sector.Data[4]) = Sector.DataSize);
 end;
 
-// The disk's formatted size in whole KB: every sector's data across every
-// track, rounded to nearest. Unformatted tracks contribute nothing.
-function FormattedCapacityKB(Disk: TDSKDisk): integer;
+// The usable capacity in whole KB the XDPB describes: every track bar the
+// reserved ones, across both sides, of sector data. This mirrors the app's own
+// TDSKSpecification.GetUsableCapacity (tracks less reserved, directory not
+// deducted) and truncates to KB as StrFileSize does, so the figure agrees with
+// the rest of the program.
+function UsableCapacityKB(Disk: TDSKDisk; Sector: TDSKSector): integer;
 var
-  Side: TDSKSide;
-  Track: TDSKTrack;
+  UsableTracks: integer;
   Bytes: int64;
 begin
-  Bytes := 0;
-  for Side in Disk.Side do
-    for Track in Side.Track do
-      Bytes := Bytes + Track.Size;
-  Result := (Bytes + 512) div 1024;
+  UsableTracks := (Sector.Data[2] * Disk.Sides) - Sector.Data[5];
+  if UsableTracks < 0 then UsableTracks := 0;
+  Bytes := int64(UsableTracks) * Sector.Data[3] * (128 shl Sector.Data[4]);
+  Result := Bytes div 1024;
 end;
 
 function DetectUniformFormat(Disk: TDSKDisk): string;
@@ -205,7 +206,7 @@ begin
   // still says how big the disk it describes is. Report that rather than
   // nothing, so an unrecognised but well-formed disk is at least placed.
   if (Result = '') and BootSectorIsXDPB(FirstTrack, FirstSector) then
-    Result := SysUtils.Format('Unknown %dKB XDPB format', [FormattedCapacityKB(Disk)]);
+    Result := SysUtils.Format('Unknown %dKB XDPB format', [UsableCapacityKB(Disk, FirstSector)]);
 end;
 
 // ===========================================================================
