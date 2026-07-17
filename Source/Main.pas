@@ -409,11 +409,14 @@ var
   FileName: string;
 begin
   tvwMain.BeginUpdate;
-  for FileName in FileNames do
-    if FileExistsUTF8(FileName) then
-      if LoadImage(FileName) then
-        Settings.AddRecentFile(FileName);
-  tvwMain.EndUpdate;
+  try
+    for FileName in FileNames do
+      if FileExistsUTF8(FileName) then
+        if LoadImage(FileName) then
+          Settings.AddRecentFile(FileName);
+  finally
+    tvwMain.EndUpdate;
+  end;
   UpdateRecentFilesMenu;
   Settings.Save;
 end;
@@ -1155,71 +1158,73 @@ var
 begin
   SideNode := nil;
   tvwMain.Items.BeginUpdate;
-
-  if Image.Corrupt then
-    ImageNode := AddTree(nil, ExtractFileName(Image.FileName), Ord(itDiskCorrupt), Image)
-  else
-    ImageNode := AddTree(nil, ExtractFileName(Image.FileName), Ord(itDisk), Image);
-
-  tvwMain.Selected := ImageNode;
-
-  if Image.Disk.Sides > 0 then
-  begin
-    // Optional specification
-    Image.Disk.Specification.Identify;
-    if Image.Disk.Specification.Format <> dsFormatInvalid then
-    begin
-      SpecsNode := AddTree(ImageNode, 'Specification', Ord(itSpecification),
-        Image.Disk.Specification);
-      if Settings.OpenView = 'Specification' then
-        tvwMain.Selected := SpecsNode;
-    end;
-
-    // Add the sides
-    for SIdx := 0 to Image.Disk.Sides - 1 do
-    begin
-      SideNode := AddTree(ImageNode, Format('Side %d', [SIdx + 1]),
-        Ord(itSide0) + SIdx, Image.Disk.Side[SIdx]);
-      if (SIdx = 0) and (Settings.OpenView = 'Track list') then
-        tvwMain.Selected := SideNode;
-
-      MapNode := AddTree(SideNode, 'Map', Ord(itAnalyse), Image.Disk.Side[SIdx]);
-      if (SIdx = 0) and (Settings.OpenView = 'Map') then
-        tvwMain.Selected := MapNode;
-
-      // Add the tracks
-      TracksNode := AddTree(SideNode, 'Tracks', Ord(itTracksAll), Image.Disk.Side[SIdx]);
-      with Image.Disk.Side[SIdx] do
-        for TIdx := 0 to Tracks - 1 do
-        begin
-          TrackNode := AddTree(TracksNode, Format('Track %d', [TIdx]),
-            Ord(itTrack), Track[TIdx]);
-          if (SIdx = 0) and (TIdx = 0) and (Settings.OpenView = 'First track') then
-            tvwMain.Selected := TrackNode;
-
-          // Add the sectors
-          with Image.Disk.Side[SIdx].Track[TIdx] do
-            for EIdx := 0 to Sectors - 1 do
-            begin
-              SectorNode := AddTree(TrackNode, SysUtils.Format('Sector %d', [EIdx]),
-                Ord(itSector), Sector[EIdx]);
-              if (SIdx = 0) and (TIdx = 0) and (EIdx = 0) and
-                (Settings.OpenView = 'First sector') then
-                tvwMain.Selected := SectorNode;
-            end;
-        end;
-    end;
-
-    if (Image.Disk.DetectFormat().StartsWith('MGT')) then
-      AddTree(ImageNode, 'Files', Ord(itFiles), TMGTFileSystem.Create(Image.Disk))
+  try
+    if Image.Corrupt then
+      ImageNode := AddTree(nil, ExtractFileName(Image.FileName), Ord(itDiskCorrupt), Image)
     else
-      AddTree(ImageNode, 'Files', Ord(itFiles), TCPMFileSystem.Create(Image.Disk));
-    AddTree(ImageNode, 'Strings', Ord(itStrings), Image.Disk);
+      ImageNode := AddTree(nil, ExtractFileName(Image.FileName), Ord(itDisk), Image);
 
-    if Image.Messages.Count > 0 then
-      AddTree(ImageNode, 'Messages', Ord(itMessages), Image.Messages);
+    tvwMain.Selected := ImageNode;
+
+    if Image.Disk.Sides > 0 then
+    begin
+      // Optional specification
+      Image.Disk.Specification.Identify;
+      if Image.Disk.Specification.Format <> dsFormatInvalid then
+      begin
+        SpecsNode := AddTree(ImageNode, 'Specification', Ord(itSpecification),
+          Image.Disk.Specification);
+        if Settings.OpenView = 'Specification' then
+          tvwMain.Selected := SpecsNode;
+      end;
+
+      // Add the sides
+      for SIdx := 0 to Image.Disk.Sides - 1 do
+      begin
+        SideNode := AddTree(ImageNode, Format('Side %d', [SIdx + 1]),
+          Ord(itSide0) + SIdx, Image.Disk.Side[SIdx]);
+        if (SIdx = 0) and (Settings.OpenView = 'Track list') then
+          tvwMain.Selected := SideNode;
+
+        MapNode := AddTree(SideNode, 'Map', Ord(itAnalyse), Image.Disk.Side[SIdx]);
+        if (SIdx = 0) and (Settings.OpenView = 'Map') then
+          tvwMain.Selected := MapNode;
+
+        // Add the tracks
+        TracksNode := AddTree(SideNode, 'Tracks', Ord(itTracksAll), Image.Disk.Side[SIdx]);
+        with Image.Disk.Side[SIdx] do
+          for TIdx := 0 to Tracks - 1 do
+          begin
+            TrackNode := AddTree(TracksNode, Format('Track %d', [TIdx]),
+              Ord(itTrack), Track[TIdx]);
+            if (SIdx = 0) and (TIdx = 0) and (Settings.OpenView = 'First track') then
+              tvwMain.Selected := TrackNode;
+
+            // Add the sectors
+            with Image.Disk.Side[SIdx].Track[TIdx] do
+              for EIdx := 0 to Sectors - 1 do
+              begin
+                SectorNode := AddTree(TrackNode, SysUtils.Format('Sector %d', [EIdx]),
+                  Ord(itSector), Sector[EIdx]);
+                if (SIdx = 0) and (TIdx = 0) and (EIdx = 0) and
+                  (Settings.OpenView = 'First sector') then
+                  tvwMain.Selected := SectorNode;
+              end;
+          end;
+      end;
+
+      if (Image.Disk.DetectFormat().StartsWith('MGT')) then
+        AddTree(ImageNode, 'Files', Ord(itFiles), TMGTFileSystem.Create(Image.Disk))
+      else
+        AddTree(ImageNode, 'Files', Ord(itFiles), TCPMFileSystem.Create(Image.Disk));
+      AddTree(ImageNode, 'Strings', Ord(itStrings), Image.Disk);
+
+      if Image.Messages.Count > 0 then
+        AddTree(ImageNode, 'Messages', Ord(itMessages), Image.Messages);
+    end;
+  finally
+    tvwMain.Items.EndUpdate;
   end;
-  tvwMain.Items.EndUpdate;
 
   ImageNode.Expanded := Expand;
   if Expand and (Image.Disk.Sides = 1) and (SideNode <> nil) then
@@ -1344,73 +1349,79 @@ begin
     PopupMenu := popListItem;
     OldViewStyle := ViewStyle;
     Items.BeginUpdate;
-    ViewStyle := vsList;
-    // Clearing the items drops the Data pointers to any file objects the last
-    // Files view produced, so release them before they become unreachable
-    FPresenter.ClearOwnedFiles;
-    Items.Clear;
-    Columns.BeginUpdate;
-    Columns.Clear;
+    try
+      ViewStyle := vsList;
+      // Clearing the items drops the Data pointers to any file objects the last
+      // Files view produced, so release them before they become unreachable
+      FPresenter.ClearOwnedFiles;
+      Items.Clear;
+      Columns.BeginUpdate;
+      try
+        Columns.Clear;
 
-    ParentFont := True;
-    ShowColumnHeaders := True;
+        ParentFont := True;
+        ShowColumnHeaders := True;
 
-    // Every view builds its own columns, so drop any sort the last one left
-    // behind and let the first header click here sort ascending
-    SortType := stText;
-    SortColumn := -1;
-    SortDirection := sdAscending;
+        // Every view builds its own columns, so drop any sort the last one left
+        // behind and let the first header click here sort ascending
+        SortType := stText;
+        SortColumn := -1;
+        SortDirection := sdAscending;
 
-    if tvwMain.Selected <> nil then
-      with tvwMain.Selected do
-      begin
-        pnlListLabel.Caption :=
-          ' ' + AnsiReplaceStr(GetTitle(tvwMain.Selected), '&', '&&');
-        lvwMain.Visible := (ItemType(ImageIndex) <> itAnalyse) and
-          (Caption <> 'Strings');
-        lvwMain.ReadOnly := True;
-        DiskMap.Visible := ItemType(ImageIndex) = itAnalyse;
-        pnlMemo.Visible := Caption = 'Strings';
-        if Data <> nil then
-        begin
-          case ItemType(ImageIndex) of
-            itDisk, itDiskCorrupt: FPresenter.RefreshImage(Data);
-            itSpecification: FPresenter.RefreshSpecification(Data);
-            itTracksAll:
-              begin
-                lvwMain.PopupMenu := popTrack;
-                FPresenter.RefreshTrack(Data);
+        if tvwMain.Selected <> nil then
+          with tvwMain.Selected do
+          begin
+            pnlListLabel.Caption :=
+              ' ' + AnsiReplaceStr(GetTitle(tvwMain.Selected), '&', '&&');
+            lvwMain.Visible := (ItemType(ImageIndex) <> itAnalyse) and
+              (Caption <> 'Strings');
+            lvwMain.ReadOnly := True;
+            DiskMap.Visible := ItemType(ImageIndex) = itAnalyse;
+            pnlMemo.Visible := Caption = 'Strings';
+            if Data <> nil then
+            begin
+              case ItemType(ImageIndex) of
+                itDisk, itDiskCorrupt: FPresenter.RefreshImage(Data);
+                itSpecification: FPresenter.RefreshSpecification(Data);
+                itTracksAll:
+                  begin
+                    lvwMain.PopupMenu := popTrack;
+                    FPresenter.RefreshTrack(Data);
+                  end;
+                itTrack:
+                  begin
+                    lvwMain.PopupMenu := popSector;
+                    FPresenter.RefreshSector(Data);
+                  end;
+                itAnalyse: AnalyseMap(Data);
+                itStrings: RefreshStrings(Data);
+                itMessages: FPresenter.RefreshMessages(Data);
+                else
+                  if TObject(Data).ClassType = TDSKSide then
+                  begin
+                    lvwMain.PopupMenu := popTrack;
+                    FPresenter.RefreshTrack(TDSKSide(Data));
+                  end;
+                  if TObject(Data).ClassType = TDSKSector then
+                    FPresenter.RefreshSectorData(TDSKSector(Data));
+                  if (TObject(Data).ClassType = TCPMFileSystem) then
+                    FPresenter.RefreshFiles(TCPMFileSystem(Data));
+                  if (TObject(Data).ClassType = TMGTFileSystem) then
+                    FPresenter.RefreshFilesMGT(TMGTFileSystem(Data));
               end;
-            itTrack:
-              begin
-                lvwMain.PopupMenu := popSector;
-                FPresenter.RefreshSector(Data);
-              end;
-            itAnalyse: AnalyseMap(Data);
-            itStrings: RefreshStrings(Data);
-            itMessages: FPresenter.RefreshMessages(Data);
-            else
-              if TObject(Data).ClassType = TDSKSide then
-              begin
-                lvwMain.PopupMenu := popTrack;
-                FPresenter.RefreshTrack(TDSKSide(Data));
-              end;
-              if TObject(Data).ClassType = TDSKSector then
-                FPresenter.RefreshSectorData(TDSKSector(Data));
-              if (TObject(Data).ClassType = TCPMFileSystem) then
-                FPresenter.RefreshFiles(TCPMFileSystem(Data));
-              if (TObject(Data).ClassType = TMGTFileSystem) then
-                FPresenter.RefreshFilesMGT(TMGTFileSystem(Data));
-          end;
-        end;
-      end
-    else
-      pnlListLabel.Caption := '';
+            end;
+          end
+        else
+          pnlListLabel.Caption := '';
 
-    ViewStyle := OldViewStyle;
-    Columns.EndUpdate;
-    AutoResizeListView(lvwMain);
-    Items.EndUpdate;
+        ViewStyle := OldViewStyle;
+      finally
+        Columns.EndUpdate;
+      end;
+      AutoResizeListView(lvwMain);
+    finally
+      Items.EndUpdate;
+    end;
   end;
 end;
 

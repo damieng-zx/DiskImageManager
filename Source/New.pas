@@ -419,17 +419,20 @@ var
   Format: TDSKFormatSpecification;
 begin
   lvwFormats.BeginUpdate;
-  for Idx := 0 to 8 do
-    with lvwFormats.Items.Add do
-    begin
-      Format := TDSKFormatSpecification.Create(Idx);
-      ImageIndex := Idx;
-      Caption := Format.Name;
-      SubItems.Add(StrInt(Format.GetCapacityBytes div 1024));
-      SubItems.Add(StrInt(Format.GetUsableBytes div 1024));
-      Format.Free;
-    end;
-  lvwFormats.EndUpdate;
+  try
+    for Idx := 0 to 8 do
+      with lvwFormats.Items.Add do
+      begin
+        Format := TDSKFormatSpecification.Create(Idx);
+        ImageIndex := Idx;
+        Caption := Format.Name;
+        SubItems.Add(StrInt(Format.GetCapacityBytes div 1024));
+        SubItems.Add(StrInt(Format.GetUsableBytes div 1024));
+        Format.Free;
+      end;
+  finally
+    lvwFormats.EndUpdate;
+  end;
 
   // Double (Reverse) is omitted: writing the disk specification does not support it
   for Idx := Ord(dsSideSingle) to Ord(dsSideDoubleSuccessive) do

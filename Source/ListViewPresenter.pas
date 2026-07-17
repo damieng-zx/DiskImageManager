@@ -390,17 +390,20 @@ begin
   with FListView.Columns do
   begin
     BeginUpdate;
-    Clear;
-    with Add do
-    begin
-      Caption := 'Off';
-      Alignment := taRightJustify;
+    try
+      Clear;
+      with Add do
+      begin
+        Caption := 'Off';
+        Alignment := taRightJustify;
+      end;
+      with Add do
+        Caption := 'Hex';
+      with Add do
+        Caption := 'ASCII';
+    finally
+      EndUpdate;
     end;
-    with Add do
-      Caption := 'Hex';
-    with Add do
-      Caption := 'ASCII';
-    EndUpdate;
   end;
 
   RowOffset := 0;
@@ -489,30 +492,33 @@ begin
   with FListView do
   begin
     BeginUpdate;
-    Items.Clear;
-    for DiskFile in Files do
-      with Items.Add do
-      begin
-        Data := DiskFile;
-        Caption := DiskFile.FileName;
-        if HasUserAreas then SubItems.Add(StrInt(DiskFile.User));
-        SubItems.Add(StrInt(DiskFile.EntryIndex));
-        SubItems.Add(StrInt(DiskFile.Blocks.Count));
-        SubItems.Add(StrFileSize(DiskFile.SizeOnDisk));
-        SubItems.Add(StrFileSize(DiskFile.Size));
-        Attributes := '';
-        if (DiskFile.ReadOnly) then Attributes := Attributes + 'R';
-        if (DiskFile.System) then Attributes := Attributes + 'S';
-        if (DiskFile.Archived) then Attributes := Attributes + 'A';
-        SubItems.Add(Attributes);
-        if HasHeaders then
+    try
+      Items.Clear;
+      for DiskFile in Files do
+        with Items.Add do
         begin
-          SubItems.Add(DiskFile.HeaderType);
-          SubItems.Add(StrYesNo(DiskFile.Checksum));
-          SubItems.Add(DiskFile.Meta);
+          Data := DiskFile;
+          Caption := DiskFile.FileName;
+          if HasUserAreas then SubItems.Add(StrInt(DiskFile.User));
+          SubItems.Add(StrInt(DiskFile.EntryIndex));
+          SubItems.Add(StrInt(DiskFile.Blocks.Count));
+          SubItems.Add(StrFileSize(DiskFile.SizeOnDisk));
+          SubItems.Add(StrFileSize(DiskFile.Size));
+          Attributes := '';
+          if (DiskFile.ReadOnly) then Attributes := Attributes + 'R';
+          if (DiskFile.System) then Attributes := Attributes + 'S';
+          if (DiskFile.Archived) then Attributes := Attributes + 'A';
+          SubItems.Add(Attributes);
+          if HasHeaders then
+          begin
+            SubItems.Add(DiskFile.HeaderType);
+            SubItems.Add(StrYesNo(DiskFile.Checksum));
+            SubItems.Add(DiskFile.Meta);
+          end;
         end;
-      end;
-    EndUpdate;
+    finally
+      EndUpdate;
+    end;
   end;
 
   // The list container only: the entries themselves belong to FOwnedFiles now
@@ -537,17 +543,20 @@ begin
   with FListView do
   begin
     BeginUpdate;
-    Items.Clear;
-    for DiskFile in Files do
-      with Items.Add do
-      begin
-        Data := DiskFile;
-        Caption := DiskFile.FileName;
-        SubItems.Add(StrInt(DiskFile.SectorsAllocated));
-        SubItems.Add(StrFileSize(DiskFile.AllocatedSize));
-        SubItems.Add(DiskFile.Meta);
-      end;
-    EndUpdate;
+    try
+      Items.Clear;
+      for DiskFile in Files do
+        with Items.Add do
+        begin
+          Data := DiskFile;
+          Caption := DiskFile.FileName;
+          SubItems.Add(StrInt(DiskFile.SectorsAllocated));
+          SubItems.Add(StrFileSize(DiskFile.AllocatedSize));
+          SubItems.Add(DiskFile.Meta);
+        end;
+    finally
+      EndUpdate;
+    end;
   end;
 
   // The list container only: the entries themselves belong to FOwnedFiles now
