@@ -49,18 +49,22 @@ var
   Size, Size2: DWord;
   Pt, Pt2: Pointer;
 begin
+  Result := '';
   Size := GetFileVersionInfoSize(PChar(ParamStr(0)),Size2);
   if (Size > 0) then
   begin
   	GetMem(Pt,Size);
     try
     	GetFileVersionInfo(PChar(ParamStr(0)),0,Size,Pt);
-      VerQueryValue(Pt,'\',Pt2,Size2);
-      with TVSFixedFileInfo(Pt2^) do
-      begin
-      	Result := Format('%d.%d.%d.%d', [HiWord(dwFileVersionMS),LoWord(dwFileVersionMS),
-                 	HiWord(dwFileVersionLS),LoWord(dwFileVersionLS)]);
-      end;
+      // VerQueryValue can fail (no fixed-info block, malformed resource) and
+      // leave Pt2 unset; only de-reference it when it succeeded and the block
+      // is the size we expect.
+      if VerQueryValue(Pt,'\',Pt2,Size2) and (Size2 = SizeOf(TVSFixedFileInfo)) then
+        with TVSFixedFileInfo(Pt2^) do
+        begin
+        	Result := Format('%d.%d.%d.%d', [HiWord(dwFileVersionMS),LoWord(dwFileVersionMS),
+                  	HiWord(dwFileVersionLS),LoWord(dwFileVersionLS)]);
+        end;
     finally
     	FreeMem(Pt);
     end;

@@ -118,59 +118,76 @@ begin
   MaxEntries := Spec.DirectoryBlocks * Spec.GetBlockSize() div DIR_ENTRY_SIZE;
 
   Result := TFPGList<TCPMFile>.Create;
+  Extents := nil;
+  try
+    try
+      Track := FParentDisk.GetLogicalTrack(Spec.ReservedTracks);
+      if Track = nil then exit;
+      Sector := Track.GetFirstLogicalSector();
+      if Sector = nil then exit;
 
-  Track := FParentDisk.GetLogicalTrack(Spec.ReservedTracks);
-  if Track = nil then exit;
-  Sector := Track.GetFirstLogicalSector();
-  if Sector = nil then exit;
+      Extents := TFPGList<TCPMFile>.Create;
 
-  Extents := TFPGList<TCPMFile>.Create;
-
-  for Entry in FParentDisk.DirectoryEntries(Sector, DIR_ENTRY_SIZE, MaxEntries) do
-  begin
-    if Entry.Sector.Data[Entry.Offset] < 32 then
-    begin
-      DiskFile := ReadFileEntry(Entry.Sector.Data, Entry.Offset);
-      DiskFile.EntryIndex := Entry.Index;
-      if (DiskFile.FileName <> '') and (DiskFile.Blocks.Count > 0) then
+      for Entry in FParentDisk.DirectoryEntries(Sector, DIR_ENTRY_SIZE, MaxEntries) do
       begin
-        if DiskFile.Extent = 0 then
-          Result.Add(DiskFile)
-        else
-          Extents.Add(DiskFile);
-      end
-      else
-        DiskFile.Free;
-    end;
+        if Entry.Sector.Data[Entry.Offset] < 32 then
+        begin
+          DiskFile := ReadFileEntry(Entry.Sector.Data, Entry.Offset);
+          DiskFile.EntryIndex := Entry.Index;
+          if (DiskFile.FileName <> '') and (DiskFile.Blocks.Count > 0) then
+          begin
+            if DiskFile.Extent = 0 then
+              Result.Add(DiskFile)
+            else
+              Extents.Add(DiskFile);
+          end
+          else
+            DiskFile.Free;
+        end;
 
-    if Entry.Sector.Data[Entry.Offset] = 32 then
-      DiskLabel := ReadLabelEntry(Entry.Sector.Data, Entry.Offset);
-  end;
+        if Entry.Sector.Data[Entry.Offset] = 32 then
+          DiskLabel := ReadLabelEntry(Entry.Sector.Data, Entry.Offset);
+      end;
 
-  Extents.Sort(CompareByExtent);
+      Extents.Sort(CompareByExtent);
 
-  while Extents.Count > 0 do
-  begin
-    ExtentEntry := Extents.First;
-    Extents.Remove(ExtentEntry);
-    for PrimaryDiskFile in Result do
-    begin
-      // The name alone does not say which file an extent belongs to: the same
-      // name under another user number is another file, and matching on the
-      // name only handed one user's extents to whoever held the name first
-      if (PrimaryDiskFile.User = ExtentEntry.User) and
-        (PrimaryDiskFile.FileName = ExtentEntry.FileName) then
+      while Extents.Count > 0 do
       begin
-        PrimaryDiskFile.Blocks.AddList(ExtentEntry.Blocks);
-        PrimaryDiskFile.SizeOnDisk := PrimaryDiskFile.SizeOnDisk + ExtentEntry.SizeOnDisk;
-        PrimaryDiskFile.Size := PrimaryDiskFile.Size + ExtentEntry.Size;
-        break;
+        ExtentEntry := Extents.First;
+        Extents.Remove(ExtentEntry);
+        for PrimaryDiskFile in Result do
+        begin
+          // The name alone does not say which file an extent belongs to: the same
+          // name under another user number is another file, and matching on the
+          // name only handed one user's extents to whoever held the name first
+          if (PrimaryDiskFile.User = ExtentEntry.User) and
+            (PrimaryDiskFile.FileName = ExtentEntry.FileName) then
+          begin
+            PrimaryDiskFile.Blocks.AddList(ExtentEntry.Blocks);
+            PrimaryDiskFile.SizeOnDisk := PrimaryDiskFile.SizeOnDisk + ExtentEntry.SizeOnDisk;
+            PrimaryDiskFile.Size := PrimaryDiskFile.Size + ExtentEntry.Size;
+            break;
+          end;
+        end;
+        ExtentEntry.Free;
+      end;
+    finally
+      // The merge loop frees every extent as it consumes it, so on the happy
+      // path Extents is empty here. On an aborted build the unmerged extents and
+      // the partial result would otherwise leak.
+      if Extents <> nil then
+      begin
+        for DiskFile in Extents do
+          DiskFile.Free;
+        Extents.Free;
       end;
     end;
-    ExtentEntry.Free;
+  except
+    for DiskFile in Result do
+      DiskFile.Free;
+    Result.Free;
+    raise;
   end;
-
-  Extents.Free;
 end;
 
 function TCPMFileSystem.ReadLabelEntry(Data: array of byte; Offset: integer): string;

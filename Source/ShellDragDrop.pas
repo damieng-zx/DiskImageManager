@@ -115,6 +115,11 @@ begin
   if Handle = 0 then exit;
 
   Header := GlobalLock(Handle);
+  if Header = nil then
+  begin
+    GlobalFree(Handle);
+    exit;
+  end;
   Header^.pFiles := SizeOf(TDropFiles);
   Header^.pt.X := 0;
   Header^.pt.Y := 0;
@@ -154,7 +159,17 @@ begin
   Src := GlobalLock(Source);
   Dst := GlobalLock(Result);
   if (Src <> nil) and (Dst <> nil) then
-    Move(Src^, Dst^, Size);
+    Move(Src^, Dst^, Size)
+  else
+  begin
+    // On a lock failure return nothing rather than a handle full of
+    // uninitialised memory that a drop target would read as file names.
+    if Dst <> nil then GlobalUnlock(Result);
+    if Src <> nil then GlobalUnlock(Source);
+    GlobalFree(Result);
+    Result := 0;
+    exit;
+  end;
   GlobalUnlock(Result);
   GlobalUnlock(Source);
 end;

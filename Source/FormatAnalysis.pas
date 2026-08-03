@@ -1542,7 +1542,7 @@ end;
 
 function DetectInterleave(Track: TDskTrack): string;
 var
-  LowIdx, NextLowIdx, LowID, NextLowID, SIdx, ExpectedID: byte;
+  LowIdx, NextLowIdx, LowID, NextLowID, SIdx: byte;
   Interleave: integer;
 begin
   LowIdx := 255;
@@ -1573,7 +1573,11 @@ begin
       NextLowIdx := SIdx;
     end;
 
-  // Make sure the ID's are sequential
+  // The two lowest IDs give the interleave: the controller advances this many
+  // physical sectors per logical sector. Two points suffice because every other
+  // consecutive pair repeats the same step. Verifying by walking the track in
+  // physical order and expecting sequential IDs would reject any layout whose
+  // interleave is not 1, since interleaved sectors are deliberately out of order.
   if (LowIdx < 255) and (NextLowIdx < 255) and (NextLowID = LowID + 1) then
   begin
     // Positive skew (or negative less than sector-count)
@@ -1582,23 +1586,10 @@ begin
     // Negative skew (or positive greater than sector-count)
     if (LowIdx > NextLowIdx) then
       Interleave := LowIdx - NextLowIdx;
+    Result := Format('%d', [Interleave]);
   end
   else
     Result := 'Non-sequential IDs';
-
-  // Confirm the interleave for every sector
-  ExpectedID := Track.Sector[0].ID;
-  for SIdx := 0 to Track.Sectors - 1 do
-  begin
-    if Track.Sector[SIdx].ID <> ExpectedID then
-    begin
-      Result := Format('Expected %d but sector %d ID was %d not %d', [Interleave, SIdx, Track.Sector[SIdx].ID, ExpectedID]);
-      Exit;
-    end;
-    ExpectedID := ExpectedID + 1;
-  end;
-
-  Result := Format('%d', [Interleave]);
 end;
 
 end.

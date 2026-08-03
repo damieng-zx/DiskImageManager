@@ -891,7 +891,7 @@ begin
                 diStandardDSK:
                 begin
                   DataSize := MaxSectorSize;
-                  if (SCTInfoBlock.SIB_Size <= 6) then
+                  if (SCTInfoBlock.SIB_Size <= High(FDCSectorSizes)) then
                     DataSize := FDCSectorSizes[SCTInfoBlock.SIB_Size];
                 end;
                 diExtendedDSK: DataSize := SCTInfoBlock.SIB_DataLength;
@@ -1039,7 +1039,13 @@ begin
   end;
 
   if not Result then
-    MessageDlg('Could not save file. Save aborted.', mtError, [mbOK], 0)
+  begin
+    // TFileStream(fmCreate) has already truncated the target, so a failed save
+    // would leave a short or corrupt file behind (worse, overwriting a good one).
+    // Remove it so the failure is obvious rather than silent.
+    SysUtils.DeleteFile(SaveFileName);
+    MessageDlg('Could not save file. Save aborted.', mtError, [mbOK], 0);
+  end
   else
   if not Copy then
   begin
