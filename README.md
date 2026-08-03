@@ -145,6 +145,10 @@ To be able to build and visually edit the forms you will need to install the sup
 - Add files to disk
 - Add/remove headers
 
+## AI Disclosure
+
+While this project was originally hand-written several AI agents & models have been subsequently used to add test coverage and implement some features like the BASIC parsers and CPC screen decoding as well as fixing bugs.
+
 ## Licence
 
 Copyright 2002-2026 Damien Guard.
