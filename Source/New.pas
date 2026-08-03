@@ -212,7 +212,7 @@ begin
   if IsLoading then exit;
 
   // Set summary details
-  if lvwSummary.Items.Count > 0 then
+  if lvwSummary.Items.Count >= 4 then
   begin
     lvwSummary.Items[0].SubItems[0] := StrFileSize(CurrentFormat.GetCapacityBytes);
     lvwSummary.Items[1].SubItems[0] := StrFileSize(CurrentFormat.GetUsableBytes);
@@ -629,7 +629,7 @@ var
 begin
   Available := CurrentFormat.SectorSize - BootOffset;
 
-  if lvwBootDetails.Items.Count > 0 then
+  if lvwBootDetails.Items.Count >= 5 then
   begin
     if BootSectorSize > 0 then
     begin

@@ -73,17 +73,23 @@ var
   DiskFile: TMGTFile;
 begin
   Result := TFPGList<TMGTFile>.Create;
+  try
+    Sector := FParentDisk.GetFirstSector();
+    if Sector = nil then exit;
 
-  Sector := FParentDisk.GetFirstSector();
-  if Sector = nil then exit;
-
-  for Entry in FParentDisk.DirectoryEntries(Sector, DIR_ENTRY_SIZE, MAX_ENTRIES) do
-  begin
-    DiskFile := ReadFileEntry(Entry.Sector.Data, Entry.Offset);
-    if (DiskFile <> nil) and (DiskFile.FileName <> '') and (DiskFile.SectorsAllocated > 0) then
-       Result.Add(DiskFile)
-    else
-       DiskFile.Free;
+    for Entry in FParentDisk.DirectoryEntries(Sector, DIR_ENTRY_SIZE, MAX_ENTRIES) do
+    begin
+      DiskFile := ReadFileEntry(Entry.Sector.Data, Entry.Offset);
+      if (DiskFile <> nil) and (DiskFile.FileName <> '') and (DiskFile.SectorsAllocated > 0) then
+         Result.Add(DiskFile)
+      else
+         DiskFile.Free;
+    end;
+  except
+    for DiskFile in Result do
+      DiskFile.Free;
+    Result.Free;
+    raise;
   end;
 end;
 

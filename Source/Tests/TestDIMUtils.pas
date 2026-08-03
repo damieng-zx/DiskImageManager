@@ -113,6 +113,13 @@ begin
   // 'HELLO WORLD' starting at 0
   AssertTrue(StrInByteArray([72, 69, 76, 76, 79, 32, 87, 79, 82, 76, 68], 'HELL', 0));
   AssertFalse(StrInByteArray([72, 69, 76, 76, 79, 32, 87, 79, 82, 76, 68], 'XELL', 0));
+  // A substring longer than the buffer cannot be present (the old loop returned
+  // True because it never executed and left the default result untouched).
+  AssertFalse(StrInByteArray([72, 69, 76], 'HELLO', 0));
+  // Match at a non-zero offset
+  AssertTrue(StrInByteArray([0, 0, 72, 69, 76, 76], 'HELL', 2));
+  // A substring that would run past the end of the buffer is not a hit
+  AssertFalse(StrInByteArray([88, 88, 72, 69], 'HELL', 2));
 end;
 
 procedure TUtilsTest.TestCompareBlock;

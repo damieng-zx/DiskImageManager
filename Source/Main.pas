@@ -364,10 +364,11 @@ begin
   DiskMap.OnTrackClick := DiskMapTrackClick;
   Application.AddOnDropFilesHandler(OnApplicationDropFiles);
 
-  // Drag files out to other applications, like dragging from Explorer
+  // Drag files out to other applications, like dragging from Explorer.
+  // lvwMain's OnMouseDown is routed through NavMouseDown (below) so the same
+  // control can both arm a drag (left button) and navigate history (x1/x2).
   tvwMain.OnMouseMove := tvwMainMouseMove;
   tvwMain.OnMouseUp := tvwMainMouseUp;
-  lvwMain.OnMouseDown := lvwMainMouseDown;
   lvwMain.OnMouseMove := lvwMainMouseMove;
   lvwMain.OnMouseUp := lvwMainMouseUp;
 
@@ -385,12 +386,14 @@ begin
   pnlLeft.OnMouseDown := NavMouseDown;
 
   FileNames := TStringList.Create();
-  for Idx := 1 to ParamCount do
-    if (not ParamStr(Idx).StartsWith('--')) then
-      FileNames.Add(ParamStr(Idx));
-  LoadFiles(FileNames.ToStringArray());
-
-  FileNames.Free;
+  try
+    for Idx := 1 to ParamCount do
+      if (not ParamStr(Idx).StartsWith('--')) then
+        FileNames.Add(ParamStr(Idx));
+    LoadFiles(FileNames.ToStringArray());
+  finally
+    FileNames.Free;
+  end;
 
   // The workspace (and any command-line files) are now loaded, so the tree
   // exists and stored history entries can be resolved back to nodes.
@@ -926,7 +929,11 @@ begin
   if Button = mbExtra1 then
     GoBack
   else if Button = mbExtra2 then
-    GoForward;
+    GoForward
+  else if (Sender = lvwMain) and (Button = mbLeft) then
+    // The list view's left-button handler arms the drag-out gesture, and shares
+    // this single OnMouseDown delegate with the navigation buttons.
+    lvwMainMouseDown(Sender, Button, Shift, X, Y);
 end;
 
 // Keep the current history entry's detail-list row up to date as the user
@@ -1482,9 +1489,14 @@ begin
 end;
 
 procedure TfrmMain.itmCloseClick(Sender: TObject);
+var
+  Node: TTreeNode;
 begin
-  if (tvwMain.Selected <> nil) then
-    CloseImage(GetCurrentImage);
+  // Route through CloseImageNode so a modified image prompts to save, the same
+  // path used by Close All, rather than discarding changes silently.
+  Node := GetOwningImageNode(tvwMain.Selected);
+  if Node <> nil then
+    CloseImageNode(Node, [mbYes, mbNo, mbCancel]);
   Settings.Save();
 end;
 

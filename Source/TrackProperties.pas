@@ -123,7 +123,7 @@ begin
   udLogicalID.Position := FTrack.Logical;
   udPhysicalID.Position := FTrack.Track;
   edtSize.Text := IntToStr(FTrack.Size);
-  edtBitLength.Caption := IntToStr(FTrack.BitLength);
+  edtBitLength.Text := IntToStr(FTrack.BitLength);
 
   // Sector details
   udSectorCount.Position := FTrack.Sectors;
@@ -187,7 +187,7 @@ begin
       // Track details
       Logical := udLogicalID.Position;
       Track := udPhysicalID.Position;
-      BitLength := StrToInt(edtBitLength.Caption);
+      BitLength := StrToIntDef(edtBitLength.Text, FTrack.BitLength);
 
       // Sector details
       Sectors := udSectorCount.Position;

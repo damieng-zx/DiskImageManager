@@ -315,18 +315,18 @@ end;
 function StrInByteArray(ByteArray: array of byte; SubString: string;
   Start: integer): boolean;
 var
-  Idx, Last: integer;
+  Idx: integer;
 begin
-  Result := True;
-  Idx := 0;
-  Last := Length(ByteArray) - Length(SubString) - 1;
+  // Does SubString occur in ByteArray beginning at offset Start?
+  if Length(SubString) = 0 then
+    Exit(True);
+  if (Start < 0) or (Start + Length(SubString) > Length(ByteArray)) then
+    Exit(False);
 
-  while (Result) and (Start + Idx < Last) and (Idx < Length(SubString)) do
-  begin
+  Result := True;
+  for Idx := 0 to Length(SubString) - 1 do
     if ByteArray[Start + Idx] <> byte(SubString[Idx + 1]) then
-      Result := False;
-    Inc(Idx);
-  end;
+      Exit(False);
 end;
 
 function BlockShiftToBlockSize(BlockShift: byte): integer;

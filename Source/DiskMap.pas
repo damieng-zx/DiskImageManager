@@ -612,6 +612,9 @@ begin
   begin
     FSide := NewSide;
     FHasHover := False;
+    // Drop hits from the previous disk so a click before the next paint cannot
+    // land on a stale sector/track that no longer exists.
+    SetLength(FHits, 0);
     Invalidate;
   end;
 end;

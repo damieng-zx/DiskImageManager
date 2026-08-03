@@ -35,6 +35,8 @@ type
     procedure TestSupermat192TwoEightyTwoVariantDetected;
     procedure TestUnknownXDPBReportsCapacity;
     procedure TestUnknownNonXDPBStaysBlank;
+    procedure TestInterleaveOneForSequentialIDs;
+    procedure TestInterleaveThreeForSkewedIDs;
   end;
 
 implementation
@@ -270,6 +272,42 @@ begin
     Sec := Img.Disk.Side[0].Track[0].GetFirstLogicalSector;
     Sec.Data[0] := 200;  // not a spec id, so not an XDPB
     AssertEquals('no spec block, no guess', '', Img.Disk.DetectFormat);
+  finally
+    Img.Free;
+  end;
+end;
+
+// Sector IDs running up in physical order are a 1:1 interleave.
+procedure TFormatAnalysisTest.TestInterleaveOneForSequentialIDs;
+var
+  Img: TDSKImage;
+begin
+  Img := BuildUniform(1, 1, 9, 512, 0);
+  try
+    AssertEquals('sequential IDs are a 1:1 interleave', '1',
+      DetectInterleave(Img.Disk.Side[0].Track[0]));
+  finally
+    Img.Free;
+  end;
+end;
+
+// A 1:3 interleave places the IDs 0,3,6,1,4,7,2,5,8 into physical order. The
+// analyser used to reject any interleave above 1: it confirmed the result by
+// walking physical order and expecting sequential IDs, which never holds for an
+// interleaved track.
+procedure TFormatAnalysisTest.TestInterleaveThreeForSkewedIDs;
+const
+  Layout: array[0..8] of byte = (0, 3, 6, 1, 4, 7, 2, 5, 8);
+var
+  Img: TDSKImage;
+  EIdx: integer;
+begin
+  Img := BuildUniform(1, 1, 9, 512, 0);
+  try
+    for EIdx := 0 to 8 do
+      Img.Disk.Side[0].Track[0].Sector[EIdx].ID := Layout[EIdx];
+    AssertEquals('1:3 interleave is detected', '3',
+      DetectInterleave(Img.Disk.Side[0].Track[0]));
   finally
     Img.Free;
   end;
