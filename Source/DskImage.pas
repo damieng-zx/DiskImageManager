@@ -465,6 +465,13 @@ const
   DirEntSize = 32;
 
 function GetFDCSectorSize(SectorSize: word): byte;
+
+// Bytes a sector of FDC size code FDCSize holds, or 0 when the code is not one
+// the controller defines. The code is a raw byte off the disk and the sector
+// properties window will set any of the 256 of them, so indexing the table with
+// it unchecked reads past the end of it.
+function GetFDCSizeBytes(FDCSize: byte): word;
+
 function GetTrackFileSize(TrackDataSize: word): integer;
 
 implementation
@@ -700,6 +707,7 @@ var
   NextTrackPosition: integer;
   ErrorMessage: string;
   RecoveredTracks, RecoveredSize: integer;
+  BytesLeft, SkipTo: int64;
 begin
   Result := False;
   FoundIncorrectTrackMarkers := False;
@@ -914,15 +922,30 @@ begin
                 Messages.Add(SysUtils.Format('Side %d track %d sector %d ran past the end of the file.',
                   [SIdx, TIdx, EIdx]));
                 Corrupt := True;
-                DataSize := FileSize - DiskFile.Position;
+                // The position can already be past the end, from the skip below
+                // stepping over a record that overran the buffer. A negative
+                // remainder assigned into a word wraps to tens of kilobytes, and
+                // the read that followed asked for far more than was ever there.
+                BytesLeft := FileSize - DiskFile.Position;
+                if BytesLeft < 0 then
+                  BytesLeft := 0;
+                DataSize := BytesLeft;
               end;
 
               if DataSize > 0 then
                 DiskFile.ReadBuffer(Data, DataSize);
 
-              // Keep the stream aligned when a record on disk exceeded our buffer.
+              // Keep the stream aligned when a record on disk exceeded our
+              // buffer, stopping at the end of the file rather than seeking off
+              // the end of it and leaving every later check to compare against a
+              // position the file does not reach
               if AdvertisedSize > DataSize then
-                DiskFile.Seek(AdvertisedSize - DataSize, soCurrent);
+              begin
+                SkipTo := DiskFile.Position + (AdvertisedSize - DataSize);
+                if (FileSize > 0) and (SkipTo > FileSize) then
+                  SkipTo := FileSize;
+                DiskFile.Position := SkipTo;
+              end;
             end;
         end;
       end;
@@ -1590,19 +1613,32 @@ begin
     end;
 end;
 
+// Whether every track on the disk holds the same number of bytes. A disk with
+// no tracks at all is trivially uniform: a header can say one side and no
+// tracks, and reading the size of the first of none went straight through a
+// side whose track array had never been allocated.
 function TDSKDisk.IsTrackSizeUniform: boolean;
 var
   Track: TDSKTrack;
   Size: integer;
+  First: boolean;
 begin
   Result := True;
-  Size := self.Side[0].Track[0].Size;
+  Size := 0;
+  First := True;
   for Track in AllTracks do
+  begin
+    if First then
+    begin
+      Size := Track.Size;
+      First := False;
+    end;
     if Size <> Track.Size then
     begin
       Result := False;
       exit;
     end;
+  end;
 end;
 
 function TDSKDisk.DetectFormat: string;
@@ -2112,8 +2148,7 @@ var
   DeclaredSize: integer;
 begin
   Result := 1;
-  if FDCSize > High(FDCSectorSizes) then exit;
-  DeclaredSize := FDCSectorSizes[FDCSize];
+  DeclaredSize := GetFDCSizeBytes(FDCSize);
   if (DeclaredSize = 0) or (DataSize mod DeclaredSize <> 0) then exit;
   Result := DataSize div DeclaredSize;
 end;
@@ -2558,8 +2593,11 @@ begin
     FGapFormat := Data[9];
     FChecksum := Data[15];
 
+    // A block shift past MaxBlockShift describes no disk that exists, and is as
+    // good a sign the spec block is not one as the other fields being nonsense
     if (FTracksPerSide = 0) or (FSectorsPerTrack = 0) or
-      (FTracksPerSide > MaxTracks) or (FSectorSize = 0) then
+      (FTracksPerSide > MaxTracks) or (FSectorSize = 0) or
+      (FBlockShift > MaxBlockShift) then
     begin
       SetDefaults;
       Source := 'Default fallback +3/PCW 180K';
@@ -2820,6 +2858,14 @@ begin
   for Idx := High(FDCSectorSizes) downto Low(FDCSectorSizes) do
     if SectorSize <= FDCSectorSizes[Idx] then
       Result := Idx;
+end;
+
+function GetFDCSizeBytes(FDCSize: byte): word;
+begin
+  if FDCSize > High(FDCSectorSizes) then
+    Result := 0
+  else
+    Result := FDCSectorSizes[FDCSize];
 end;
 
 // The room a track takes in the file: its Track-Info block, plus its sector

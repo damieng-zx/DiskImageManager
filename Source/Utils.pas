@@ -21,6 +21,8 @@ const
   Power2: array[1..17] of integer =
     (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536);
   LVSCW_AUTOSIZE_BESTFIT = -3;
+  // Largest XDPB block shift that describes a real disk (2 << (8 + 6) = 128KB)
+  MaxBlockShift = 8;
 
 type
   TSpinBorderStyle = (bsRaised, bsLowered, bsNone);
@@ -335,8 +337,15 @@ begin
       Exit(False);
 end;
 
+// CP/M block size from the XDPB block shift. The shift is a raw byte off the
+// boot sector, and shifting a 32-bit value by more than 31 is not defined: at a
+// shift of 25 the 2 fell off the top and the answer was 0, which every caller
+// then divided by. Nothing beyond MaxBlockShift (128KB) describes a real disk,
+// so anything larger is reported as the largest that does.
 function BlockShiftToBlockSize(BlockShift: byte): integer;
 begin
+  if BlockShift > MaxBlockShift then
+    BlockShift := MaxBlockShift;
   Result := 2 << (BlockShift + 6);
 end;
 

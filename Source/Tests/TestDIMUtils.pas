@@ -89,6 +89,14 @@ begin
   AssertEquals(128, BlockShiftToBlockSize(0));
   AssertEquals(1024, BlockShiftToBlockSize(3));
   AssertEquals(2048, BlockShiftToBlockSize(4));
+  AssertEquals(32768, BlockShiftToBlockSize(MaxBlockShift));
+
+  // The shift comes off a boot sector unchecked, and shifting a 32-bit value by
+  // more than 31 is not defined: at 25 the 2 fell off the top and left 0, which
+  // every caller went on to divide by. Nothing past MaxBlockShift is a real
+  // disk, so those all answer as the largest that is.
+  AssertEquals(BlockShiftToBlockSize(MaxBlockShift), BlockShiftToBlockSize(25));
+  AssertEquals(BlockShiftToBlockSize(MaxBlockShift), BlockShiftToBlockSize(255));
 end;
 
 procedure TUtilsTest.TestStrFileSize;

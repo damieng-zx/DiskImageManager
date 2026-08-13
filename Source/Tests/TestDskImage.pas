@@ -18,7 +18,7 @@ unit TestDskImage;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, DskImage, DSKFormat;
+  Classes, SysUtils, fpcunit, testregistry, DskImage, DSKFormat, Utils;
 
 type
   TDskImageTest = class(TTestCase)
@@ -51,6 +51,11 @@ type
     procedure TestFindText;
     procedure TestExtendedDSKPadsTracksToTrackSizeTable;
     procedure TestStandardDSKSizesTracksByTheLargest;
+    procedure TestFDCSizeBytesRejectsUnknownCodes;
+    procedure TestCopyCountOnUnknownFDCSize;
+    procedure TestTrackSizeUniformOnSideWithNoTracks;
+    procedure TestLoadImageWithNoTracks;
+    procedure TestIdentifyRejectsImpossibleBlockShift;
   end;
 
 implementation
@@ -740,6 +745,124 @@ begin
     end;
   finally
     DeleteFile(FileName);
+  end;
+end;
+
+// A sector's FDC size code is a raw byte off the disk, and the sector
+// properties window will set any of the 256 of them. Only nine are defined, so
+// the rest have no size to report and must not be looked up in the table.
+procedure TDskImageTest.TestFDCSizeBytesRejectsUnknownCodes;
+begin
+  AssertEquals('code 0 is 128 bytes', 128, GetFDCSizeBytes(0));
+  AssertEquals('code 2 is 512 bytes', 512, GetFDCSizeBytes(2));
+  AssertEquals('code 8 is the largest defined', MaxSectorSize, GetFDCSizeBytes(8));
+  AssertEquals('one past the last defined code', 0, GetFDCSizeBytes(9));
+  AssertEquals('the largest a byte holds', 0, GetFDCSizeBytes(255));
+end;
+
+procedure TDskImageTest.TestCopyCountOnUnknownFDCSize;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    Sec.FDCSize := 200;
+    AssertEquals('a size code with no size declares one copy', 1, Sec.GetCopyCount);
+    AssertEquals('and the whole record is that copy', Sec.DataSize, Sec.GetCopySize);
+  finally
+    Img.Free;
+  end;
+end;
+
+// A header can claim a side and no tracks at all. Reading the size of the first
+// of none went through a track array that had never been allocated.
+procedure TDskImageTest.TestTrackSizeUniformOnSideWithNoTracks;
+var
+  Img: TDSKImage;
+begin
+  Img := TDSKImage.Create;
+  try
+    Img.Disk.Sides := 1;
+    AssertEquals('a side with no tracks has nothing to disagree about',
+      True, Img.Disk.IsTrackSizeUniform);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestLoadImageWithNoTracks;
+var
+  Header: TDSKInfoBlock;
+  Stream: TFileStream;
+  FileName: string;
+  Img: TDSKImage;
+begin
+  FileName := TempName('.dsk');
+
+  FillChar(Header, SizeOf(Header), 0);
+  Move(DiskInfoExtended[1], Header.DiskInfoBlock, Length(DiskInfoExtended));
+  Header.Disk_NumTracks := 0;
+  Header.Disk_NumSides := 1;
+
+  Stream := TFileStream.Create(FileName, fmCreate);
+  try
+    Stream.WriteBuffer(Header, SizeOf(Header));
+  finally
+    Stream.Free;
+  end;
+
+  try
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertEquals('the side the header claimed', 1, Img.Disk.Sides);
+      AssertEquals('with no tracks on it', 0, Img.Disk.Side[0].Tracks);
+      // What the image view asks of every image it opens
+      AssertEquals('track size is uniform', True, Img.Disk.IsTrackSizeUniform);
+      AssertEquals('nothing formatted', 0, Img.Disk.FormattedCapacity);
+      AssertEquals('and no largest track', 0, Img.Disk.Side[0].GetLargestTrackSize);
+    finally
+      Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+// The block shift is a raw byte off the boot sector. Past MaxBlockShift the
+// block size shifted out of a 32-bit integer and came back 0, which the block
+// count then divided by.
+procedure TDskImageTest.TestIdentifyRejectsImpossibleBlockShift;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    Sec.Data[0] := 0;   // PCW single sided
+    Sec.Data[1] := 0;   // single sided, single track
+    Sec.Data[2] := 40;  // tracks per side
+    Sec.Data[3] := 9;   // sectors per track
+    Sec.Data[4] := 2;   // 512 byte sectors
+    Sec.Data[5] := 1;   // reserved tracks
+    Sec.Data[6] := 25;  // block shift: 2 shl 31 is 0
+    Sec.Data[7] := 2;   // directory blocks
+    Sec.Data[8] := 42;
+    Sec.Data[9] := 82;
+
+    Img.Disk.Specification.Identify;
+
+    AssertEquals('an impossible shift is not believed', True,
+      Img.Disk.Specification.BlockShift <= MaxBlockShift);
+    AssertEquals('so there is always a block size to divide by', True,
+      Img.Disk.Specification.GetBlockSize > 0);
+    // Would have raised EDivByZero on a block size of 0
+    AssertEquals('and a block count to report', True,
+      Img.Disk.Specification.GetBlockCount > 0);
+  finally
+    Img.Free;
   end;
 end;
 
