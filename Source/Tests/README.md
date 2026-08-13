@@ -14,6 +14,7 @@ The tests target the non-UI domain logic. Forms and viewers are out of scope.
 | `TestSinclairBasic.pas` | `SinclairBasic.pas` | Spectrum BASIC detokeniser |
 | `TestAmstradBasic.pas` | `AmstradBasic.pas` | Locomotive BASIC detokeniser |
 | `TestDskImage.pas` | `DskImage.pas` | format / save / reload round-trips |
+| `TestCPMFileSystem.pas` | `filesystem.pas` | directory parsing, header size clamping |
 
 The BASIC tests feed hand-built tokenised byte streams straight into the
 decoders. The `DskImage` tests generate their fixtures **synthetically in

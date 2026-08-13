@@ -23,6 +23,7 @@ uses
   TestSinclairBasic,
   TestAmstradBasic,
   TestDskImage,
+  TestCPMFileSystem,
   TestFormatAnalysis;
 
 type

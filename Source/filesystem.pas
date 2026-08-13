@@ -241,6 +241,10 @@ begin
     Size := Data[Offset + RECORD_COUNT_OFFSET] * 128;
     if Data[Offset + BYTES_IN_LAST_RECORD_OFFSET] > 0 then
       Size := Size - 128 + Data[Offset + BYTES_IN_LAST_RECORD_OFFSET];
+    // A zero record count with a partial record still claimed gives a size
+    // below zero, and nothing can hold less than nothing
+    if Size < 0 then
+      Size := 0;
 
     if Blocks.Count > 0 then
     begin
@@ -260,6 +264,7 @@ var
   CalcCheckSum: word;
   Idx: integer;
   ExecAddr, LoadAddr: word;
+  RawSize: longword;
 begin
   CalcChecksum := 0;
   for Idx := 0 to 66 do
@@ -268,7 +273,14 @@ begin
 
   DiskFile.Checksum := True;
   DiskFile.HeaderType := 'AMSDOS';
-  DiskFile.Size := Read24LE(Data, 64);
+  // A header's length is a promise, and a corrupt or hostile image promises
+  // anything: cap it at what the whole disk can hold so it cannot describe a
+  // file bigger than its home
+  RawSize := Read24LE(Data, 64);
+  if RawSize > longword(FParentDisk.FormattedCapacity) then
+    DiskFile.Size := FParentDisk.FormattedCapacity
+  else
+    DiskFile.Size := integer(RawSize);
   DiskFile.HeaderSize := 128;
 
   LoadAddr := ReadWordLE(Data, 21);
@@ -301,6 +313,7 @@ var
   CalcChecksum: byte;
   Idx: integer;
   Param1: word;
+  RawSize: longword;
 begin
   Sig := StrBlockClean(Data, 0, 8);
   if Sig <> 'PLUS3DOS' then exit;
@@ -311,7 +324,15 @@ begin
 
   DiskFile.Checksum := CalcChecksum = Data[127];
   DiskFile.HeaderType := Sig;
-  DiskFile.Size := Read32LE(Data, 11);
+  // A header's length is a promise, and a corrupt or hostile image promises
+  // anything: above 2GB the 32-bit value wraps negative once stored in an
+  // integer, and GetData would size an allocation with it. Cap it at what the
+  // whole disk can hold so it cannot describe a file bigger than its home
+  RawSize := Read32LE(Data, 11);
+  if RawSize > longword(FParentDisk.FormattedCapacity) then
+    DiskFile.Size := FParentDisk.FormattedCapacity
+  else
+    DiskFile.Size := integer(RawSize);
   DiskFile.HeaderSize := 128;
 
   Param1 := ReadWordLE(Data, 18);
@@ -350,7 +371,7 @@ end;
 function TCPMFile.GetData(WithHeader: boolean): TDiskByteArray;
 var
   Block, BytesLeft, TargetIdx, BlockSize, SectorsLeft, SectorsPerBlock: integer;
-  TotalSize: integer;
+  TotalSize, MaxBytes: integer;
   Disk: TDSKDisk;
   Sector: TDSKSector;
   FileData: TDiskByteArray;
@@ -359,20 +380,30 @@ begin
 
   // PLUS3DOS records the whole file length (its 128-byte header included) in
   // Size, whereas AMSDOS and headerless files record only the payload. Derive
-  // the true on-disk length so we neither over-read past the file nor treat the
-  // trailing header-sized run of bytes as content.
+  // the true on-disk length so we neither over-read past the file nor treat
+  // the trailing header-sized run of bytes as content.
   if HeaderType = 'PLUS3DOS' then
     TotalSize := Size
   else
     TotalSize := Size + HeaderSize;
 
+  Disk := FParentFileSystem.FParentDisk;
+  BlockSize := Disk.Specification.GetBlockSize();
+  SectorsPerBlock := BlockSize div Disk.Specification.SectorSize;
+
+  // The length came from a header or directory entry, which an untrusted
+  // image can fill with whatever it likes: hold it to what the file's blocks
+  // can actually supply so it cannot size a buffer the disk has no room for
+  MaxBytes := Blocks.Count * BlockSize;
+  if TotalSize < 0 then
+    TotalSize := 0;
+  if TotalSize > MaxBytes then
+    TotalSize := MaxBytes;
+
   SetLength(FileData, TotalSize);
 
   BytesLeft := TotalSize;
   TargetIdx := 0;
-  Disk := FParentFileSystem.FParentDisk;
-  BlockSize := Disk.Specification.GetBlockSize();
-  SectorsPerBlock := BlockSize div Disk.Specification.SectorSize;
 
   // Extract the full data out
   for Block in Blocks do
