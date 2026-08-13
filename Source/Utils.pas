@@ -265,18 +265,26 @@ function FontFromDescription(Description: string): TFont;
 var
   Break: TStringList;
 begin
-  Break := TStringList.Create;
-  Break.Delimiter := ',';
-  Break.DelimitedText := StringReplace(Description, ' ', '_', [rfReplaceAll]);
   Result := TFont.Create;
-  Result.Name := StringReplace(Break[0], '_', ' ', [rfReplaceAll]);
-  if Break.Count > 1 then
-    Result.Size := IntStr(StringReplace(Break[1], 'pt', '', [rfReplaceAll]));
-  if (Break.Count > 2) and (Break[2] = 'Bold') then
-    Result.Style := Result.Style + [fsBold];
-  if (Break.Count > 3) and (Break[3] = 'Italic') then
-    Result.Style := Result.Style + [fsItalic];
-  Break.Free;
+  Break := TStringList.Create;
+  try
+    Break.Delimiter := ',';
+    Break.DelimitedText := StringReplace(Description, ' ', '_', [rfReplaceAll]);
+    // An empty description splits into nothing at all, and the name was taken
+    // without asking whether there was one: an ini holding "Font=" put an index
+    // out of range in the way of the program starting, and stranded both this
+    // list and the font on the way out
+    if Break.Count > 0 then
+      Result.Name := StringReplace(Break[0], '_', ' ', [rfReplaceAll]);
+    if Break.Count > 1 then
+      Result.Size := IntStr(StringReplace(Break[1], 'pt', '', [rfReplaceAll]));
+    if (Break.Count > 2) and (Break[2] = 'Bold') then
+      Result.Style := Result.Style + [fsBold];
+    if (Break.Count > 3) and (Break[3] = 'Italic') then
+      Result.Style := Result.Style + [fsItalic];
+  finally
+    Break.Free;
+  end;
 end;
 
 // Copy a font

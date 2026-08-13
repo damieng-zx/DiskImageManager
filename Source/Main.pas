@@ -540,7 +540,10 @@ var
 begin
   AllHeaderlessFilesSelected := True;
   for ListItem in lvwMain.Items do
-    if (TObject(ListItem.Data).ClassType = TCPMFile) and
+    // Info rows carry no file object, and reading a class off one is reading it
+    // off nothing. The list popup checks this; this one did not.
+    if (ListItem.Data <> nil) and
+      (TObject(ListItem.Data).ClassType = TCPMFile) and
       (TCPMFile(ListItem.Data).HeaderType <> 'None') then
     begin
       AllHeaderlessFilesSelected := False;
@@ -945,18 +948,32 @@ procedure TfrmMain.RestoreNavHistory;
 var
   Line: string;
   Loc: TNavLocation;
+  Dropped, Saved, Idx: integer;
 begin
   FNavHistory.Clear;
+  // The saved index counts entries in the saved list, and entries that no
+  // longer resolve are dropped on the way in. Without counting the ones dropped
+  // before it, the index came back pointing at whatever had moved down into
+  // that place, so back and forward carried on from somewhere the user had
+  // never been.
+  Dropped := 0;
+  Saved := Settings.NavHistoryIndex;
+  Idx := 0;
   for Line in Settings.NavHistoryRaw do
   begin
     Loc := TNavLocation.Deserialize(Line);
     if (Loc <> nil) and (ResolveNavLocation(Loc) <> nil) then
       FNavHistory.Add(Loc)
     else
+    begin
       Loc.Free;
+      if Idx <= Saved then
+        Inc(Dropped);
+    end;
+    Inc(Idx);
   end;
 
-  FNavIndex := Settings.NavHistoryIndex;
+  FNavIndex := Saved - Dropped;
   if FNavIndex >= FNavHistory.Count then
     FNavIndex := FNavHistory.Count - 1;
   if FNavIndex < 0 then
@@ -1901,7 +1918,8 @@ begin
   if (Sector <> nil) and (ConfirmChange('reset FDC flags for', 'sector')) then
     Sector.ResetFDC;
 
-  if (popSector.PopupComponent = tvwMain) and (tvwMain.Selected <> nil) then
+  if (popSector.PopupComponent = tvwMain) and (tvwMain.Selected <> nil) and
+    (tvwMain.Selected.Data <> nil) then
     if (TObject(tvwMain.Selected.Data).ClassType = TDSKTrack) and
       (ConfirmChange('reset FDC flags for', 'track')) then
       for Sector in TDSKTrack(tvwMain.Selected.Data).Sector do
@@ -1981,7 +1999,8 @@ begin
   if Sector <> nil then
     TfrmSectorProperties.Create(Self, Sector);
 
-  if (popSector.PopupComponent = tvwMain) and (tvwMain.Selected <> nil) then
+  if (popSector.PopupComponent = tvwMain) and (tvwMain.Selected <> nil) and
+    (tvwMain.Selected.Data <> nil) then
     if TObject(tvwMain.Selected.Data).ClassType = TDSKTrack then
     begin
       Track := TDSKTrack(tvwMain.Selected.Data);
