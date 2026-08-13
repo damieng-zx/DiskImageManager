@@ -44,6 +44,9 @@ type
     procedure TestHighTrackCountOnEmptySide;
     procedure TestIdentifyOnEmptyDisk;
     procedure TestLoadClampsSectorCount;
+    procedure TestSectorLayoutUnchangedWhenNumberingFromZero;
+    procedure TestSectorLayoutUnchangedWhenNumberingWraps;
+    procedure TestSectorIDsSurviveANegativeTrackSkew;
     procedure TestToDataRateRejectsValuesOutsideTheEnum;
     procedure TestToRecordingModeRejectsValuesOutsideTheEnum;
     procedure TestLoadClampsTrackDataRateAndRecordingMode;
@@ -1027,6 +1030,115 @@ begin
     end;
   finally
     DeleteFile(FileName);
+  end;
+end;
+
+// Whatever the interleave and skew do to the order, a track has to end up
+// holding each of its sector IDs exactly once. The table used to say a position
+// was free by the ID stored there being 0, so writing the ID 0 left its
+// position looking free and a later sector took it: an ID went missing, another
+// appeared twice, and one that should not exist at all turned up.
+//
+// Asserted through GetSectorID, which is what TDSKTrack.Format calls, rather
+// than reaching into the table it builds.
+
+// Collect the IDs a format hands out for one track, in physical order
+function CollectIDs(Spec: TDSKFormatSpecification; LogicalTrack: word;
+  Side: byte): TStringList;
+var
+  Idx: integer;
+begin
+  Result := TStringList.Create;
+  for Idx := 0 to Spec.SectorsPerTrack - 1 do
+    Result.Add(IntToStr(Spec.GetSectorID(Side, LogicalTrack, Idx)));
+end;
+
+// The IDs a format hands out with FirstSector set to Start
+function LayoutFrom(Start: byte; Interleave: shortint; SectorsPerTrack: byte;
+  SkewTrack: shortint; LogicalTrack: word): TStringList;
+var
+  Spec: TDSKFormatSpecification;
+begin
+  Spec := TDSKFormatSpecification.Create(0);
+  try
+    Spec.SectorsPerTrack := SectorsPerTrack;
+    Spec.FirstSector := Start;
+    Spec.Interleave := Interleave;
+    Spec.SkewTrack := SkewTrack;
+    Spec.SkewSide := 0;
+    Result := CollectIDs(Spec, LogicalTrack, 0);
+  finally
+    Spec.Free;
+  end;
+end;
+
+// Which physical sector gets which ID is decided by the interleave alone, so
+// starting the numbering somewhere else must shift every ID and move nothing.
+// Starting at 1 is the case that always worked, so it is the shape to compare
+// against.
+
+procedure TDskImageTest.TestSectorLayoutUnchangedWhenNumberingFromZero;
+var
+  FromOne, FromZero: TStringList;
+  Idx: integer;
+begin
+  // Ten sectors at 2:1, the layout the +3 formats use, but numbered from 0 as
+  // the TS2068 format this app identifies elsewhere does
+  FromOne := LayoutFrom(1, 2, 10, 0, 0);
+  FromZero := LayoutFrom(0, 2, 10, 0, 0);
+  try
+    AssertEquals('one ID per sector', 10, FromZero.Count);
+    for Idx := 0 to 9 do
+      AssertEquals(Format('sector %d is one lower than numbering from 1', [Idx]),
+        StrToInt(FromOne[Idx]) - 1, StrToInt(FromZero[Idx]));
+  finally
+    FromOne.Free;
+    FromZero.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestSectorLayoutUnchangedWhenNumberingWraps;
+var
+  FromOne, FromHigh: TStringList;
+  Idx, Expected: integer;
+begin
+  // High enough that the numbering runs past 255 and wraps onto 0
+  FromOne := LayoutFrom(1, 2, 10, 0, 0);
+  FromHigh := LayoutFrom(250, 2, 10, 0, 0);
+  try
+    AssertEquals('one ID per sector', 10, FromHigh.Count);
+    for Idx := 0 to 9 do
+    begin
+      Expected := (StrToInt(FromOne[Idx]) - 1 + 250) mod 256;
+      AssertEquals(Format('sector %d keeps its place across the wrap', [Idx]),
+        Expected, StrToInt(FromHigh[Idx]));
+    end;
+  finally
+    FromOne.Free;
+    FromHigh.Free;
+  end;
+end;
+
+// A negative track skew made the index negative, because Pascal's mod keeps the
+// sign of what it divides, and the table was read from before its start
+procedure TDskImageTest.TestSectorIDsSurviveANegativeTrackSkew;
+var
+  IDs: TStringList;
+  Idx, ID, Seen: integer;
+begin
+  // Track 5 at a skew of -2 is what sent the index below the start of the table
+  IDs := LayoutFrom(1, 1, 9, -2, 5);
+  try
+    AssertEquals('one ID per sector', 9, IDs.Count);
+    for ID := 1 to 9 do
+    begin
+      Seen := 0;
+      for Idx := 0 to IDs.Count - 1 do
+        if IDs[Idx] = IntToStr(ID) then Inc(Seen);
+      AssertEquals(Format('ID %d used exactly once', [ID]), 1, Seen);
+    end;
+  finally
+    IDs.Free;
   end;
 end;
 

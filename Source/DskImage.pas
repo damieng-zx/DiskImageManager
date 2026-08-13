@@ -2762,9 +2762,16 @@ var
 begin
   BuildSectorIDs;
 
+  // No sectors means no table to take an ID out of
+  if Length(FSectorIDs) = 0 then
+  begin
+    Result := 0;
+    exit;
+  end;
+
   if (SkewTrack = 0) and ((SkewSide = 0) or (Sides = dsSideSingle)) then
   begin
-    Result := FSectorIDs[Sector];
+    Result := FSectorIDs[Sector mod SectorsPerTrack];
     exit;
   end;
 
@@ -2789,25 +2796,51 @@ begin
         TrackSkewIdx := ((((TracksPerSide * 2) - 1 - LogicalTrack) * SkewTrack)) + SkewSide;
   end;
 
-  Result := FSectorIDs[(TrackSkewIdx + Sector) mod SectorsPerTrack];
+  // A track skew can be negative, and Pascal's mod keeps the sign of what it is
+  // dividing, so this indexed the table from before its start. The second mod
+  // brings a negative remainder back into the table without disturbing a
+  // positive one.
+  Result := FSectorIDs[((TrackSkewIdx + Sector) mod SectorsPerTrack +
+    SectorsPerTrack) mod SectorsPerTrack];
 end;
 
-// Build sector ID table for interleave/skew
+// Build the sector ID table for the interleave and skew: walk the track in
+// steps of Interleave, laying the IDs down in order from FirstSector and
+// stepping past any position already taken.
+//
+// Which positions are taken used to be told by the ID written there being
+// non-zero, but 0 is a sector ID like any other - the TS2068 format this app
+// identifies starts at it, and an ID that runs past 255 wraps onto it. Writing
+// one left its position looking empty, so a later sector overwrote it: with
+// first sector 0, interleave 2 and ten sectors the track came out holding two
+// of one ID, none of another, and an ID no sector should have had at all. What
+// is taken is now tracked separately from what is stored.
 procedure TDSKFormatSpecification.BuildSectorIDs;
 var
   EIdx, LastSectorID: byte;
   SIdx: integer;
+  Taken: array of boolean;
 begin
+  if SectorsPerTrack = 0 then
+  begin
+    SetLength(FSectorIDs, 0);
+    exit;
+  end;
+
   SIdx := 0;
   LastSectorID := FirstSector;
 
   SetLength(FSectorIDs, SectorsPerTrack);
+  SetLength(Taken, SectorsPerTrack);
   for EIdx := 0 to SectorsPerTrack - 1 do
+  begin
     FSectorIDs[EIdx] := 0;
+    Taken[EIdx] := False;
+  end;
 
   for EIdx := 0 to SectorsPerTrack - 1 do
   begin
-    while FSectorIDs[(SIdx mod SectorsPerTrack)] <> 0 do
+    while Taken[SIdx mod SectorsPerTrack] do
       if Interleave > 0 then
         Inc(SIdx)
       else
@@ -2818,6 +2851,7 @@ begin
       end;
 
     FSectorIDs[SIdx mod SectorsPerTrack] := LastSectorID;
+    Taken[SIdx mod SectorsPerTrack] := True;
     Inc(LastSectorID);
     SIdx := SIdx + Interleave;
     if SIdx < 0 then
