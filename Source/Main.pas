@@ -2213,7 +2213,12 @@ begin
       (TObject(ListItem.Data).ClassType = TCPMFile) then
     begin
       DiskFile := TCPMFile(ListItem.Data);
-      Path := TempRoot + PathDelim + DiskFile.FileName;
+      // The same name off the same disk as the extract paths use, and it needs
+      // the same treatment: a name holding a separator would put the file
+      // outside the folder about to be dragged, and one holding a character
+      // Windows will not take threw into the except below and vanished from the
+      // drag without a word
+      Path := TempRoot + PathDelim + SafeFileName(DiskFile.FileName);
       try
         Stream := TFileStream.Create(Path, fmCreate);
         try
@@ -2230,8 +2235,15 @@ begin
       end;
     end;
 
-  if Length(Paths) > 0 then
-    DragFilesAsCopy(Paths);
+  // DoDragDrop does not return until the target has taken its copy, so by here
+  // the files have been read and the folder can go. Left behind, every drag
+  // added another one to the temp directory for good.
+  try
+    if Length(Paths) > 0 then
+      DragFilesAsCopy(Paths);
+  finally
+    DeleteDirectory(TempRoot, False);
+  end;
 end;
 
 procedure TfrmMain.ShowFile(Sender: TObject);
