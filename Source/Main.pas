@@ -1845,10 +1845,14 @@ begin
   end;
 end;
 
+// Both menus toggle the same thing, and both used to move only the control, so
+// the choice was gone by the next run and the Options dialog showed the old one
 procedure TfrmMain.itmDarkBlankSectorsPopClick(Sender: TObject);
 begin
-  DiskMap.DarkBlankSectors := not itmDarkBlankSectorsPop.Checked;
-  itmDarkBlankSectorsPop.Checked := DiskMap.DarkBlankSectors;
+  Settings.DarkBlankSectors := not itmDarkBlankSectorsPop.Checked;
+  DiskMap.DarkBlankSectors := Settings.DarkBlankSectors;
+  itmDarkBlankSectorsPop.Checked := Settings.DarkBlankSectors;
+  itmDarkUnusedSectors.Checked := Settings.DarkBlankSectors;
 end;
 
 procedure TfrmMain.popDiskMapPopup(Sender: TObject);
@@ -1869,8 +1873,10 @@ end;
 
 procedure TfrmMain.itmDarkUnusedSectorsClick(Sender: TObject);
 begin
-  DiskMap.DarkBlankSectors := not itmDarkUnusedSectors.Checked;
-  itmDarkUnusedSectors.Checked := DiskMap.DarkBlankSectors;
+  Settings.DarkBlankSectors := not itmDarkUnusedSectors.Checked;
+  DiskMap.DarkBlankSectors := Settings.DarkBlankSectors;
+  itmDarkUnusedSectors.Checked := Settings.DarkBlankSectors;
+  itmDarkBlankSectorsPop.Checked := Settings.DarkBlankSectors;
 end;
 
 procedure TfrmMain.itmStatusBarClick(Sender: TObject);

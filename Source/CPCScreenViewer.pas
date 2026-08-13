@@ -63,7 +63,15 @@ var
   Viewer: TfrmCPCScreenViewer;
 begin
   Viewer := TfrmCPCScreenViewer.Create(Application);
-  Viewer.LoadScreenFile(DiskImage, DiskFile, DiskName);
+  // Nothing but this holds the form until it is shown, so a file that
+  // will not decode has to take the window with it rather than leave it
+  // owned by the application and never seen again
+  try
+    Viewer.LoadScreenFile(DiskImage, DiskFile, DiskName);
+  except
+    Viewer.Free;
+    raise;
+  end;
   Viewer.Show;
 end;
 
