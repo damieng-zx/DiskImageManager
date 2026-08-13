@@ -61,6 +61,12 @@ procedure DrawBorder(Canvas: TCanvas; var Rect: TRect; BorderStyle: TSpinBorderS
 procedure AutoResizeListView(const ListView: TListView;
   const Mode: integer = LVSCW_AUTOSIZE_BESTFIT);
 
+// Save Bitmap to FileName as PNG or BMP, chosen by the file extension. TBitmap
+// is natively a Windows bitmap and writes one whatever the name says, so a .png
+// has to go through TPortableNetworkGraphic to actually be a PNG. Returns False
+// when there is nothing to save.
+function SaveBitmapAs(Bitmap: TBitmap; const FileName: string): boolean;
+
 // Prompt for a filename and save Bitmap as PNG or BMP (chosen by the file
 // extension, defaulting to PNG). SuggestedName seeds the dialog's filename.
 procedure SaveBitmapWithDialog(AOwner: TComponent; Bitmap: TBitmap;
@@ -383,12 +389,34 @@ begin
     AutoResizeColumn(ListView.Columns[i], Mode);
 end;
 
+function SaveBitmapAs(Bitmap: TBitmap; const FileName: string): boolean;
+var
+  Png: TPortableNetworkGraphic;
+begin
+  Result := False;
+  if (Bitmap = nil) or (FileName = '') then
+    Exit;
+
+  if LowerCase(ExtractFileExt(FileName)) = '.bmp' then
+    Bitmap.SaveToFile(FileName)  // TBitmap is natively a Windows bitmap
+  else
+  begin
+    Png := TPortableNetworkGraphic.Create;
+    try
+      Png.Assign(Bitmap);
+      Png.SaveToFile(FileName);
+    finally
+      Png.Free;
+    end;
+  end;
+  Result := True;
+end;
+
 procedure SaveBitmapWithDialog(AOwner: TComponent; Bitmap: TBitmap;
   const SuggestedName: string);
 var
   Dialog: TSaveDialog;
   FileName, Ext: string;
-  Png: TPortableNetworkGraphic;
 begin
   if Bitmap = nil then
     Exit;
@@ -416,18 +444,7 @@ begin
       FileName := FileName + Ext;
     end;
 
-    if Ext = '.bmp' then
-      Bitmap.SaveToFile(FileName)  // TBitmap is natively a Windows bitmap
-    else
-    begin
-      Png := TPortableNetworkGraphic.Create;
-      try
-        Png.Assign(Bitmap);
-        Png.SaveToFile(FileName);
-      finally
-        Png.Free;
-      end;
-    end;
+    SaveBitmapAs(Bitmap, FileName);
   finally
     Dialog.Free;
   end;

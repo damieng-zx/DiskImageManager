@@ -684,17 +684,20 @@ begin
   end;
 end;
 
+// Save the map as PNG or BMP, whichever the file name asks for. TBitmap.SaveToFile
+// always writes a Windows bitmap however the file is named, so saving as .png -
+// which is what the save dialog offers first - produced a bitmap wearing a PNG
+// extension that some viewers then refused to open.
 function TSpinDiskMap.SaveMap(FileName: TFileName; SaveWidth: integer; SaveHeight: integer): boolean;
 var
  SaveImage: TBitmap;
 begin
   SaveImage := CreateImage(SaveWidth, SaveHeight);
   try
-    SaveImage.SaveToFile(FileName);
+    Result := SaveBitmapAs(SaveImage, FileName);
   finally
     SaveImage.Free;
   end;
-  Result := True;
 end;
 
 end.
