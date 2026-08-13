@@ -1869,6 +1869,9 @@ begin
   begin
     Sector.DataSize := Sector.ParentTrack.SectorSize;
     Sector.FillSector(Sector.ParentTrack.Filler);
+    // FillSector only notices a change when the fill byte differs, and the size
+    // was set here regardless, so mark it either way
+    Sector.IsChanged := True;
   end;
 
   // TODO: Format track would require more details

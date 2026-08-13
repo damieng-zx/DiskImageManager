@@ -56,6 +56,10 @@ type
     procedure TestTrackSizeUniformOnSideWithNoTracks;
     procedure TestLoadImageWithNoTracks;
     procedure TestIdentifyRejectsImpossibleBlockShift;
+    procedure TestLoadedImageIsNotChanged;
+    procedure TestSectorEditMarksImageChanged;
+    procedure TestSectorFillMarksImageChanged;
+    procedure TestTrackUnformatMarksImageChanged;
   end;
 
 implementation
@@ -861,6 +865,85 @@ begin
     // Would have raised EDivByZero on a block size of 0
     AssertEquals('and a block count to report', True,
       Img.Disk.Specification.GetBlockCount > 0);
+  finally
+    Img.Free;
+  end;
+end;
+
+// Only the image is asked whether there is anything worth saving, so an edit
+// that marks a sector but not the image was thrown away on close without a
+// prompt. These pin both halves: loading marks nothing, editing marks the image.
+
+procedure TDskImageTest.TestLoadedImageIsNotChanged;
+var
+  Img, Reloaded: TDSKImage;
+  FileName: string;
+begin
+  FileName := TempName('.dsk');
+  Img := MakeFormatted(0);
+  try
+    Img.SaveFile(FileName, diExtendedDSK, False, False);
+  finally
+    Img.Free;
+  end;
+
+  try
+    Reloaded := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertEquals('an image straight off disk has nothing to save',
+        False, Reloaded.IsChanged);
+    finally
+      Reloaded.Free;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+procedure TDskImageTest.TestSectorEditMarksImageChanged;
+var
+  Img: TDSKImage;
+begin
+  Img := MakeFormatted(0);
+  try
+    // Formatting marks the image, which is the state the New dialog leaves it
+    // in; start from saved so the edit below is the only thing under test
+    Img.IsChanged := False;
+    Img.Disk.Side[0].Track[0].Sector[0].IsChanged := True;
+    AssertEquals('a changed sector is a changed image', True, Img.IsChanged);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestSectorFillMarksImageChanged;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    Img.IsChanged := False;
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    Sec.FillSector(Sec.ParentTrack.Filler + 1);
+    AssertEquals('refilling a sector is a change to the image', True, Img.IsChanged);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestTrackUnformatMarksImageChanged;
+var
+  Img: TDSKImage;
+begin
+  Img := MakeFormatted(0);
+  try
+    Img.IsChanged := False;
+    Img.Disk.Side[0].Track[0].Unformat;
+    AssertEquals('the track is gone', 0, Img.Disk.Side[0].Track[0].Sectors);
+    // Nothing on a track carries a changed flag, so this is the only place the
+    // fact that it was unformatted can be recorded
+    AssertEquals('and the image knows it', True, Img.IsChanged);
   finally
     Img.Free;
   end;

@@ -196,6 +196,10 @@ begin
       DataRate := TDSKDataRate(cboSectorDataRate.ItemIndex);
       if cboSectorSize.ItemIndex >= 0 then
         SectorSize := StrToInt(cboSectorSize.Items[cboSectorSize.ItemIndex]);
+
+      // A track keeps no changed flag of its own, and nothing above touches a
+      // sector, so without this the image closed as though nothing had happened
+      MarkChanged;
     end;
   frmMain.RefreshList;
 end;

@@ -237,6 +237,8 @@ type
 
     procedure Format(Formatter: TDSKFormatSpecification);
     procedure Unformat;
+    procedure MarkChanged;
+    function ParentImage: TDSKImage;
     function GetTrackSizeFromSectors: word;
     function GetFirstLogicalSector: TDSKSector;
     function SafeSector(Index: integer): TDSKSector;
@@ -262,6 +264,7 @@ type
     FIsChanged: boolean;
     FParentTrack: TDSKTrack;
     function GetStatus: TDSKSectorStatus;
+    procedure SetIsChanged(NewValue: boolean);
   public
     Data: array[0..MaxSectorSize] of byte;
     FDCSize: byte;
@@ -285,10 +288,13 @@ type
     procedure FillSector(Filler: byte);
     procedure ResetFDC;
     procedure Unformat;
+    function ParentImage: TDSKImage;
 
     property AdvertisedSize: integer read FAdvertisedSize write FAdvertisedSize;
     property DataSize: word read FDataSize write FDataSize;
-    property IsChanged: boolean read FIsChanged write FIsChanged;
+    // Setting this True also marks the image, so that an edit made through any
+    // of the property windows is one the app knows to offer to save
+    property IsChanged: boolean read FIsChanged write SetIsChanged;
     property ParentTrack: TDSKTrack read FParentTrack;
     property Status: TDSKSectorStatus read GetStatus;
   end;
@@ -2038,9 +2044,30 @@ begin
     Result := High(Sector) + 1;
 end;
 
+// The image this track belongs to, or nil if any link in the chain is missing
+function TDSKTrack.ParentImage: TDSKImage;
+begin
+  Result := nil;
+  if (FParentSide <> nil) and (FParentSide.ParentDisk <> nil) then
+    Result := FParentSide.ParentDisk.ParentImage;
+end;
+
+// Note that this track has been edited, so the image knows it has something
+// worth saving. Tracks carry no changed flag of their own; the image is the
+// only thing that acts on one.
+procedure TDSKTrack.MarkChanged;
+var
+  Image: TDSKImage;
+begin
+  Image := ParentImage;
+  if Image <> nil then
+    Image.IsChanged := True;
+end;
+
 procedure TDSKTrack.Unformat;
 begin
   Sectors := 0;
+  MarkChanged;
 end;
 
 procedure TDSKTrack.SetSectors(NewSectors: byte);
@@ -2125,6 +2152,30 @@ destructor TDSKSector.Destroy;
 begin
   FParentTrack := nil;
   inherited Destroy;
+end;
+
+// The image this sector belongs to, or nil if any link in the chain is missing
+function TDSKSector.ParentImage: TDSKImage;
+begin
+  Result := nil;
+  if FParentTrack <> nil then
+    Result := FParentTrack.ParentImage;
+end;
+
+// Marking a sector changed marks the image with it. Only the image is asked
+// whether there is anything to save, so a sector that knew it had been edited
+// while the image did not meant every edit made through the sector and track
+// property windows was dropped on close without so much as a prompt.
+procedure TDSKSector.SetIsChanged(NewValue: boolean);
+var
+  Image: TDSKImage;
+begin
+  FIsChanged := NewValue;
+  if not NewValue then exit;
+
+  Image := ParentImage;
+  if Image <> nil then
+    Image.IsChanged := True;
 end;
 
 function TDSKSector.GetStatus: TDSKSectorStatus;

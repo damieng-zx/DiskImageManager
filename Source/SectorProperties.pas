@@ -231,6 +231,10 @@ begin
       for FIdx := 0 to 7 do
         if cklFDC2.Checked[FIdx] then FDCStatus[2] := FDCStatus[2] + Power2[FIdx + 1];
 
+      // Most of the fields above are plain public fields that notice nothing,
+      // so say once here that the sector - and with it the image - has been
+      // edited, rather than closing later with no offer to save it
+      IsChanged := True;
     end;
   frmMain.RefreshList;
 end;
