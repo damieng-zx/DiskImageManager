@@ -193,7 +193,8 @@ begin
       Sectors := udSectorCount.Position;
       GapLength := udSectorGap.Position;
       Filler := udSectorFiller.Position;
-      DataRate := TDSKDataRate(cboSectorDataRate.ItemIndex);
+      // A combo box with nothing picked answers -1, which is not a data rate
+      DataRate := ToDataRate(cboSectorDataRate.ItemIndex);
       if cboSectorSize.ItemIndex >= 0 then
         SectorSize := StrToInt(cboSectorSize.Items[cboSectorSize.ItemIndex]);
 

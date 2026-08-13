@@ -29,11 +29,15 @@ before fixes started.
   `BootableOn` via `itmCloseAllExceptBootSectors` (`Main.pas:1060`) and
   `SaveFileDSK` (`DskImage.pas:1118`).
 
-- [ ] **4. Uncasted data rate / recording mode.** File bytes cast straight to
+- [x] **4. Uncasted data rate / recording mode.** File bytes cast straight to
   enums (`DskImage.pas:873-874`); invalid ordinals then index
   `DSKDataRate[...]/DSKRecordingMode[...]` (`ListViewPresenter.pas:149-150`),
   and Track Properties applies `ItemIndex` (-1) back to the track
   (`TrackProperties.pas:196`).
+  _Fixed: `ToDataRate`/`ToRecordingMode` in `DskImage.pas` answer Unknown for
+  anything outside the enum, used at the load site and at all three combo box
+  writes (Track Properties, and both in New). The image records one message
+  when a file held such a value. Covered by 3 tests in `TestDskImage`._
 
 ## Medium — wrong results
 
@@ -56,11 +60,16 @@ before fixes started.
   space/£/$); the real £ (code $5C) prints as backslash. `TestPoundSign`
   asserts the wrong code ($A1).
 
-- [ ] **8. Disk map holds a dangling side after close.** Nothing sets
+- [x] **8. Disk map holds a dangling side after close.** Nothing sets
   `DiskMap.Side := nil` when an image closes (`Main.pas:1620-1642`); with the
   last image closed while its map is shown the map stays visible, and
   `SetSide`'s pointer-equality shortcut (`DiskMap.pas:611`) won't clear stale
   hits if the address is reused → use-after-free on repaint/hover/click.
+  _Fixed: `DetachImageProperties` now also drops the map's side and hides it
+  when the image being closed owns it, and `SetSide` clears the hit regions
+  and hover unconditionally rather than only when the side pointer differs.
+  `itmSaveMapAsClick` no longer assumes there is a side. Not unit tested - it
+  is form wiring; worth exercising by closing an image with its map on show._
 
 - [ ] **9. SmallInt truncation for sector-size default.** `SectorProperties.pas:255`
   assigns `SectorSize * 256` to `TUpDown.Position` (512→0, 128→−32768);

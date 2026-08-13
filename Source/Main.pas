@@ -1645,8 +1645,11 @@ begin
   end;
 end;
 
-// The properties windows are modeless and hold the track or sector itself, so
-// any left open over an image being closed have to let go of it first
+// Everything outside the tree that holds part of an image has to let go of it
+// before it is freed: the properties windows are modeless and hold a track or
+// a sector, and the disk map holds a side along with a hit region per sector
+// on it. The map was never told, so closing an image while its map was shown
+// left it drawing, hit-testing and clicking through freed memory.
 procedure TfrmMain.DetachImageProperties(Image: TDSKImage);
 var
   Idx: integer;
@@ -1661,6 +1664,13 @@ begin
     if (Form is TfrmSectorProperties) and
       (TfrmSectorProperties(Form).ParentImage = Image) then
       TfrmSectorProperties(Form).Detach;
+  end;
+
+  if (DiskMap.Side <> nil) and (DiskMap.Side.ParentDisk <> nil) and
+    (DiskMap.Side.ParentDisk.ParentImage = Image) then
+  begin
+    DiskMap.Side := nil;
+    DiskMap.Visible := False;
   end;
 end;
 
@@ -1788,6 +1798,9 @@ procedure TfrmMain.itmSaveMapAsClick(Sender: TObject);
 var
   DefaultFileName: string;
 begin
+  // The map has no side once the image showing it was closed
+  if (DiskMap.Side = nil) or (DiskMap.Side.ParentDisk = nil) then exit;
+
   DefaultFileName := DiskMap.Side.ParentDisk.ParentImage.FileName;
   if DiskMap.Side.Side > 0 then
     DefaultFileName := DefaultFileName + ' Side ' + StrInt(DiskMap.Side.Side);

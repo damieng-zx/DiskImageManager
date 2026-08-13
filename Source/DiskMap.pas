@@ -605,18 +605,17 @@ begin
   end;
 end;
 
-// Set the side to analyse
+// Set the side to analyse. The hits go whatever the new side is: they hold a
+// sector or a track per region, and testing the sides for equality first meant
+// a side allocated at the address a freed one had been at was taken for the
+// same side, keeping regions that pointed into memory the image no longer
+// owned. Clearing regardless costs a repaint that was going to happen anyway.
 procedure TSpinDiskMap.SetSide(NewSide: TDSKSide);
 begin
-  if NewSide <> FSide then
-  begin
-    FSide := NewSide;
-    FHasHover := False;
-    // Drop hits from the previous disk so a click before the next paint cannot
-    // land on a stale sector/track that no longer exists.
-    SetLength(FHits, 0);
-    Invalidate;
-  end;
+  FSide := NewSide;
+  FHasHover := False;
+  SetLength(FHits, 0);
+  Invalidate;
 end;
 
 // DarkBlankSectors property changes
