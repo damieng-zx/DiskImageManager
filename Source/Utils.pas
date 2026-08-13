@@ -21,6 +21,8 @@ const
   Power2: array[1..17] of integer =
     (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536);
   LVSCW_AUTOSIZE_BESTFIT = -3;
+  // Largest XDPB block shift that describes a real disk (2 << (8 + 6) = 128KB)
+  MaxBlockShift = 8;
 
 type
   TSpinBorderStyle = (bsRaised, bsLowered, bsNone);
@@ -55,6 +57,14 @@ function FontCopy(ThisFont: TFont): TFont;
 
 function BlockShiftToBlockSize(BlockShift: byte): integer;
 function StrFileSize(Size: integer): string;
+
+// A file name from inside a disk image, made safe to join onto a folder path.
+// Names on a CP/M or MGT disk are eleven bytes of anything printable, which
+// includes the path separators and the characters Windows will not take, so one
+// can name a place outside the folder the user chose or a device rather than a
+// file. Everything troublesome becomes an underscore; a name left with nothing
+// in it comes back as Fallback.
+function SafeFileName(const Name: string; const Fallback: string = 'unnamed'): string;
 function CompareByLength(List: TStringList; Index1, Index2: integer): integer;
 
 procedure DrawBorder(Canvas: TCanvas; var Rect: TRect; BorderStyle: TSpinBorderStyle);
@@ -335,9 +345,67 @@ begin
       Exit(False);
 end;
 
+// CP/M block size from the XDPB block shift. The shift is a raw byte off the
+// boot sector, and shifting a 32-bit value by more than 31 is not defined: at a
+// shift of 25 the 2 fell off the top and the answer was 0, which every caller
+// then divided by. Nothing beyond MaxBlockShift (128KB) describes a real disk,
+// so anything larger is reported as the largest that does.
 function BlockShiftToBlockSize(BlockShift: byte): integer;
 begin
+  if BlockShift > MaxBlockShift then
+    BlockShift := MaxBlockShift;
   Result := 2 << (BlockShift + 6);
+end;
+
+function SafeFileName(const Name: string; const Fallback: string): string;
+const
+  // Everything Windows refuses in a file name, plus both path separators so a
+  // name cannot climb out of the folder it is being written into
+  Illegal = '\/:*?"<>|';
+  // Names that are devices however they are spelled, and whatever follows a dot
+  Devices: array[0..21] of string = (
+    'CON', 'PRN', 'AUX', 'NUL',
+    'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+    'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9');
+var
+  Idx: integer;
+  Ch: char;
+  Stem: string;
+begin
+  Result := '';
+  for Idx := 1 to Length(Name) do
+  begin
+    Ch := Name[Idx];
+    if (Ch < ' ') or (Pos(Ch, Illegal) > 0) then
+      Ch := '_';
+    Result := Result + Ch;
+  end;
+
+  // Windows drops trailing dots and spaces, which would turn 'a. ' into 'a' and
+  // '..' into nothing at all, and a leading dot hides the file on other systems
+  while (Result <> '') and ((Result[Length(Result)] = '.') or (Result[Length(Result)] = ' ')) do
+    SetLength(Result, Length(Result) - 1);
+  while (Result <> '') and ((Result[1] = '.') or (Result[1] = ' ')) do
+    Result := Copy(Result, 2, Length(Result) - 1);
+
+  if Result = '' then
+  begin
+    Result := Fallback;
+    exit;
+  end;
+
+  // A device name is a device whatever extension it is given, so push it out of
+  // the way rather than opening the console in place of a file
+  Stem := UpperCase(Result);
+  Idx := Pos('.', Stem);
+  if Idx > 0 then
+    Stem := Copy(Stem, 1, Idx - 1);
+  for Idx := Low(Devices) to High(Devices) do
+    if Stem = Devices[Idx] then
+    begin
+      Result := '_' + Result;
+      exit;
+    end;
 end;
 
 function StrFileSize(Size: integer): string;

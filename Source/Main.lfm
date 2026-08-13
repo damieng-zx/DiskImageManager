@@ -945,6 +945,7 @@ object frmMain: TfrmMain
     Top = 112
   end
   object dlgSaveBinary: TSaveDialog
+    Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     Left = 264
     Top = 112
   end

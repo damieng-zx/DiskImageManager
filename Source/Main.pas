@@ -547,12 +547,14 @@ end;
 
 procedure TfrmMain.SaveExtractedFilesToFolder(WithHeader: boolean; AllFiles: boolean);
 var
-  SaveCount: integer;
+  SaveCount, SkipCount: integer;
   ListItem: TListItem;
-  Folder: string;
+  Folder, Target: string;
   Stream: TStream;
   DiskFile: TCPMFile;
   Data: TDiskByteArray;
+  // Whether to overwrite without asking again, and whether to stop asking at all
+  OverwriteAll, SkipAll, Cancelled: boolean;
 begin
   if Settings.LastSaveFolder <> '' then
     dlgSelectDirectory.InitialDir := Settings.LastSaveFolder;
@@ -560,24 +562,71 @@ begin
   Settings.LastSaveFolder := dlgSelectDirectory.FileName;
 
   SaveCount := 0;
-  Folder := dlgSelectDirectory.FileName + PathDelim;
+  SkipCount := 0;
+  OverwriteAll := False;
+  SkipAll := False;
+  Cancelled := False;
+  Folder := IncludeTrailingPathDelimiter(dlgSelectDirectory.FileName);
   for ListItem in lvwMain.Items do
-    if (AllFiles or ListItem.Selected) and (TObject(ListItem.Data).ClassType =
-      TCPMFile) then
+  begin
+    if Cancelled then Break;
+    // Info rows carry no Data, so there is nothing to take a file from
+    if (AllFiles or ListItem.Selected) and (ListItem.Data <> nil) and
+      (TObject(ListItem.Data).ClassType = TCPMFile) then
     begin
       DiskFile := TCPMFile(ListItem.Data);
-      Stream := TFileStream.Create(Folder + DiskFile.FileName, fmCreate);
+      // A name off the disk is eleven bytes of anything printable, so it can
+      // hold path separators and climb out of the folder the user picked
+      Target := Folder + SafeFileName(DiskFile.FileName);
+
+      if FileExists(Target) and not OverwriteAll then
+      begin
+        if SkipAll then
+        begin
+          Inc(SkipCount);
+          Continue;
+        end;
+        case MessageDlg('File exists',
+          SysUtils.Format('%s already exists. Replace it?', [ExtractFileName(Target)]),
+          mtConfirmation, [mbYes, mbNo, mbYesToAll, mbNoToAll, mbCancel], 0) of
+          mrYesToAll: OverwriteAll := True;
+          mrNoToAll:
+          begin
+            SkipAll := True;
+            Inc(SkipCount);
+            Continue;
+          end;
+          mrNo:
+          begin
+            Inc(SkipCount);
+            Continue;
+          end;
+          mrCancel:
+          begin
+            Cancelled := True;
+            Break;
+          end;
+        end;
+      end;
+
+      Stream := TFileStream.Create(Target, fmCreate);
       try
         Data := DiskFile.GetData(WithHeader);
-        Stream.WriteBuffer(Pointer(Data)^, Length(Data));
+        if Length(Data) > 0 then
+          Stream.WriteBuffer(Pointer(Data)^, Length(Data));
       finally
         Stream.Free;
       end;
       Inc(SaveCount);
     end;
+  end;
 
-  statusBar.SimpleText := Format('%d files saved to %s',
-    [SaveCount, dlgSelectDirectory.FileName]);
+  if SkipCount > 0 then
+    statusBar.SimpleText := Format('%d files saved to %s, %d skipped',
+      [SaveCount, dlgSelectDirectory.FileName, SkipCount])
+  else
+    statusBar.SimpleText := Format('%d files saved to %s',
+      [SaveCount, dlgSelectDirectory.FileName]);
 end;
 
 procedure TfrmMain.itmSaveFileWithHeaderAsClick(Sender: TObject);
@@ -602,7 +651,9 @@ begin
 
   DiskFile := TCPMFile(lvwMain.Selected.Data);
 
-  dlgSaveBinary.FileName := DiskFile.FileName;
+  // The dialog will not take a name with a path separator or a wildcard in it,
+  // and a disk can hold one
+  dlgSaveBinary.FileName := SafeFileName(DiskFile.FileName);
   if Settings.LastSaveFolder <> '' then
     dlgSaveBinary.InitialDir := Settings.LastSaveFolder;
   if not dlgSaveBinary.Execute then exit;
@@ -611,7 +662,8 @@ begin
   Stream := TFileStream.Create(dlgSaveBinary.FileName, fmCreate);
   try
     Data := DiskFile.GetData(WithHeader);
-    Stream.WriteBuffer(Pointer(Data)^, Length(Data));
+    if Length(Data) > 0 then
+      Stream.WriteBuffer(Pointer(Data)^, Length(Data));
   finally
     Stream.Free;
   end;
@@ -1869,6 +1921,9 @@ begin
   begin
     Sector.DataSize := Sector.ParentTrack.SectorSize;
     Sector.FillSector(Sector.ParentTrack.Filler);
+    // FillSector only notices a change when the fill byte differs, and the size
+    // was set here regardless, so mark it either way
+    Sector.IsChanged := True;
   end;
 
   // TODO: Format track would require more details

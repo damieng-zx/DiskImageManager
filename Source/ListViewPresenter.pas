@@ -170,7 +170,13 @@ begin
       Add(StrInt(Sector.Track));
       Add(StrInt(Sector.Side));
       Add(StrInt(Sector.ID));
-      Add(Format('%d (%d)', [Sector.FDCSize, FDCSectorSizes[Sector.FDCSize]]));
+      // A size code the controller does not define has no size to show, and is
+      // worth saying so about: it means the image (or an edit) put a value there
+      // that no real sector could have
+      if GetFDCSizeBytes(Sector.FDCSize) = 0 then
+        Add(Format('%d (invalid)', [Sector.FDCSize]))
+      else
+        Add(Format('%d (%d)', [Sector.FDCSize, GetFDCSizeBytes(Sector.FDCSize)]));
       Add(Format('%d, %d', [Sector.FDCStatus[1], Sector.FDCStatus[2]]));
       if (Sector.DataSize <> Sector.AdvertisedSize) then
         Add(Format('%d (%d)', [Sector.DataSize, Sector.AdvertisedSize]))
@@ -269,9 +275,12 @@ begin
         end;
         AddListInfo('Tracks total', StrInt(Disk.TrackTotal));
         AddListInfo('Formatted capacity', StrFileSize(Disk.FormattedCapacity));
+        // When every track is the same size the largest is that size, and asking
+        // side 0 for it answers 0 on a side with no tracks rather than reading
+        // the first track of none
         if Disk.IsTrackSizeUniform then
           AddListInfo('Track size', SysUtils.Format('%d bytes',
-            [Disk.Side[0].Track[0].Size]))
+            [Disk.Side[0].GetLargestTrackSize()]))
         else
           AddListInfo('Largest track size', SysUtils.Format('%d bytes',
             [Disk.Side[0].GetLargestTrackSize()]));
@@ -377,7 +386,7 @@ end;
 
 procedure TListViewPresenter.RefreshSectorData(Sector: TDSKSector);
 var
-  Idx, RowOffset, Offset, TrueSectorSize, VariantNumber: integer;
+  Idx, RowOffset, Offset, TrueSectorSize, VariantNumber, BytesPerLine: integer;
   Raw: byte;
   HasVariants: boolean;
   RowData, RowHex: string;
@@ -410,9 +419,17 @@ begin
   RowData := '';
   RowHex := '';
 
-  HasVariants := Sector.GetCopyCount > 1;
-  TrueSectorSize := FDCSectorSizes[Sector.FDCSize];
+  TrueSectorSize := GetFDCSizeBytes(Sector.FDCSize);
+  // Without a size to divide the data up by there are no variants to label,
+  // whatever the copy count says, and the marker test below would divide by zero
+  HasVariants := (TrueSectorSize > 0) and (Sector.GetCopyCount > 1);
   VariantNumber := 0;
+
+  // Settings come from an ini file that nothing validates, and a zero here is a
+  // division by zero rather than a very long line
+  BytesPerLine := FSettings.BytesPerLine;
+  if BytesPerLine < 1 then
+    BytesPerLine := 8;
 
   Offset := 0;
 
@@ -427,7 +444,7 @@ begin
       end;
 
     // Emit a new line every X bytes depending on setting
-    if (Offset mod FSettings.BytesPerLine = 0) and (Offset > 0) then
+    if (Offset mod BytesPerLine = 0) and (Offset > 0) then
     begin
       WriteSectorLine(RowOffset, RowHex, RowData);
       RowOffset := Offset;
