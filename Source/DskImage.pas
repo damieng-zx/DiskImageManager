@@ -470,6 +470,15 @@ const
   // FileSystem
   DirEntSize = 32;
 
+// A track's data rate and recording mode come from a byte on the disk or from
+// a combo box that answers -1 when nothing is picked, and both are wider than
+// the enums they are cast to. An ordinal the enum has no value for then indexes
+// past the end of the name table describing it - a table of strings, so what
+// comes back is a pointer into whatever follows it. Anything that is not a
+// value the enum really has becomes Unknown.
+function ToDataRate(Value: integer): TDSKDataRate;
+function ToRecordingMode(Value: integer): TDSKRecordingMode;
+
 function GetFDCSectorSize(SectorSize: word): byte;
 
 // Bytes a sector of FDC size code FDCSize holds, or 0 when the code is not one
@@ -714,8 +723,10 @@ var
   ErrorMessage: string;
   RecoveredTracks, RecoveredSize: integer;
   BytesLeft, SkipTo: int64;
+  UnknownTrackModes: boolean;
 begin
   Result := False;
+  UnknownTrackModes := False;
   FoundIncorrectTrackMarkers := False;
   NextTrackPosition := 0;
   RecoveredTracks := 0;
@@ -884,8 +895,12 @@ begin
           // Extended V5 support for data rate and recording mode
           if FileFormat = diExtendedDSK then
           begin
-            DataRate := TDSKDataRate(TRKInfoBlock.TIB_DataRate);
-            RecordingMode := TDSKRecordingMode(TRKInfoBlock.TIB_RecordingMode);
+            DataRate := ToDataRate(TRKInfoBlock.TIB_DataRate);
+            RecordingMode := ToRecordingMode(TRKInfoBlock.TIB_RecordingMode);
+            if (DataRate = drUnknown) and (TRKInfoBlock.TIB_DataRate <> 0) then
+              UnknownTrackModes := True;
+            if (RecordingMode = rmUnknown) and (TRKInfoBlock.TIB_RecordingMode <> 0) then
+              UnknownTrackModes := True;
           end;
 
           // Load the actual sectors in
@@ -957,6 +972,11 @@ begin
       end;
     end;
   end;
+
+  // Said once for the image rather than per track: a writer that gets these
+  // wrong gets them wrong everywhere, and the tracks are still readable
+  if UnknownTrackModes then
+    Messages.Add('Track data rate or recording mode held a value the format does not define; shown as unknown.');
 
   if RecoveredTracks > 0 then
     Messages.Add(SysUtils.Format(
@@ -2899,6 +2919,22 @@ begin
     end;
   end;
   self.FDCSectorSize := GetFDCSectorSize(self.SectorSize);
+end;
+
+function ToDataRate(Value: integer): TDSKDataRate;
+begin
+  if (Value < Ord(Low(TDSKDataRate))) or (Value > Ord(High(TDSKDataRate))) then
+    Result := drUnknown
+  else
+    Result := TDSKDataRate(Value);
+end;
+
+function ToRecordingMode(Value: integer): TDSKRecordingMode;
+begin
+  if (Value < Ord(Low(TDSKRecordingMode))) or (Value > Ord(High(TDSKRecordingMode))) then
+    Result := rmUnknown
+  else
+    Result := TDSKRecordingMode(Value);
 end;
 
 function GetFDCSectorSize(SectorSize: word): byte;

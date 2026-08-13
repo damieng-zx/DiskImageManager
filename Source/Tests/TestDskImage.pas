@@ -44,6 +44,9 @@ type
     procedure TestHighTrackCountOnEmptySide;
     procedure TestIdentifyOnEmptyDisk;
     procedure TestLoadClampsSectorCount;
+    procedure TestToDataRateRejectsValuesOutsideTheEnum;
+    procedure TestToRecordingModeRejectsValuesOutsideTheEnum;
+    procedure TestLoadClampsTrackDataRateAndRecordingMode;
     procedure TestLoadWarnsTooManyTrackSizes;
     procedure TestReloadEmptyStandardDSK;
     procedure TestLoadTruncatedSectorData;
@@ -946,6 +949,84 @@ begin
     AssertEquals('and the image knows it', True, Img.IsChanged);
   finally
     Img.Free;
+  end;
+end;
+
+// A track's data rate and recording mode are single bytes on the disk cast
+// straight to four- and three-value enums. An ordinal the enum has no value for
+// then indexes past DSKDataRate/DSKRecordingMode, which are arrays of strings,
+// so the "name" that comes back is whatever follows the table read as a string.
+
+procedure TDskImageTest.TestToDataRateRejectsValuesOutsideTheEnum;
+begin
+  AssertEquals('0 is unknown', Ord(drUnknown), Ord(ToDataRate(0)));
+  AssertEquals('1 is single/double', Ord(drSingleOrDoubleDensity), Ord(ToDataRate(1)));
+  AssertEquals('3 is the last defined', Ord(drExtendedDensity), Ord(ToDataRate(3)));
+  AssertEquals('4 is past the end', Ord(drUnknown), Ord(ToDataRate(4)));
+  AssertEquals('a whole byte', Ord(drUnknown), Ord(ToDataRate(255)));
+  // What a combo box answers with nothing picked
+  AssertEquals('-1 from a combo box', Ord(drUnknown), Ord(ToDataRate(-1)));
+end;
+
+procedure TDskImageTest.TestToRecordingModeRejectsValuesOutsideTheEnum;
+begin
+  AssertEquals('0 is unknown', Ord(rmUnknown), Ord(ToRecordingMode(0)));
+  AssertEquals('1 is FM', Ord(rmFM), Ord(ToRecordingMode(1)));
+  AssertEquals('2 is the last defined', Ord(rmMFM), Ord(ToRecordingMode(2)));
+  AssertEquals('3 is past the end', Ord(rmUnknown), Ord(ToRecordingMode(3)));
+  AssertEquals('a whole byte', Ord(rmUnknown), Ord(ToRecordingMode(255)));
+  AssertEquals('-1 from a combo box', Ord(rmUnknown), Ord(ToRecordingMode(-1)));
+end;
+
+procedure TDskImageTest.TestLoadClampsTrackDataRateAndRecordingMode;
+var
+  Header: TDSKInfoBlock;
+  TrackInfo: TTRKInfoBlock;
+  Stream: TFileStream;
+  FileName: string;
+  Img: TDSKImage;
+  Track: TDSKTrack;
+begin
+  FileName := TempName('.dsk');
+
+  FillChar(Header, SizeOf(Header), 0);
+  Move(DiskInfoExtended[1], Header.DiskInfoBlock, Length(DiskInfoExtended));
+  Header.Disk_NumTracks := 1;
+  Header.Disk_NumSides := 1;
+  Header.Disk_ExtTrackSize[0] := 2; // the Track-Info block, and no sectors
+
+  FillChar(TrackInfo, SizeOf(TrackInfo), 0);
+  Move(DiskInfoTrack[1], TrackInfo.TrackData, Length(DiskInfoTrack));
+  TrackInfo.TIB_NumSectors := 0;
+  TrackInfo.TIB_DataRate := 200;      // no such data rate
+  TrackInfo.TIB_RecordingMode := 99;  // no such recording mode
+
+  Stream := TFileStream.Create(FileName, fmCreate);
+  try
+    Stream.WriteBuffer(Header, SizeOf(Header));
+    Stream.WriteBuffer(TrackInfo, SizeOf(TrackInfo));
+  finally
+    Stream.Free;
+  end;
+
+  try
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      Track := Img.Disk.Side[0].Track[0];
+      AssertEquals('an undefined data rate reads as unknown',
+        Ord(drUnknown), Ord(Track.DataRate));
+      AssertEquals('and so does an undefined recording mode',
+        Ord(rmUnknown), Ord(Track.RecordingMode));
+      // Both are within their tables, so the names can be looked up at all
+      AssertEquals('Unknown', DSKDataRate[Track.DataRate]);
+      AssertEquals('Unknown', DSKRecordingMode[Track.RecordingMode]);
+      AssertEquals('and the image says it saw them', True,
+        HasMessageLike(Img.Messages, 'does not define'));
+    finally
+      Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
   end;
 end;
 

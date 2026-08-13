@@ -574,13 +574,14 @@ end;
 
 procedure TfrmNew.cboRecordingModeChange(Sender: TObject);
 begin
-  CurrentFormat.RecordingMode := TDSKRecordingMode(cboRecordingMode.ItemIndex);
+  // A combo box with nothing picked answers -1, which is not a recording mode
+  CurrentFormat.RecordingMode := ToRecordingMode(cboRecordingMode.ItemIndex);
   UpdateSummary;
 end;
 
 procedure TfrmNew.cboDataRateChange(Sender: TObject);
 begin
-  CurrentFormat.DataRate := TDSKDataRate(cboDataRate.ItemIndex);
+  CurrentFormat.DataRate := ToDataRate(cboDataRate.ItemIndex);
   UpdateSummary;
 end;
 
