@@ -628,9 +628,14 @@ begin
   end;
 end;
 
-// TrackMark property change
+// TrackMark property change. This says how often to number a track, and the map
+// divides by it: the settings dialog will not offer less than 1, but the ini
+// file it is stored in is not checked and a 0 there was a division by zero on
+// the first paint of any map.
 procedure TSpinDiskMap.SetTrackMark(NewTrackMark: integer);
 begin
+  if NewTrackMark < 1 then
+    NewTrackMark := 1;
   if NewTrackMark <> FTrackMark then
   begin
     FTrackMark := NewTrackMark;

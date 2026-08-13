@@ -445,7 +445,6 @@ object frmOptions: TfrmOptions
           MaxLength = 3
           TabOrder = 2
           Text = '1'
-          OnChange = edtTrackMarksChange
         end
         object udMinString: TUpDown
           Left = 108

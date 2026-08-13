@@ -256,7 +256,10 @@ begin
     if FSector.DataSize <> 0 then
       udSize.Position := FSector.DataSize
     else
-      udSize.Position := FSector.ParentTrack.SectorSize * 256;
+      // The track's sector size is already a count of bytes. Multiplying it by
+      // 256 offered 131072 for a 512 byte sector, which the spin control holds
+      // in a SmallInt: 512 came out as 0 and 128 as -32768.
+      udSize.Position := FSector.ParentTrack.SectorSize;
 
   UpdateFill;
 end;

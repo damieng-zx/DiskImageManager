@@ -427,17 +427,28 @@ end;
 procedure TfrmMain.itmOpenRecentClick(Sender: TObject);
 var
   FileName: string;
+  Idx: integer;
 begin
   if Sender is TMenuItem then
   begin
     FileName := (Sender as TMenuItem).Caption;
-    if FileExists(FileName) then
+    // The list is written and read as UTF-8, and LoadFiles tests it this way
+    // too, so a path with anything outside the system code page in it was
+    // reported missing here and then opened perfectly well from the dialog
+    if FileExistsUTF8(FileName) then
       LoadFiles([FileName])
     else
     if MessageDlg('File does not exist',
       SysUtils.Format('Can not find file %s. Remove from recent list?', [FileName]),
       mtConfirmation, mbYesNo, 0) = mrYes then
-      Settings.RecentFiles.Delete(Settings.RecentFiles.IndexOf(FileName));
+    begin
+      Idx := Settings.RecentFiles.IndexOf(FileName);
+      // Deleting -1 is an error in its own right, and the caption is not
+      // guaranteed to still be in the list by the time this is answered
+      if Idx >= 0 then
+        Settings.RecentFiles.Delete(Idx);
+      UpdateRecentFilesMenu;
+    end;
   end;
 end;
 
@@ -1056,7 +1067,8 @@ end;
 
 procedure TfrmMain.itmExpandChildrenClick(Sender: TObject);
 begin
-  tvwMain.Selected.Expand(True);
+  if tvwMain.Selected <> nil then
+    tvwMain.Selected.Expand(True);
 end;
 
 procedure TfrmMain.itmCollapseAllClick(Sender: TObject);
@@ -1154,7 +1166,8 @@ end;
 
 procedure TfrmMain.itmCollapseChildrenClick(Sender: TObject);
 begin
-  tvwMain.Selected.Collapse(True);
+  if tvwMain.Selected <> nil then
+    tvwMain.Selected.Collapse(True);
 end;
 
 procedure TfrmMain.itmFileSectorClick(Sender: TObject);
