@@ -427,17 +427,28 @@ end;
 procedure TfrmMain.itmOpenRecentClick(Sender: TObject);
 var
   FileName: string;
+  Idx: integer;
 begin
   if Sender is TMenuItem then
   begin
     FileName := (Sender as TMenuItem).Caption;
-    if FileExists(FileName) then
+    // The list is written and read as UTF-8, and LoadFiles tests it this way
+    // too, so a path with anything outside the system code page in it was
+    // reported missing here and then opened perfectly well from the dialog
+    if FileExistsUTF8(FileName) then
       LoadFiles([FileName])
     else
     if MessageDlg('File does not exist',
       SysUtils.Format('Can not find file %s. Remove from recent list?', [FileName]),
       mtConfirmation, mbYesNo, 0) = mrYes then
-      Settings.RecentFiles.Delete(Settings.RecentFiles.IndexOf(FileName));
+    begin
+      Idx := Settings.RecentFiles.IndexOf(FileName);
+      // Deleting -1 is an error in its own right, and the caption is not
+      // guaranteed to still be in the list by the time this is answered
+      if Idx >= 0 then
+        Settings.RecentFiles.Delete(Idx);
+      UpdateRecentFilesMenu;
+    end;
   end;
 end;
 
@@ -1056,7 +1067,8 @@ end;
 
 procedure TfrmMain.itmExpandChildrenClick(Sender: TObject);
 begin
-  tvwMain.Selected.Expand(True);
+  if tvwMain.Selected <> nil then
+    tvwMain.Selected.Expand(True);
 end;
 
 procedure TfrmMain.itmCollapseAllClick(Sender: TObject);
@@ -1154,7 +1166,8 @@ end;
 
 procedure TfrmMain.itmCollapseChildrenClick(Sender: TObject);
 begin
-  tvwMain.Selected.Collapse(True);
+  if tvwMain.Selected <> nil then
+    tvwMain.Selected.Collapse(True);
 end;
 
 procedure TfrmMain.itmFileSectorClick(Sender: TObject);
@@ -2213,7 +2226,12 @@ begin
       (TObject(ListItem.Data).ClassType = TCPMFile) then
     begin
       DiskFile := TCPMFile(ListItem.Data);
-      Path := TempRoot + PathDelim + DiskFile.FileName;
+      // The same name off the same disk as the extract paths use, and it needs
+      // the same treatment: a name holding a separator would put the file
+      // outside the folder about to be dragged, and one holding a character
+      // Windows will not take threw into the except below and vanished from the
+      // drag without a word
+      Path := TempRoot + PathDelim + SafeFileName(DiskFile.FileName);
       try
         Stream := TFileStream.Create(Path, fmCreate);
         try
@@ -2230,8 +2248,15 @@ begin
       end;
     end;
 
-  if Length(Paths) > 0 then
-    DragFilesAsCopy(Paths);
+  // DoDragDrop does not return until the target has taken its copy, so by here
+  // the files have been read and the folder can go. Left behind, every drag
+  // added another one to the temp directory for good.
+  try
+    if Length(Paths) > 0 then
+      DragFilesAsCopy(Paths);
+  finally
+    DeleteDirectory(TempRoot, False);
+  end;
 end;
 
 procedure TfrmMain.ShowFile(Sender: TObject);

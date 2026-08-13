@@ -17,17 +17,19 @@ before fixes started.
   holds, extent sizes floored at zero. Covered by `TestCPMFileSystem` (5
   tests)._
 
-- [ ] **2. Unclamped FDCSize table index.** `DskImage.pas:886` reads `FDCSize`
+- [x] **2. Unclamped FDCSize table index.** `DskImage.pas:886` reads `FDCSize`
   as a raw byte; `ListViewPresenter.pas:173,414` index
   `FDCSectorSizes[Sector.FDCSize]` which is `array[0..8]`. Sector Properties
   even lets the user set 0–255.
+  _Fixed: `GetFDCSizeBytes` answers 0 for a code the controller does not define; the sector list says "invalid" rather than printing whatever followed the table. Covered by 2 tests._
 
-- [ ] **3. Unguarded empty-disk access.** `IsTrackSizeUniform` reads
+- [x] **3. Unguarded empty-disk access.** `IsTrackSizeUniform` reads
   `Side[0].Track[0]` unconditionally (`DskImage.pas:1599`); called from
   Save-As-Standard (`Main.pas:1722`, no guard) and the image info view
   (`ListViewPresenter.pas:272`, guards sides but not tracks). Same family:
   `BootableOn` via `itmCloseAllExceptBootSectors` (`Main.pas:1060`) and
   `SaveFileDSK` (`DskImage.pas:1118`).
+  _Fixed: `IsTrackSizeUniform` walks the tracks it has, so no tracks is trivially uniform, and the image view asks the side for its largest track instead of indexing the first of none. Covered by 2 tests._
 
 - [x] **4. Uncasted data rate / recording mode.** File bytes cast straight to
   enums (`DskImage.pas:873-874`); invalid ordinals then index
@@ -71,9 +73,10 @@ before fixes started.
   `itmSaveMapAsClick` no longer assumes there is a side. Not unit tested - it
   is form wiring; worth exercising by closing an image with its map on show._
 
-- [ ] **9. SmallInt truncation for sector-size default.** `SectorProperties.pas:255`
+- [x] **9. SmallInt truncation for sector-size default.** `SectorProperties.pas:255`
   assigns `SectorSize * 256` to `TUpDown.Position` (512→0, 128→−32768);
   should be `SectorSize` itself.
+  _Fixed: the track sector size is already a byte count, so it is used as-is._
 
 - [ ] **10. Viewer forms leak (and nil-deref) on decode errors.**
   `FileViewer.pas:51-76`, `ZXScreenViewer.pas:68-75`, `CPCScreenViewer.pas`
@@ -86,20 +89,20 @@ before fixes started.
 - [ ] **11. DarkBlankSectors setting round-trip broken.** Menu toggles update
   only the control (`Main.pas:1753-1757,1775-1779`); the Options checkbox
   writes settings immediately, bypassing OK/Cancel (`Options.pas:292-295`).
-- [ ] **12. Copy-paste .lfm wiring.** `SectorProperties.lfm:427`
+- [x] **12. Copy-paste .lfm wiring.** `SectorProperties.lfm:427`
   (`edtFDCSize.OnChange = edtSizeChange`); `Options.lfm:448`
   (`edtMinString.OnChange = edtTrackMarksChange`).
-- [ ] **13. Malformed save dialog extension.** `dlgSave.DefaultExt = '.*.dsk'`
+- [x] **13. Malformed save dialog extension.** `dlgSave.DefaultExt = '.*.dsk'`
   (`Main.lfm:496,783`); should be `dsk`.
 - [ ] **14. Nav-history index not remapped** after unresolvable entries are
   dropped (`Main.pas:896-901`).
-- [ ] **15. Temp folder leak on every drag-out** (`Main.pas:2139-2166`).
-- [ ] **16. INI values read unvalidated.** `BytesPerLine`/`DiskMapTrackMark`
+- [x] **15. Temp folder leak on every drag-out** (`Main.pas:2139-2166`).
+- [x] **16. INI values read unvalidated.** `BytesPerLine`/`DiskMapTrackMark`
   of 0 from a hand-edited INI → mod-by-zero crashes
   (`ListViewPresenter.pas:430`, `DiskMap.pas:517`).
-- [ ] **17. Nil `tvwMain.Selected` dereference** in
+- [x] **17. Nil `tvwMain.Selected` dereference** in
   `itmExpandChildrenClick`/`itmCollapseChildrenClick` (`Main.pas:1007,1105`).
-- [ ] **18. `FileExists` vs `FileExistsUTF8`** for recent files
+- [x] **18. `FileExists` vs `FileExistsUTF8`** for recent files
   (`Main.pas:434`).
 - [ ] **19. `DecodeFile` decodes into the variable area** — uses header bytes
   20-21 (program + variables) instead of 18-19 (`SinclairBasic.pas:318,546`).
@@ -109,6 +112,12 @@ before fixes started.
 - [ ] **21. Minor.** CP/M `Extent` ignores S2 high-extent bits
   (`filesystem.pas:221`); Utils.pas:362-375 range-check warnings from the
   `LVSCW_AUTOSIZE` constants.
+  _Fixed: both stray `OnChange` handlers removed._
+  _Fixed: both `dlgOpen` and `dlgSave` now use `'.dsk'`._
+  _Fixed: the temp folder is removed once the drag returns. The names written into it also go through `SafeFileName`, which the extract paths already used - this one was missed._
+  _Fixed: `BytesPerLine` floored at 8 where it is used, `DiskMapTrackMark` floored at 1 in its setter._
+  _Fixed: both check for a selection first._
+  _Fixed: `FileExistsUTF8`, and removing an entry no longer deletes index -1 when the name has already gone._
 
 ## Notes
 

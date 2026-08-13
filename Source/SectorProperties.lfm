@@ -424,7 +424,6 @@ object frmSectorProperties: TfrmSectorProperties
           MaxLength = 3
           TabOrder = 12
           Text = '0'
-          OnChange = edtSizeChange
         end
         object udFDCSize: TUpDown
           Left = 330
