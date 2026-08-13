@@ -813,7 +813,9 @@ object frmMain: TfrmMain
     end
   end
   object dlgSaveMap: TSaveDialog
+    DefaultExt = '.png'
     Filter = 'PNG Image (*.png)|*.png|Bitmap Image (*.bmp)|*.bmp'
+    Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     Left = 504
     Top = 112
   end
