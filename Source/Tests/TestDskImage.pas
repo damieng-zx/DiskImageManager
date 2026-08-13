@@ -57,6 +57,8 @@ type
     procedure TestFindText;
     procedure TestExtendedDSKPadsTracksToTrackSizeTable;
     procedure TestStandardDSKSizesTracksByTheLargest;
+    procedure TestSaveRefusesSidesWithDifferentTrackCounts;
+    procedure TestIdentifyOnASectorTooShortToHoldASpec;
     procedure TestFDCSizeBytesRejectsUnknownCodes;
     procedure TestCopyCountOnUnknownFDCSize;
     procedure TestTrackSizeUniformOnSideWithNoTracks;
@@ -1139,6 +1141,57 @@ begin
     end;
   finally
     IDs.Free;
+  end;
+end;
+
+// Neither DSK format can say that one side holds more tracks than another, so
+// the count was taken from side 0 and used to index every side. A side with
+// fewer tracks was read past the end of, and whatever that found went into the
+// file as a track.
+procedure TDskImageTest.TestSaveRefusesSidesWithDifferentTrackCounts;
+var
+  Img: TDSKImage;
+begin
+  // Asked of CanSave rather than SaveFile: a refused save puts a dialog on the
+  // screen, which there is no window station for here
+  Img := MakeFormatted(1); // 80 tracks, two sides
+  try
+    AssertEquals('both sides start equal', Img.Disk.Side[0].Tracks,
+      Img.Disk.Side[1].Tracks);
+    AssertEquals('as saved as extended', True, Img.CanSave(diExtendedDSK));
+    AssertEquals('and as standard', True, Img.CanSave(diStandardDSK));
+
+    // Shorten side 1, which the format has no way of recording
+    Img.Disk.Side[1].Tracks := 40;
+
+    AssertEquals('extended save refuses', False, Img.CanSave(diExtendedDSK));
+    AssertEquals('and says why', True,
+      HasMessageLike(Img.Messages, 'one track count'));
+    AssertEquals('standard save refuses too', False, Img.CanSave(diStandardDSK));
+  finally
+    Img.Free;
+  end;
+end;
+
+// The spec probe compares the first eleven bytes of the boot sector, so a
+// sector shorter than that has nothing to compare and must not be read anyway
+procedure TDskImageTest.TestIdentifyOnASectorTooShortToHoldASpec;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    Sec.DataSize := 10;
+
+    // Ten bytes cannot hold the eleven the probe compares, so there is nothing
+    // to identify. Reading them anyway is what it used to do.
+    Img.Disk.Specification.Identify;
+    AssertEquals('no spec can be read from ten bytes',
+      Ord(dsFormatInvalid), Ord(Img.Disk.Specification.Format));
+  finally
+    Img.Free;
   end;
 end;
 

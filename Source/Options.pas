@@ -291,7 +291,10 @@ end;
 
 procedure TfrmOptions.chkDarkBlankSectorsClick(Sender: TObject);
 begin
-  Settings.DarkBlankSectors := chkDarkBlankSectors.Checked;
+  // Only the preview map moves while the dialog is open. Writing the setting
+  // here put the change through whichever button was pressed afterwards, so
+  // Cancel kept it and Reset could not put it back.
+  DiskMap.DarkBlankSectors := chkDarkBlankSectors.Checked;
 end;
 
 end.

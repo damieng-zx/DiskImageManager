@@ -126,6 +126,10 @@ begin
   begin
     Font := WindowFont;
     DiskMap.DarkBlankSectors := DarkBlankSectors;
+    // The two menus that toggle this also show it, so they have to follow a
+    // change made in the options dialog or they say the opposite of the truth
+    itmDarkUnusedSectors.Checked := DarkBlankSectors;
+    itmDarkBlankSectorsPop.Checked := DarkBlankSectors;
     DiskMap.GridColor := DiskMapGridColor;
     DiskMap.Color := DiskMapBackgroundColor;
     DiskMap.TrackMark := DiskMapTrackMark;

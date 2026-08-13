@@ -28,6 +28,10 @@ type
     FFileName: string;
     FViewer: TRTFViewer;
     procedure EnsureViewer;
+    // Hand RTF to the viewer, or say why there isn't one. EnsureViewer can come
+    // back empty handed - the rich edit library may not load, or the window may
+    // not be created - and every caller went on to use it regardless.
+    procedure ShowRTF(const RTFContent: string);
     procedure UpdateCaption;
   public
     procedure LoadBasicFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
@@ -53,7 +57,15 @@ var
   Viewer: TfrmFileViewer;
 begin
   Viewer := TfrmFileViewer.Create(Application);
-  Viewer.LoadBasicFile(DiskImage, DiskFile, DiskName);
+  // Nothing but this holds the form until it is shown, so a file that
+  // will not decode has to take the window with it rather than leave it
+  // owned by the application and never seen again
+  try
+    Viewer.LoadBasicFile(DiskImage, DiskFile, DiskName);
+  except
+    Viewer.Free;
+    raise;
+  end;
   Viewer.Show;
 end;
 
@@ -62,7 +74,15 @@ var
   Viewer: TfrmFileViewer;
 begin
   Viewer := TfrmFileViewer.Create(Application);
-  Viewer.LoadStringArrayFile(DiskImage, DiskFile, DiskName);
+  // Nothing but this holds the form until it is shown, so a file that
+  // will not decode has to take the window with it rather than leave it
+  // owned by the application and never seen again
+  try
+    Viewer.LoadStringArrayFile(DiskImage, DiskFile, DiskName);
+  except
+    Viewer.Free;
+    raise;
+  end;
   Viewer.Show;
 end;
 
@@ -71,7 +91,15 @@ var
   Viewer: TfrmFileViewer;
 begin
   Viewer := TfrmFileViewer.Create(Application);
-  Viewer.LoadTextFile(DiskImage, DiskFile, DiskName);
+  // Nothing but this holds the form until it is shown, so a file that
+  // will not decode has to take the window with it rather than leave it
+  // owned by the application and never seen again
+  try
+    Viewer.LoadTextFile(DiskImage, DiskFile, DiskName);
+  except
+    Viewer.Free;
+    raise;
+  end;
   Viewer.Show;
 end;
 
@@ -117,6 +145,14 @@ begin
   FreeAndNil(FViewer);
 end;
 
+procedure TfrmFileViewer.ShowRTF(const RTFContent: string);
+begin
+  if FViewer = nil then
+    raise Exception.Create(
+      'Could not create the text viewer. riched20.dll may be missing.');
+  FViewer.LoadRTF(RTFContent);
+end;
+
 procedure TfrmFileViewer.UpdateCaption;
 begin
   if (FDiskName <> '') and (FFileName <> '') then
@@ -160,7 +196,7 @@ begin
 
   if RTFText = '' then
     RTFText := '{\rtf1\ansi (Unable to decode BASIC program)}';
-  FViewer.LoadRTF(RTFText);
+  ShowRTF(RTFText);
 end;
 
 procedure TfrmFileViewer.LoadStringArrayFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
@@ -183,7 +219,7 @@ begin
 
   if RTFText = '' then
     RTFText := '{\rtf1\ansi (Unable to decode string array)}';
-  FViewer.LoadRTF(RTFText);
+  ShowRTF(RTFText);
 end;
 
 procedure TfrmFileViewer.LoadTextFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
@@ -206,7 +242,7 @@ begin
 
   if RTFText = '' then
     RTFText := '{\rtf1\ansi (Unable to decode file)}';
-  FViewer.LoadRTF(RTFText);
+  ShowRTF(RTFText);
 end;
 
 end.

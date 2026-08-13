@@ -127,6 +127,10 @@ type
     constructor CreateFromStream(Stream: TStream; FileName: TFileName);
     destructor Destroy; override;
 
+    // Whether the disk as it stands can be described by SaveFileFormat at all.
+    // Answers False and says why in Messages when it cannot, so that the reason
+    // is available without writing anything or putting a dialog on the screen.
+    function CanSave(SaveFileFormat: TDSKImageFormat): boolean;
     function SaveFile(SaveFileName: TFileName; SaveFileFormat: TDSKImageFormat; Copy: boolean; Compress: boolean): boolean;
     function FindText(From: TDSKSector; Text: string; CaseSensitive: boolean): TDSKSector;
     function HasV5Extensions: boolean;
@@ -561,9 +565,13 @@ begin
   FileFormat := diInvalid;
   Stream.ReadBuffer(DSKInfoBlock, SizeOf(DSKInfoBlock));
 
-  // Detect image format
+  // Detect image format. One chain, so that recognising a standard image is the
+  // end of it: the standard test used to stand alone and the extended tests ran
+  // on regardless, leaving a signature that matched both to be decided by
+  // whichever came last rather than by which it actually is.
   if CompareBlock(DSKInfoBlock.DiskInfoBlock, 'MV - CPC') then
-    FileFormat := diStandardDSK;
+    FileFormat := diStandardDSK
+  else
   if CompareBlock(DSKInfoBlock.DiskInfoBlock, 'EXTENDED CPC DSK File') then
     FileFormat := diExtendedDSK
   else
@@ -1105,6 +1113,71 @@ begin
   end;
 end;
 
+function TDSKImage.CanSave(SaveFileFormat: TDSKImageFormat): boolean;
+var
+  Side: TDSKSide;
+  Track: TDSKTrack;
+begin
+  Result := False;
+
+  if Disk.Sides = 0 then
+  begin
+    Messages.Add('Disk has no sides to write.');
+    exit;
+  end;
+
+  // Neither DSK format has anywhere to say that one side holds more tracks than
+  // another: there is a single track count for the whole disk. It was taken
+  // from side 0 and then used to index every side, so a side with fewer tracks
+  // than the first was read past the end of, and whatever that found was
+  // written into the file as a track.
+  for Side in Disk.Side do
+    if Side.Tracks <> Disk.Side[0].Tracks then
+    begin
+      Messages.Add(SysUtils.Format(
+        'Side %d has %d tracks and side 0 has %d. The format gives the whole disk one track count.',
+        [Side.Side, Side.Tracks, Disk.Side[0].Tracks]));
+      exit;
+    end;
+
+  for Side in Disk.Side do
+    for Track in Side.Track do
+    begin
+      // Both formats describe a track's sectors in its Track-Info block, which
+      // has only so many entries. The track properties window will set a sector
+      // count well past that, and writing one would run off the end of the block.
+      if Track.Sectors > MaxTrackInfoSectors then
+      begin
+        Messages.Add(SysUtils.Format('Side %d track %d has %d sectors, more than the %d a track holds.',
+          [Track.Side, Track.Logical, Track.Sectors, MaxTrackInfoSectors]));
+        exit;
+      end;
+
+      // A header records a track's size in 256-byte blocks, in one byte per
+      // track for extended and one word for the whole disk for standard, so a
+      // track past that cannot be described in either
+      if GetTrackFileSize(Track.Size) > MaxTrackFileSize then
+      begin
+        Messages.Add(SysUtils.Format('Side %d track %d holds %d bytes, more than the %d a track can be described as.',
+          [Track.Side, Track.Logical, Track.Size, MaxTrackFileSize - TrackBlockSize]));
+        exit;
+      end;
+    end;
+
+  // One track size byte per track per side has to fit the header, and there is
+  // no honest way to write a disk bigger than that: dropping the tracks that do
+  // not fit would quietly lose them
+  if (SaveFileFormat = diExtendedDSK) and
+    (Disk.Side[0].Tracks * Disk.Sides > MaxTracks) then
+  begin
+    Messages.Add(SysUtils.Format('%d tracks over %d sides needs %d track sizes, more than the %d a header holds.',
+      [Disk.Side[0].Tracks, Disk.Sides, Disk.Side[0].Tracks * Disk.Sides, MaxTracks]));
+    exit;
+  end;
+
+  Result := True;
+end;
+
 // Pad a track out to the size its header gives, with the byte the track is
 // filled with so the padding looks like the rest of the unused track
 procedure WriteFiller(DiskFile: TFileStream; Count: integer; Filler: byte);
@@ -1137,29 +1210,7 @@ begin
   Result := False;
   FillChar(DSKInfoBlock, SizeOf(DSKInfoBlock), 0);
 
-  // Both formats describe a track's sectors in its Track-Info block, which has
-  // only so many entries. The track properties window will set a sector count
-  // well past that, and writing one would run off the end of the block.
-  for Side in Disk.Side do
-    for Track in Side.Track do
-    begin
-      if Track.Sectors > MaxTrackInfoSectors then
-      begin
-        Messages.Add(SysUtils.Format('Side %d track %d has %d sectors, more than the %d a track holds.',
-          [Track.Side, Track.Logical, Track.Sectors, MaxTrackInfoSectors]));
-        exit;
-      end;
-
-      // A header records a track's size in 256-byte blocks, in one byte per
-      // track for extended and one word for the whole disk for standard, so a
-      // track past that cannot be described in either
-      if GetTrackFileSize(Track.Size) > MaxTrackFileSize then
-      begin
-        Messages.Add(SysUtils.Format('Side %d track %d holds %d bytes, more than the %d a track can be described as.',
-          [Track.Side, Track.Logical, Track.Size, MaxTrackFileSize - TrackBlockSize]));
-        exit;
-      end;
-    end;
+  if not CanSave(SaveFileFormat) then exit;
 
   // Construct disk info
   with DSKInfoBlock do
@@ -1174,12 +1225,7 @@ begin
         // One track size byte per track per side has to fit the header, and
         // there is no honest way to write a disk bigger than that: dropping
         // the tracks that do not fit would quietly lose them
-        if Disk_NumTracks * Disk_NumSides > MaxTracks then
-        begin
-          Messages.Add(SysUtils.Format('%d tracks over %d sides needs %d track sizes, more than the %d a header holds.',
-            [Disk_NumTracks, Disk_NumSides, Disk_NumTracks * Disk_NumSides, MaxTracks]));
-          exit;
-        end;
+        // The track size table is checked to fit in CanSave above
 
         for SIdx := 0 to Disk_NumSides - 1 do
           for TIdx := 0 to Disk_NumTracks - 1 do
@@ -2612,12 +2658,16 @@ begin
       end;
     end;
 
-    if FirstSector.DataSize < 10 then exit;
+    // Eleven bytes are compared below, so eleven have to be there
+    if FirstSector.DataSize < 11 then exit;
 
-    // If first 10 bytes are same value then PCW/+3
+    // Are the first eleven bytes all the same value? Testing the byte before
+    // the bound read one past the last it needed: the loop only leaves when Idx
+    // reaches 11, and it read Data[11] on the way out to decide that. Testing
+    // the bound first stops at exactly the same place without the extra read.
     CheckByte := FirstSector.Data[0];
     Idx := 1;
-    while (CheckByte = FirstSector.Data[Idx]) and (Idx <= 10) do
+    while (Idx <= 10) and (CheckByte = FirstSector.Data[Idx]) do
       Inc(Idx);
     if Idx = 11 then
     begin
