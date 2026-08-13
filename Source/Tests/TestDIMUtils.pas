@@ -35,6 +35,10 @@ type
     procedure TestCompareBlockInsensitive;
     procedure TestCompareBlockStart;
     procedure TestCompareByLength;
+    procedure TestSafeFileNameKeepsOrdinaryNames;
+    procedure TestSafeFileNameBlocksPathEscapes;
+    procedure TestSafeFileNameBlocksDeviceNames;
+    procedure TestSafeFileNameNeverReturnsNothing;
   end;
 
 implementation
@@ -184,6 +188,47 @@ begin
   finally
     List.Free;
   end;
+end;
+
+// A CP/M or MGT directory entry is eleven bytes of anything printable, so a
+// name off a disk can hold path separators, wildcards, or a device name, and it
+// used to be joined straight onto the folder the user chose to extract into.
+
+procedure TUtilsTest.TestSafeFileNameKeepsOrdinaryNames;
+begin
+  AssertEquals('README.TXT', SafeFileName('README.TXT'));
+  AssertEquals('DISK    .BAS', SafeFileName('DISK    .BAS'));
+  AssertEquals('a name with spaces', SafeFileName('a name with spaces'));
+end;
+
+procedure TUtilsTest.TestSafeFileNameBlocksPathEscapes;
+begin
+  // Eight characters of name is room enough to climb two folders. The leading
+  // dots go with the separators, leaving a name that stays put.
+  AssertEquals('_.._', SafeFileName('..\..\'));
+  AssertEquals('_.._a.exe', SafeFileName('..\..\a.exe'));
+  AssertEquals('_.._a.exe', SafeFileName('../../a.exe'));
+  AssertEquals('C__evil.exe', SafeFileName('C:\evil.exe'));
+  AssertEquals('_.TXT', SafeFileName('*.TXT'));
+  AssertEquals('a_b', SafeFileName('a' + #9 + 'b'));
+end;
+
+procedure TUtilsTest.TestSafeFileNameBlocksDeviceNames;
+begin
+  // A device is a device whatever extension it is given
+  AssertEquals('_CON', SafeFileName('CON'));
+  AssertEquals('_con.txt', SafeFileName('con.txt'));
+  AssertEquals('_LPT1.DAT', SafeFileName('LPT1.DAT'));
+  // But only when the whole stem is the device
+  AssertEquals('CONFIG.SYS', SafeFileName('CONFIG.SYS'));
+end;
+
+procedure TUtilsTest.TestSafeFileNameNeverReturnsNothing;
+begin
+  AssertEquals('unnamed', SafeFileName(''));
+  AssertEquals('unnamed', SafeFileName('...'));
+  AssertEquals('unnamed', SafeFileName('   '));
+  AssertEquals('fallback', SafeFileName('.', 'fallback'));
 end;
 
 initialization
