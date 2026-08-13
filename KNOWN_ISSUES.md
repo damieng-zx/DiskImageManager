@@ -78,15 +78,16 @@ before fixes started.
   should be `SectorSize` itself.
   _Fixed: the track sector size is already a byte count, so it is used as-is._
 
-- [ ] **10. Viewer forms leak (and nil-deref) on decode errors.**
+- [x] **10. Viewer forms leak (and nil-deref) on decode errors.**
   `FileViewer.pas:51-76`, `ZXScreenViewer.pas:68-75`, `CPCScreenViewer.pas`
   do Create → Load* → Show with no try/except; an exception mid-load leaks the
   form. `EnsureViewer` can also leave `FViewer = nil` before
   `FViewer.LoadRTF` (`FileViewer.pas:99-103,163`).
+  _Fixed: all five viewer launchers free the form if loading throws, and the file viewer raises a readable error instead of using a viewer it failed to create._
 
 ## Low
 
-- [ ] **11. DarkBlankSectors setting round-trip broken.** Menu toggles update
+- [x] **11. DarkBlankSectors setting round-trip broken.** Menu toggles update
   only the control (`Main.pas:1753-1757,1775-1779`); the Options checkbox
   writes settings immediately, bypassing OK/Cancel (`Options.pas:292-295`).
 - [x] **12. Copy-paste .lfm wiring.** `SectorProperties.lfm:427`
@@ -94,7 +95,7 @@ before fixes started.
   (`edtMinString.OnChange = edtTrackMarksChange`).
 - [x] **13. Malformed save dialog extension.** `dlgSave.DefaultExt = '.*.dsk'`
   (`Main.lfm:496,783`); should be `dsk`.
-- [ ] **14. Nav-history index not remapped** after unresolvable entries are
+- [x] **14. Nav-history index not remapped** after unresolvable entries are
   dropped (`Main.pas:896-901`).
 - [x] **15. Temp folder leak on every drag-out** (`Main.pas:2139-2166`).
 - [x] **16. INI values read unvalidated.** `BytesPerLine`/`DiskMapTrackMark`
@@ -118,6 +119,8 @@ before fixes started.
   _Fixed: `BytesPerLine` floored at 8 where it is used, `DiskMapTrackMark` floored at 1 in its setter._
   _Fixed: both check for a selection first._
   _Fixed: `FileExistsUTF8`, and removing an entry no longer deletes index -1 when the name has already gone._
+  _Fixed: the menus write the setting, the options checkbox only moves its own preview until OK, and Apply puts both menu ticks in step._
+  _Fixed: entries dropped before the saved index are counted and the index moved down by that many._
 
 ## Notes
 
