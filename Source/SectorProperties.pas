@@ -78,6 +78,7 @@ type
     constructor Create(AOwner: TComponent; Sector: TDSKSector); reintroduce;
     procedure Refresh;
     function ParentImage: TDSKImage;
+    function ParentSector: TDSKSector;
     procedure Detach;
   end;
 
@@ -172,6 +173,13 @@ begin
     Result := nil
   else
     Result := FSector.ParentTrack.ParentSide.ParentDisk.ParentImage;
+end;
+
+// The sector this window describes, or nil once it has let go. Lets whoever is
+// about to free a sector find the window holding it.
+function TfrmSectorProperties.ParentSector: TDSKSector;
+begin
+  Result := FSector;
 end;
 
 // The sector is about to be freed along with its image, so drop it and close.

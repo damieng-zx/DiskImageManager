@@ -189,8 +189,10 @@ begin
       Track := udPhysicalID.Position;
       BitLength := StrToIntDef(edtBitLength.Text, FTrack.BitLength);
 
-      // Sector details
-      Sectors := udSectorCount.Position;
+      // Sector details. Lowering the count frees the sectors dropped, which the
+      // tree and any open Sector Properties window are still holding, so the
+      // main form makes the change and puts them back in step.
+      frmMain.SetTrackSectors(FTrack, udSectorCount.Position);
       GapLength := udSectorGap.Position;
       Filler := udSectorFiller.Position;
       // A combo box with nothing picked answers -1, which is not a data rate

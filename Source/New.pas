@@ -511,6 +511,10 @@ end;
 procedure TfrmNew.edtSecSizeChange(Sender: TObject);
 begin
   CurrentFormat.SectorSize := udSecSize.Position;
+  // The FDC size code is only worked out when a format is created, so changing
+  // the sector size here left every sector header - and the disk specification
+  // written to track 0 - describing the size the chosen format started with
+  CurrentFormat.FDCSectorSize := GetFDCSectorSize(CurrentFormat.SectorSize);
   UpdateSummary;
 end;
 

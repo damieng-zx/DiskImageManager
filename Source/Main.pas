@@ -278,8 +278,9 @@ type
     procedure AddWorkspaceImage(Image: TDSKImage; Expand: boolean = True);
     procedure CloseImage(Image: TDSKImage);
     procedure LoadFiles(FileNames: array of string);
-    procedure SaveImage(Image: TDSKImage);
-    procedure SaveImageAs(Image: TDSKImage; Copy: boolean; NewName: string);
+    function SaveImage(Image: TDSKImage): boolean;
+    function SaveImageAs(Image: TDSKImage; Copy: boolean; NewName: string): boolean;
+    procedure SetTrackSectors(Track: TDSKTrack; NewSectors: byte);
     procedure AnalyseMap(Side: TDSKSide);
     procedure RefreshList;
     procedure RefreshStrings(Disk: TDSKDisk);
@@ -498,24 +499,16 @@ end;
 procedure TfrmMain.itmTrackUnformatClick(Sender: TObject);
 var
   Track: TDSKTrack;
-  Node: TTreeNode;
 begin
   Track := GetSelectedTrack(popTrack.PopupComponent);
 
   if (Track <> nil) and (ConfirmChange('unformat', 'track')) then
   begin
-    Track.Unformat;
-
-    // The sector nodes to drop are the ones under the track just unformatted,
-    // which from the track list is not what the tree has selected: that is the
-    // Tracks node holding every track on the side, and emptying it took all of
-    // them away.
-    if tvwMain.Selected.Data = Pointer(Track) then
-      Node := tvwMain.Selected
-    else
-      Node := FindTreeNodeFromData(tvwMain.Selected, Track);
-    if Node <> nil then
-      Node.DeleteChildren;
+    // Unformatting frees every sector on the track, so it goes the same way as
+    // any other change to the count: the tree node for each one and any window
+    // open on one are let go with them
+    SetTrackSectors(Track, 0);
+    Track.MarkChanged;
   end;
 
   RefreshList;
@@ -1704,6 +1697,57 @@ begin
   end;
 end;
 
+// Change how many sectors a track holds, and put everything that points at them
+// back in step. Lowering the count frees the sectors dropped, and the tree kept
+// a node for each of them while a Sector Properties window could still be open
+// on one: clicking the node, or Apply on the window, went through freed memory.
+// Raising it adds sectors the tree had never heard of, so the children are
+// rebuilt either way.
+procedure TfrmMain.SetTrackSectors(Track: TDSKTrack; NewSectors: byte);
+var
+  Idx, SIdx: integer;
+  Form: TForm;
+  TrackNode, Node: TTreeNode;
+begin
+  if (Track = nil) or (Track.Sectors = NewSectors) then exit;
+
+  // Done before the sectors go, while there is still something to compare with
+  for Idx := Screen.FormCount - 1 downto 0 do
+  begin
+    Form := Screen.Forms[Idx];
+    if Form is TfrmSectorProperties then
+      for SIdx := NewSectors to Track.Sectors - 1 do
+        if TfrmSectorProperties(Form).ParentSector = Track.Sector[SIdx] then
+          TfrmSectorProperties(Form).Detach;
+  end;
+
+  Track.Sectors := NewSectors;
+
+  TrackNode := nil;
+  for Node in tvwMain.Items do
+    if Node.Data = Pointer(Track) then
+    begin
+      TrackNode := Node;
+      Break;
+    end;
+  if TrackNode = nil then exit;
+
+  tvwMain.Items.BeginUpdate;
+  try
+    // The selection landing on a node about to be deleted would move it
+    // somewhere unrelated, so bring it up to the track first
+    if (tvwMain.Selected <> nil) and tvwMain.Selected.HasAsParent(TrackNode) then
+      tvwMain.Selected := TrackNode;
+
+    TrackNode.DeleteChildren;
+    for SIdx := 0 to Track.Sectors - 1 do
+      AddTree(TrackNode, SysUtils.Format('Sector %d', [SIdx]), Ord(itSector),
+        Track.Sector[SIdx]);
+  finally
+    tvwMain.Items.EndUpdate;
+  end;
+end;
+
 // Close one open image: offer to save it first if it has unsaved changes, then
 // release it along with everything that describes it. The node goes with the
 // image so that the tree is never left holding a node whose image has been
@@ -1719,7 +1763,16 @@ begin
   if Image.IsChanged and not Image.Corrupt then
     case MessageDlg(SysUtils.Format('Save unsaved image "%s" ?', [Image.FileName]),
         mtWarning, Buttons, 0) of
-      mrYes: SaveImage(Image);
+      // Answering Yes and then backing out of the Save As dialog - or out of one
+      // of the warnings about what the chosen format cannot hold - leaves the
+      // image unwritten. Closing anyway threw away exactly the changes the user
+      // had just asked to keep, so an unfinished save cancels the close too.
+      mrYes:
+        if not SaveImage(Image) then
+        begin
+          Result := False;
+          exit;
+        end;
       mrCancel:
       begin
         Result := False;
@@ -1770,10 +1823,14 @@ begin
     SaveImageAs(GetCurrentImage, True, '');
 end;
 
-procedure TfrmMain.SaveImageAs(Image: TDSKImage; Copy: boolean; NewName: string);
+// True only if the image was actually written: the user can back out at the
+// file dialog, or at one of the warnings about what the chosen format cannot
+// hold, and a close that offered to save has to know the difference.
+function TfrmMain.SaveImageAs(Image: TDSKImage; Copy: boolean; NewName: string): boolean;
 var
   AbandonSave: boolean;
 begin
+  Result := False;
   if NewName <> '' then
     dlgSave.FileName := NewName
   else
@@ -1792,8 +1849,8 @@ begin
   begin
     Settings.LastSaveFolder := ExtractFilePath(dlgSave.FileName);
     case dlgSave.FilterIndex of
-      3: Image.SaveFile(dlgSave.FileName, diRawMGT, Copy, False);
-      2: Image.SaveFile(dlgSave.FileName, diExtendedDSK, Copy,
+      3: Result := Image.SaveFile(dlgSave.FileName, diRawMGT, Copy, False);
+      2: Result := Image.SaveFile(dlgSave.FileName, diExtendedDSK, Copy,
           Settings.RemoveEmptyTracks);
       1:
       begin
@@ -1818,7 +1875,7 @@ begin
           AbandonSave := True;
 
         if not AbandonSave then
-          Image.SaveFile(dlgSave.FileName, diStandardDSK, Copy, False);
+          Result := Image.SaveFile(dlgSave.FileName, diStandardDSK, Copy, False);
       end;
     end;
   end;
@@ -1899,15 +1956,15 @@ begin
   end;
 end;
 
-procedure TfrmMain.SaveImage(Image: TDSKImage);
+function TfrmMain.SaveImage(Image: TDSKImage): boolean;
 begin
   if Image.FileFormat = diNotYetSaved then
-    SaveImageAs(Image, False, '')
+    Result := SaveImageAs(Image, False, '')
   else
   if ExtractFileExt(Image.FileName) = '.gz' then
-    SaveImageAs(Image, False, ExtractFileNameWithoutExt(Image.FileName))
+    Result := SaveImageAs(Image, False, ExtractFileNameWithoutExt(Image.FileName))
   else
-    Image.SaveFile(Image.FileName, Image.FileFormat, False,
+    Result := Image.SaveFile(Image.FileName, Image.FileFormat, False,
       (Settings.RemoveEmptyTracks and (Image.FileFormat = diExtendedDSK)));
 
   RefreshList();
