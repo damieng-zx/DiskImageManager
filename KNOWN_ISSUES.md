@@ -1,130 +1,151 @@
 # Known issues
 
-Working list from the August 2026 review, to be ticked off as they are fixed.
-Findings are verified against the sources; the test suite passed (83 tests)
-before fixes started.
+Open findings from the August 2026 review and a second review that followed it,
+merged and renumbered. Everything ticked off has been removed, so what is here
+is what is still true of `dev`; each item has been re-checked against the
+sources and the test suite passes (110 tests). Claims from either review that
+the code no longer has are gone too, and are not worth raising again.
 
-## High — crashes/OOM on malformed or corrupt images
+## High — data loss
 
-- [x] **1. Unclamped +3DOS file size.** `filesystem.pas` — the 32-bit PLUS3DOS
-  length was read straight from untrusted header bytes into `Size`
-  (`TryPlus3DOSHeader`) and used as the `SetLength` size in `GetData`. Values
-  >= $80000000 wrap negative (ERangeError), large values attempt multi-GB
-  allocations. Headerless extents could also compute negative sizes (RC=0
-  with BYTES_IN_LAST_RECORD > 0).
-  _Fixed on `dev`: header sizes clamped to disk capacity at parse time
-  (PLUS3DOS and AMSDOS), `GetData` clamps to the blocks the file actually
-  holds, extent sizes floored at zero. Covered by `TestCPMFileSystem` (5
-  tests)._
+- **1. A track of 64KB or more overflows its own size.**
+  `TDSKTrack.GetTrackSizeFromSectors` returns a `word` (`DskImage.pas:2036`)
+  while a sector holds up to `MaxSectorSize` (32768). Two full-size sectors on
+  one track sum to 65536, and the project builds with `OverflowChecks` on
+  (`DiskImageManager.lpi:55`), so viewing or saving such an image raises
+  `EIntOverflow`. Copy-protected images are exactly where oversized sectors
+  turn up. Returning an `integer` costs nothing - `TDSKSide.GetLargestTrackSize`
+  already takes one.
 
-- [x] **2. Unclamped FDCSize table index.** `DskImage.pas:886` reads `FDCSize`
-  as a raw byte; `ListViewPresenter.pas:173,414` index
-  `FDCSectorSizes[Sector.FDCSize]` which is `array[0..8]`. Sector Properties
-  even lets the user set 0–255.
-  _Fixed: `GetFDCSizeBytes` answers 0 for a code the controller does not define; the sector list says "invalid" rather than printing whatever followed the table. Covered by 2 tests._
-
-- [x] **3. Unguarded empty-disk access.** `IsTrackSizeUniform` reads
-  `Side[0].Track[0]` unconditionally (`DskImage.pas:1599`); called from
-  Save-As-Standard (`Main.pas:1722`, no guard) and the image info view
-  (`ListViewPresenter.pas:272`, guards sides but not tracks). Same family:
-  `BootableOn` via `itmCloseAllExceptBootSectors` (`Main.pas:1060`) and
-  `SaveFileDSK` (`DskImage.pas:1118`).
-  _Fixed: `IsTrackSizeUniform` walks the tracks it has, so no tracks is trivially uniform, and the image view asks the side for its largest track instead of indexing the first of none. Covered by 2 tests._
-
-- [x] **4. Uncasted data rate / recording mode.** File bytes cast straight to
-  enums (`DskImage.pas:873-874`); invalid ordinals then index
-  `DSKDataRate[...]/DSKRecordingMode[...]` (`ListViewPresenter.pas:149-150`),
-  and Track Properties applies `ItemIndex` (-1) back to the track
-  (`TrackProperties.pas:196`).
-  _Fixed: `ToDataRate`/`ToRecordingMode` in `DskImage.pas` answer Unknown for
-  anything outside the enum, used at the load site and at all three combo box
-  writes (Track Properties, and both in New). The image records one message
-  when a file held such a value. Covered by 3 tests in `TestDskImage`._
+- **2. A save that throws leaves a truncated file where a good one was.**
+  `TDSKImage.SaveFile` (`DskImage.pas:1083-1104`) opens the target with
+  `fmCreate`, which empties it before a byte is written. A `False` result is
+  handled - the partial file is deleted - but an exception out of
+  `SaveFileDSK`/`SaveFileMGT` walks straight past that and out of `SaveFile`,
+  leaving the truncated file behind. Issue 1 is one way to raise one. Writing
+  to a temporary name and renaming on success, or deleting in an `except`,
+  closes it.
 
 ## Medium — wrong results
 
-- [ ] **5. Multi-extent files with headers get inflated sizes.** The extent
-  merge adds each extent's record-count size onto the primary's header size
-  (`filesystem.pas:168`), which is already the whole file for
-  PLUS3DOS/AMSDOS; files > 16 KB show an inflated "Actual" size and extract
-  trailing garbage zeros.
-  _Note: the issue-1 `GetData` clamp stopped the garbage-zeros extraction;
-  the inflated displayed size remains._
+- **3. Find never searches the sector it starts from.** `TDSKImage.FindText`
+  begins at `GetNextLogicalSector(From)` (`DskImage.pas:661`), and
+  `dlgFindFind` always passes a sector: the disk's first for an image, side or
+  track selection, or the selected sector itself (`Main.pas:2142-2162`). So a
+  find from the disk cannot match anything in track 0 sector 0, and a find from
+  a sector skips that whole sector. Find and Find Next share the handler with
+  no state between them, so searching from the start and continuing from a hit
+  have to be told apart before this can just be changed.
 
-- [x] ~~**6. +3DOS BASIC meta reads the wrong header fields.**~~ Withdrawn —
-  output verified correct against real disks. The header stores the program
-  length at 16-17 and the autostart line at 18-19, which is what the code
-  reads; the CODE "start,length" order is right too.
+- **4. `GetNextLogicalSector` cannot reach MGT side 1.** Raw MGT images number
+  side-1 tracks `128 + track` (`DskImage.pas:1046`), matching the directory's
+  start-track byte. The walker asks for `Logical + 1` (`DskImage.pas:1605`), so
+  after track 79 it looks for logical 80, finds nothing and stops. Everything
+  built on it - Find, Strings, `GetData`'s sector walk - sees only side 0 of a
+  double-sided MGT disk.
 
-- [ ] **7. Spectrum character mapping wrong in `GetSpecialChar`.**
-  `SinclairBasic.pas:164-176` — $80-$8F are block graphics (rendered
-  `[UDG]`), $90-$A4 are UDG A-U (rendered `[GRAPH]`, and UDG Q/R/S $A0-$A2 as
-  space/£/$); the real £ (code $5C) prints as backslash. `TestPoundSign`
-  asserts the wrong code ($A1).
+- **5. XDPB sector sizes above 512 are thrown away.** `TDSKSpecification.
+  Identify` accepts `128 shl Data[4]` only up to 512 (`DskImage.pas:2704-2708`)
+  and otherwise sets `FSectorSize := 0`, which the validity test below then
+  reads as "not a spec block at all", falling back to the default 180K +3/PCW.
+  PSH=3 (1024 bytes) is ordinary CP/M. `FormatAnalysis`'s own XDPB test already
+  allows 128-8192.
 
-- [x] **8. Disk map holds a dangling side after close.** Nothing sets
-  `DiskMap.Side := nil` when an image closes (`Main.pas:1620-1642`); with the
-  last image closed while its map is shown the map stays visible, and
-  `SetSide`'s pointer-equality shortcut (`DiskMap.pas:611`) won't clear stale
-  hits if the address is reused → use-after-free on repaint/hover/click.
-  _Fixed: `DetachImageProperties` now also drops the map's side and hides it
-  when the image being closed owns it, and `SetSide` clears the hit regions
-  and hover unconditionally rather than only when the side pointer differs.
-  `itmSaveMapAsClick` no longer assumes there is a side. Not unit tested - it
-  is form wiring; worth exercising by closing an image with its map on show._
+- **6. Multi-extent files with headers get inflated sizes.** The extent merge
+  adds each extent's record-count size onto the primary's size
+  (`filesystem.pas:168`), which for PLUS3DOS and AMSDOS is already the whole
+  file. Files over 16KB show an inflated "Actual" size. Extraction itself is
+  right - `GetData` clamps to the blocks the file holds.
 
-- [x] **9. SmallInt truncation for sector-size default.** `SectorProperties.pas:255`
-  assigns `SectorSize * 256` to `TUpDown.Position` (512→0, 128→−32768);
-  should be `SectorSize` itself.
-  _Fixed: the track sector size is already a byte count, so it is used as-is._
+- **7. CP/M extent numbers ignore the high byte.** `Extent := Data[Offset +
+  EXTENT_LOW]` (`filesystem.pas:221`); the real extent number is `EX + 32*S2`.
+  Past extent 31 the number wraps to 0, so the continuation is taken for a
+  second primary file and listed under the same name instead of being merged.
 
-- [x] **10. Viewer forms leak (and nil-deref) on decode errors.**
-  `FileViewer.pas:51-76`, `ZXScreenViewer.pas:68-75`, `CPCScreenViewer.pas`
-  do Create → Load* → Show with no try/except; an exception mid-load leaks the
-  form. `EnsureViewer` can also leave `FViewer = nil` before
-  `FViewer.LoadRTF` (`FileViewer.pas:99-103,163`).
-  _Fixed: all five viewer launchers free the form if loading throws, and the file viewer raises a readable error instead of using a viewer it failed to create._
+- **8. Empty CP/M files are dropped from the listing.** A file is kept only if
+  it has at least one block (`filesystem.pas:137`), and a zero-length file has
+  none. It exists on the disk and takes a directory entry, but never appears.
+
+- **9. `GetData` keeps going after the last partial copy.** The final short
+  sector is moved into place but `BytesLeft` and `TargetIdx` are left where
+  they were and only the inner loop ends (`filesystem.pas:417-421`). Another
+  allocated block after that one writes over the same tail again. The buffer
+  cannot overrun - the length is clamped first - but the end of an
+  over-allocated file comes out holding the wrong block.
+
+- **10. MGT lists erased entries as live files.** Type 0 is labelled `'Erased'`
+  and then added like any other (`mgtfilesystem.pas:83-86,118`), so deleted
+  files appear in the listing and can be extracted from blocks another file may
+  since have taken.
+
+- **11. PLUS3DOS headers are trusted with a failing checksum.**
+  `TryPlus3DOSHeader` records `Checksum` but goes on to take the size, type and
+  meta from the header regardless (`filesystem.pas:325-336`); `TryAMSDOSHeader`
+  returns early unless its checksum matches (`filesystem.pas:272`). The size is
+  clamped to the disk's capacity, so this is a wrong-size/wrong-strip problem
+  rather than an unsafe one, but the two paths should agree.
+
+- **12. Spectrum character mapping is wrong.** `GetSpecialChar`
+  (`SinclairBasic.pas:164-176`) has the two ranges the wrong way round: $80-$8F
+  are the block graphics (rendered `[UDG]`) and $90-$A4 are UDGs A-U (rendered
+  `[GRAPH]`, with $A0-$A2 given as space/£/$). The real £ is code $5C, which
+  currently prints as a backslash. `TestPoundSign` asserts the wrong code ($A1)
+  and has to move with it.
+
+- **13. Colour control parameters are decoded as text.** `DecodeLine` drops any
+  byte it does not recognise (`SinclairBasic.pas:249-251`), but INK, PAPER,
+  FLASH, BRIGHT, INVERSE and OVER each carry one parameter byte and AT and TAB
+  carry two. The control goes, the parameters stay, and turn up in the listing
+  as stray characters.
+
+- **14. `DecodeFile` decodes into the variable area.** It takes the length from
+  header bytes 20-21, which is program *and* variables, instead of 18-19
+  (`SinclairBasic.pas:318,546`), so everything after the program is decoded as
+  though it were more BASIC.
+
+- **15. AMSDOS protected BASIC never opens.** The viewer gates on
+  `Meta = 'BASIC'` exactly (`AmstradBasic.pas:408,638`, `Main.pas:2367`) while
+  a protected file is `'BASIC (protected)'` (`filesystem.pas:291`); the
+  Sinclair side uses `StartsWith` and does not have this. Note the tokens in a
+  protected file are encrypted, so opening it means implementing the AMSDOS
+  descramble as well - otherwise the menu is better left disabled for them.
+
+- **16. A double-sided CPC format is written as PCW DS.** `TfrmNew.GetFormat`
+  works out the CPC system/data format from the selected row and then
+  overwrites it whenever `Sides <> dsSideSingle` (`New.pas:352-353`), so a
+  double-sided CPC disk gets a PCW spec block written to track 0.
+
+- **17. Protection fingerprints search past `DataSize`.** `StrBufPos` is handed
+  `Sector.Data`, the whole fixed 32KB buffer, rather than the bytes the sector
+  actually holds (`FormatAnalysis.pas:581-650`). Bytes left over from a longer
+  sector loaded before it, or never written at all, can match a signature.
 
 ## Low
 
-- [x] **11. DarkBlankSectors setting round-trip broken.** Menu toggles update
-  only the control (`Main.pas:1753-1757,1775-1779`); the Options checkbox
-  writes settings immediately, bypassing OK/Cancel (`Options.pas:292-295`).
-- [x] **12. Copy-paste .lfm wiring.** `SectorProperties.lfm:427`
-  (`edtFDCSize.OnChange = edtSizeChange`); `Options.lfm:448`
-  (`edtMinString.OnChange = edtTrackMarksChange`).
-- [x] **13. Malformed save dialog extension.** `dlgSave.DefaultExt = '.*.dsk'`
-  (`Main.lfm:496,783`); should be `dsk`.
-- [x] **14. Nav-history index not remapped** after unresolvable entries are
-  dropped (`Main.pas:896-901`).
-- [x] **15. Temp folder leak on every drag-out** (`Main.pas:2139-2166`).
-- [x] **16. INI values read unvalidated.** `BytesPerLine`/`DiskMapTrackMark`
-  of 0 from a hand-edited INI → mod-by-zero crashes
-  (`ListViewPresenter.pas:430`, `DiskMap.pas:517`).
-- [x] **17. Nil `tvwMain.Selected` dereference** in
-  `itmExpandChildrenClick`/`itmCollapseChildrenClick` (`Main.pas:1007,1105`).
-- [x] **18. `FileExists` vs `FileExistsUTF8`** for recent files
-  (`Main.pas:434`).
-- [ ] **19. `DecodeFile` decodes into the variable area** — uses header bytes
-  20-21 (program + variables) instead of 18-19 (`SinclairBasic.pas:318,546`).
-- [ ] **20. Protection fingerprints search past `DataSize`.** `StrBufPos`
-  scans the full 32 KB sector buffer (`FormatAnalysis.pas`); after a sector is
-  shrunk, stale bytes beyond `DataSize` can false-positive.
-- [ ] **21. Minor.** CP/M `Extent` ignores S2 high-extent bits
-  (`filesystem.pas:221`); Utils.pas:362-375 range-check warnings from the
-  `LVSCW_AUTOSIZE` constants.
-  _Fixed: both stray `OnChange` handlers removed._
-  _Fixed: both `dlgOpen` and `dlgSave` now use `'.dsk'`._
-  _Fixed: the temp folder is removed once the drag returns. The names written into it also go through `SafeFileName`, which the extract paths already used - this one was missed._
-  _Fixed: `BytesPerLine` floored at 8 where it is used, `DiskMapTrackMark` floored at 1 in its setter._
-  _Fixed: both check for a selection first._
-  _Fixed: `FileExistsUTF8`, and removing an entry no longer deletes index -1 when the name has already gone._
-  _Fixed: the menus write the setting, the options checkbox only moves its own preview until OK, and Apply puts both menu ticks in step._
-  _Fixed: entries dropped before the saved index are counted and the index moved down by that many._
+- **18. Rename file does nothing.** `itmRenameFileClick` calls `EditCaption`
+  (`Main.pas:456-459`), but `lvwMain.ReadOnly` is set to True on every refresh
+  (`Main.pas:1460`), there is no `OnEdited` handler, and no file system write
+  path behind it. Either implement it or take the menu item out.
+
+- **19. `.GZ` and gzipped MGT images will not load.** The unpack test is
+  case-sensitive (`DskImage.pas:522`), so an upper-case `.GZ` is read as raw
+  DSK. After unpacking, the original name is passed on, so the MGT test sees
+  `.gz` as the extension (`DskImage.pas:591`) and a gzipped raw MGT image is
+  never recognised - DSK survives this only because it is detected by
+  signature.
+
+- **20. Options Reset deletes the INI on the spot.** `Settings.Reset` deletes
+  the file and reloads defaults (`settings.pas:323-327`) the moment the button
+  is pressed (`Options.pas:286-289`); Cancel afterwards has nothing to put
+  back. It should move the controls only, like the other options do now, and
+  land on OK.
+
+- **21. Range-check warnings from the `LVSCW_AUTOSIZE` constants**
+  (`Utils.pas:447-455`) - the only warnings the build still issues.
 
 ## Notes
 
-- Systemic themes: untrusted image bytes used directly as enum/array indices
-  or allocation sizes; settings read without validation; copy-paste wirings.
-- Items 1-3 are the ones worth fixing first — reachable in normal use with
-  corrupt images.
+- Systemic themes: untrusted image bytes used directly as sizes or indices;
+  a fixed 32KB sector buffer read past what the sector holds; MGT handled as an
+  afterthought in code written for DSK.
+- Items 1 and 2 compound each other and are the ones worth fixing first.
