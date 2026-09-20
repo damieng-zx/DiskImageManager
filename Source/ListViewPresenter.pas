@@ -242,6 +242,8 @@ begin
     with Image do
     begin
       AddListInfo('Creator', Creator);
+      if Comment <> '' then
+        AddListInfo('Comment', StringReplace(Comment, LineEnding, ' / ', [rfReplaceAll]));
 
       ImageFormat := DSKImageFormats[FileFormat];
       if Image.HasV5Extensions then

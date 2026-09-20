@@ -1,6 +1,6 @@
 # Disk Image Manager
 
-Disk Image Manager is an application for examining and manipulating disk images in the Standard and Extended DSK format used by many Spectrum, Amstrad PCW and CPC emulators.
+Disk Image Manager is an application for examining and manipulating disk images in the Standard and Extended DSK format used by many Spectrum, Amstrad PCW and CPC emulators, as well as MGT and Teledisk (.td0) images.
 
 Many of this tool's features and functions were driven by the Spectrum Disk Preservation team which used this format and tool to help manage the selection and testing of disk images archived to The World of Spectrum and The TZX Vault.
 
@@ -12,6 +12,7 @@ These images are traditionally created with CPDRead under DOS but Simon Owen's m
 
 * Conversion between standard and extended image formats
 * Read and save MGT/SAM Coupe disk images
+* Read and save Teledisk (.td0) images, including advanced compression
 * Identification of tool that created the image
 * List all ASCII strings found on a disk image
 * Copy a disk image's full path to the clipboard

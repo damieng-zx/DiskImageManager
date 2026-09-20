@@ -494,7 +494,7 @@ object frmMain: TfrmMain
   end
   object dlgOpen: TOpenDialog
     DefaultExt = '.dsk'
-    Filter = 'All supported files (*.dsk, *.dsk.gz, *.mgt)|*.dsk;*.dsk.gz;*.mgt|Disk images (*.dsk)|*.dsk|Gzipped disk images (*.dsk.gz)|*.dsk.gz|MGT/SAM images (*.mgt)|*.mgt|All files|*.*'
+    Filter = 'All supported files (*.dsk, *.dsk.gz, *.mgt, *.td0)|*.dsk;*.dsk.gz;*.mgt;*.td0;*.td0.gz|Disk images (*.dsk)|*.dsk|Gzipped disk images (*.dsk.gz)|*.dsk.gz|MGT/SAM images (*.mgt)|*.mgt|Teledisk images (*.td0)|*.td0|All files|*.*'
     Options = [ofHideReadOnly, ofAllowMultiSelect, ofPathMustExist, ofFileMustExist, ofEnableSizing]
     Left = 440
     Top = 112
@@ -781,7 +781,7 @@ object frmMain: TfrmMain
   end
   object dlgSave: TSaveDialog
     DefaultExt = '.dsk'
-    Filter = 'Standard disk image|*.DSK|Extended disk image|*.DSK|MGT/SAM image|*.MGT'
+    Filter = 'Standard disk image|*.DSK|Extended disk image|*.DSK|MGT/SAM image|*.MGT|Teledisk image|*.TD0'
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     Left = 328
     Top = 112

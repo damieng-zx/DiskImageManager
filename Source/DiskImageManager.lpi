@@ -93,7 +93,7 @@
         <PackageName Value="LCL"/>
       </Item2>
     </RequiredPackages>
-    <Units Count="24">
+    <Units Count="26">
       <Unit0>
         <Filename Value="DiskImageManager.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -219,6 +219,16 @@
         <Filename Value="ShellDragDrop.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit23>
+      <Unit24>
+        <Filename Value="LZHuf.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LZHuf"/>
+      </Unit24>
+      <Unit25>
+        <Filename Value="TeleDisk.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TeleDisk"/>
+      </Unit25>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

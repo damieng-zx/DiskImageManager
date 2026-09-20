@@ -14,7 +14,7 @@ unit DskImage;
 interface
 
 uses
-  DSKFormat, Utils, Classes, Dialogs, SysUtils, Math, Character, ZStream;
+  DSKFormat, TeleDisk, Utils, Classes, Dialogs, SysUtils, Math, Character, ZStream;
 
 const
   MaxSectorSize = 32768;
@@ -102,7 +102,7 @@ type
   end;
 
   // Image
-  TDSKImageFormat = (diStandardDSK, diExtendedDSK, diRawMGT, diNotYetSaved, diInvalid);
+  TDSKImageFormat = (diStandardDSK, diExtendedDSK, diRawMGT, diTeleDisk, diNotYetSaved, diInvalid);
 
   TDSKImage = class(TObject)
   private
@@ -115,11 +115,15 @@ type
     procedure SetIsChanged(NewValue: boolean);
     function LoadFileDSK(DiskFile: TStream): boolean;
     function LoadFileMGT(DiskFile: TStream): boolean;
+    function LoadFileTD0(DiskFile: TStream): boolean;
     function RecoverExtTrackSize(DiskFile: TStream; ExpTrack, ExpSide: integer): integer;
     function SaveFileDSK(DiskFile: TFileStream; SaveFileFormat: TDSKImageFormat; Compress: boolean): boolean;
     function SaveFileMGT(DiskFile: TFileStream): boolean;
+    function SaveFileTD0(DiskFile: TFileStream): boolean;
   public
     FileFormat: TDSKImageFormat;
+    // Free text carried with the image, which only Teledisk has room for
+    Comment: string;
     Messages: TStringList;
 
     constructor Create;
@@ -135,6 +139,7 @@ type
     function FindText(From: TDSKSector; Text: string; CaseSensitive: boolean): TDSKSector;
     function HasV5Extensions: boolean;
     function HasOffsetInfo: boolean;
+    function HasVariantSectors: boolean;
 
     property Creator: string read FCreator write FCreator;
     property Corrupt: boolean read FCorrupt write FCorrupt;
@@ -414,6 +419,7 @@ const
     'Standard DSK',
     'Extended DSK',
     'MGT image',
+    'Teledisk TD0',
     'Not yet saved',
     'Invalid'
     );
@@ -495,7 +501,7 @@ function GetTrackFileSize(TrackDataSize: word): integer;
 
 implementation
 
-uses FormatAnalysis;
+uses FormatAnalysis, LZHuf;
 
 // Image
 constructor TDSKImage.Create;
@@ -561,9 +567,14 @@ end;
 constructor TDSKImage.CreateFromStream(Stream: TStream; FileName: TFileName);
 var
   DSKInfoBlock: TDSKInfoBlock;
+  TD0Header: TTD0Header;
 begin
   FileFormat := diInvalid;
-  Stream.ReadBuffer(DSKInfoBlock, SizeOf(DSKInfoBlock));
+  // Read as much of a DSK header as there is. A Teledisk image can be shorter
+  // than one, and demanding the whole block failed it before it was looked at.
+  FillChar(DSKInfoBlock, SizeOf(DSKInfoBlock), 0);
+  Stream.Read(DSKInfoBlock, SizeOf(DSKInfoBlock));
+  Move(DSKInfoBlock, TD0Header, SizeOf(TD0Header));
 
   // Detect image format. One chain, so that recognising a standard image is the
   // end of it: the standard test used to stand alone and the extended tests ran
@@ -586,6 +597,13 @@ begin
   begin
     Stream.Seek(0, soFromBeginning);
     LoadFileDSK(Stream);
+    FIsChanged := False;
+  end
+  else if (Stream.Size >= SizeOf(TD0Header)) and IsTD0Header(TD0Header) then
+  begin
+    Stream.Seek(0, soFromBeginning);
+    FileFormat := diTeleDisk;
+    LoadFileTD0(Stream);
     FIsChanged := False;
   end
   else if SameText(ExtractFileExt(FileName), '.mgt') and (Stream.Size = MGTRawSize) then
@@ -625,6 +643,16 @@ begin
       Result := True;
       exit;
     end;
+  Result := False;
+end;
+
+function TDSKImage.HasVariantSectors: boolean;
+var
+  Side: TDSKSide;
+begin
+  Result := True;
+  for Side in Disk.Side do
+    if Side.HasVariantSectors then exit;
   Result := False;
 end;
 
@@ -1068,6 +1096,269 @@ begin
   Result := True;
 end;
 
+// Load a Teledisk image. The header is always plain, and everything after it
+// is LZHUF-compressed when the signature is 'td'. Tracks come as records in
+// whatever order they were read, so the disk grows to take each one and the
+// track numbering is settled once they are all in.
+function TDSKImage.LoadFileTD0(DiskFile: TStream): boolean;
+const
+  // Teledisk records neither, so a track gets what a +3/PCW format writes
+  TD0Filler = $E5;
+  TD0GapLength = $4E;
+var
+  Header: TTD0Header;
+  CommentHeader: TTD0CommentHeader;
+  TrackHeader: TTD0TrackHeader;
+  SectorHeader: TTD0SectorHeader;
+  Body: TStream;
+  Unpacked: TMemoryStream;
+  CommentText: ansistring;
+  Field: array of byte;
+  FieldLength: word;
+  SIdx, TIdx, EIdx, Head, Size, CRCBad, Unreadable: integer;
+  TD0Track: TDSKTrack;
+  DiskFM, Ended: boolean;
+
+  // Take Count bytes from the body, or answer False if it has not got them
+  function Fetch(var Buf; Count: integer): boolean;
+  begin
+    Result := Body.Position + Count <= Body.Size;
+    if Result and (Count > 0) then
+      Body.ReadBuffer(Buf, Count);
+  end;
+
+  procedure Fail(const Reason: string);
+  begin
+    Messages.Add(Reason);
+    Corrupt := True;
+  end;
+
+begin
+  Result := False;
+  DiskFile.ReadBuffer(Header, SizeOf(Header));
+  Creator := SysUtils.Format('Teledisk %d.%d', [Header.Version div 10, Header.Version mod 10]);
+
+  // One file of a multi-volume set is only part of a disk
+  if Header.Sequence <> 0 then
+  begin
+    Fail(SysUtils.Format('This is volume %d of a multi-volume Teledisk set, which cannot be loaded.',
+      [Header.Sequence + 1]));
+    exit;
+  end;
+
+  if (Header.Signature = TD0SignatureAdvanced) and (Header.Version < TD0VersionLZHuf) then
+  begin
+    Fail(SysUtils.Format('Teledisk %d.%d advanced compression is not supported.',
+      [Header.Version div 10, Header.Version mod 10]));
+    exit;
+  end;
+
+  Unpacked := nil;
+  try
+    if Header.Signature = TD0SignatureAdvanced then
+    begin
+      Unpacked := TMemoryStream.Create;
+      try
+        LZHufDecompress(DiskFile, Unpacked);
+      except
+        on E: Exception do
+        begin
+          Fail('Compressed data could not be unpacked: ' + E.Message);
+          exit;
+        end;
+      end;
+      Unpacked.Position := 0;
+      Body := Unpacked;
+    end
+    else
+      Body := DiskFile;
+
+    if (Header.Stepping and TD0StepHasComment) <> 0 then
+    begin
+      if not Fetch(CommentHeader, SizeOf(CommentHeader)) then
+      begin
+        Fail('Comment ran past the end of the file.');
+        exit;
+      end;
+      SetLength(CommentText, CommentHeader.Length);
+      if not Fetch(PAnsiChar(CommentText)^, CommentHeader.Length) then
+      begin
+        Fail('Comment ran past the end of the file.');
+        exit;
+      end;
+      if TD0Crc(PAnsiChar(CommentText)^, Length(CommentText),
+        TD0Crc(CommentHeader.Length, SizeOf(CommentHeader) - SizeOf(CommentHeader.CRC))) <> CommentHeader.CRC then
+        Messages.Add('Comment failed its CRC check.');
+      // Each line of the comment ends with a NUL
+      Comment := StringReplace(TrimRight(StringReplace(CommentText, #0, #10, [rfReplaceAll])),
+        #10, LineEnding, [rfReplaceAll]);
+    end;
+
+    if (Header.Stepping and TD0StepMask) = 1 then
+      Messages.Add('Imaged double-stepped, as a 40-track disk in an 80-track drive.')
+    else if (Header.Stepping and TD0StepMask) = 2 then
+      Messages.Add('Imaged stepping even tracks only.');
+
+    DiskFM := (Header.DataRate and TD0RateFM) <> 0;
+    // Teledisk gives 1 or 2; anything else is taken from the tracks themselves
+    Disk.Sides := EnsureRange(Header.Sides, 1, 2);
+    CRCBad := 0;
+    Unreadable := 0;
+    Ended := False;
+
+    while not Ended do
+    begin
+      if not Fetch(TrackHeader, 1) then
+      begin
+        Fail('Image ended without its end-of-image marker.');
+        break;
+      end;
+      if TrackHeader.Sectors = TD0EndOfImage then
+      begin
+        Ended := True;
+        break;
+      end;
+      if not Fetch(TrackHeader.Cylinder, SizeOf(TrackHeader) - 1) then
+      begin
+        Fail('Track header ran past the end of the file.');
+        break;
+      end;
+      if Byte(TD0Crc(TrackHeader, 3)) <> TrackHeader.CRC then
+        Messages.Add(SysUtils.Format('Track header for cylinder %d head %d failed its CRC check.',
+          [TrackHeader.Cylinder, TrackHeader.Head and 1]));
+
+      // A side has at most 255 tracks
+      if TrackHeader.Cylinder = 255 then
+      begin
+        Fail('Track header gave cylinder 255, past the last a side can hold.');
+        break;
+      end;
+
+      Head := TrackHeader.Head and 1;
+      if Head >= Disk.Sides then
+        Disk.Sides := Head + 1;
+      if TrackHeader.Cylinder >= Disk.Side[Head].Tracks then
+        Disk.Side[Head].Tracks := TrackHeader.Cylinder + 1;
+
+      TD0Track := Disk.Side[Head].Track[TrackHeader.Cylinder];
+      if TD0Track.Sectors > 0 then
+      begin
+        Messages.Add(SysUtils.Format('Cylinder %d head %d appears more than once; the last is kept.',
+          [TrackHeader.Cylinder, Head]));
+        TD0Track.Sectors := 0;
+      end;
+
+      TD0Track.Filler := TD0Filler;
+      TD0Track.GapLength := TD0GapLength;
+      case Header.DataRate and TD0RateMask of
+        TD0Rate500: TD0Track.DataRate := drHighDensity;
+        else
+          TD0Track.DataRate := drSingleOrDoubleDensity;
+      end;
+      if DiskFM or ((TrackHeader.Head and TD0HeadFM) <> 0) then
+        TD0Track.RecordingMode := rmFM
+      else
+        TD0Track.RecordingMode := rmMFM;
+      TD0Track.Sectors := TrackHeader.Sectors;
+
+      for EIdx := 0 to TrackHeader.Sectors - 1 do
+        with TD0Track.Sector[EIdx] do
+        begin
+          if not Fetch(SectorHeader, SizeOf(SectorHeader)) then
+          begin
+            Fail(SysUtils.Format('Cylinder %d head %d sector %d ran past the end of the file.',
+              [TrackHeader.Cylinder, Head, EIdx]));
+            TD0Track.Sectors := EIdx;
+            exit;
+          end;
+
+          Sector := EIdx;
+          Track := SectorHeader.Cylinder;
+          Side := SectorHeader.Head;
+          ID := SectorHeader.ID;
+          FDCSize := SectorHeader.Size;
+
+          // Teledisk's flags as the status the controller would have given
+          if (SectorHeader.Flags and TD0FlagCRCError) <> 0 then
+          begin
+            FDCStatus[1] := FDCStatus[1] or $20;
+            FDCStatus[2] := FDCStatus[2] or $20;
+          end;
+          if (SectorHeader.Flags and TD0FlagDeleted) <> 0 then
+            FDCStatus[2] := FDCStatus[2] or $40;
+          if (SectorHeader.Flags and (TD0FlagsWithoutData or TD0FlagNoID)) <> 0 then
+          begin
+            FDCStatus[1] := FDCStatus[1] or $01;
+            if (SectorHeader.Flags and TD0FlagsWithoutData) <> 0 then
+              FDCStatus[2] := FDCStatus[2] or $01;
+          end;
+
+          DataSize := 0;
+          if (SectorHeader.Flags and TD0FlagsWithoutData) = 0 then
+          begin
+            if not Fetch(FieldLength, SizeOf(FieldLength)) or (FieldLength = 0) then
+            begin
+              Fail(SysUtils.Format('Cylinder %d head %d sector ID %d data ran past the end of the file.',
+                [TrackHeader.Cylinder, Head, ID]));
+              exit;
+            end;
+            FieldLength := LEtoN(FieldLength);
+            SetLength(Field, FieldLength);
+            if not Fetch(Field[0], FieldLength) then
+            begin
+              Fail(SysUtils.Format('Cylinder %d head %d sector ID %d data ran past the end of the file.',
+                [TrackHeader.Cylinder, Head, ID]));
+              exit;
+            end;
+
+            Size := GetFDCSizeBytes(SectorHeader.Size);
+            if Size = 0 then
+              Inc(Unreadable)
+            else if not DecodeTD0SectorData(Copy(Field, 1, FieldLength - 1), Field[0], Data, Size, TD0Filler) then
+            begin
+              Messages.Add(SysUtils.Format('Cylinder %d head %d sector ID %d data could not be decoded.',
+                [TrackHeader.Cylinder, Head, ID]));
+              Corrupt := True;
+            end
+            else
+            begin
+              DataSize := Size;
+              if Byte(TD0Crc(Data, Size)) <> SectorHeader.CRC then
+                Inc(CRCBad);
+            end;
+          end;
+          AdvertisedSize := DataSize;
+        end;
+    end;
+
+    if CRCBad > 0 then
+      Messages.Add(SysUtils.Format('%d sector(s) did not match the CRC Teledisk recorded for their data.', [CRCBad]));
+    if Unreadable > 0 then
+      Messages.Add(SysUtils.Format('%d sector(s) had a size code with no size, so their data was dropped.', [Unreadable]));
+  finally
+    Unpacked.Free;
+
+    // Every side takes the same count of tracks, however many each record
+    // reached, and the numbering follows once the side count is known
+    TIdx := 0;
+    for SIdx := 0 to Disk.Sides - 1 do
+      TIdx := Max(TIdx, Disk.Side[SIdx].Tracks);
+    for SIdx := 0 to Disk.Sides - 1 do
+    begin
+      Disk.Side[SIdx].Tracks := TIdx;
+      for EIdx := 0 to TIdx - 1 do
+        with Disk.Side[SIdx].Track[EIdx] do
+        begin
+          Track := EIdx;
+          Side := SIdx;
+          Logical := (EIdx * Disk.Sides) + SIdx;
+        end;
+    end;
+  end;
+
+  Result := Ended and not Corrupt;
+end;
+
 function TDSKImage.SaveFile(SaveFileName: TFileName; SaveFileFormat: TDSKImageFormat; Copy: boolean; Compress: boolean): boolean;
 var
   DiskFile: TFileStream;
@@ -1086,6 +1377,7 @@ begin
       diStandardDSK: Result := SaveFileDSK(DiskFile, diStandardDSK, False);
       diExtendedDSK: Result := SaveFileDSK(DiskFile, diExtendedDSK, Compress);
       diRawMGT: Result := SaveFileMGT(DiskFile);
+      diTeleDisk: Result := SaveFileTD0(DiskFile);
       else
         MessageDlg(SysUtils.Format('Unknown file format %i', [SaveFileFormat]), mtError, [mbOK], 0);
     end;
@@ -1117,6 +1409,7 @@ function TDSKImage.CanSave(SaveFileFormat: TDSKImageFormat): boolean;
 var
   Side: TDSKSide;
   Track: TDSKTrack;
+  Sector: TDSKSector;
 begin
   Result := False;
 
@@ -1139,6 +1432,23 @@ begin
         [Side.Side, Side.Tracks, Disk.Side[0].Tracks]));
       exit;
     end;
+
+  // Teledisk works out how much data a sector has from its size code alone, so
+  // a sector holding data under a code that gives no size cannot be written
+  if SaveFileFormat = diTeleDisk then
+  begin
+    for Side in Disk.Side do
+      for Track in Side.Track do
+        for Sector in Track.Sector do
+          if (Sector.DataSize > 0) and (Sector.FDCSize > TD0MaxSizeCode) then
+          begin
+            Messages.Add(SysUtils.Format('Side %d track %d sector ID %d has size code %d, which gives no size to write its data as.',
+              [Track.Side, Track.Logical, Sector.ID, Sector.FDCSize]));
+            exit;
+          end;
+    Result := True;
+    exit;
+  end;
 
   for Side in Disk.Side do
     for Track in Side.Track do
@@ -1398,6 +1708,172 @@ begin
           DiskFile.WriteBuffer(Blank, MGTSectorSize);
       end;
     end;
+
+  Result := True;
+end;
+
+// Save a Teledisk image with advanced compression. Teledisk has no room for a
+// track's gap, filler, index offsets or bit length, nor for more than one copy
+// of a sector, and it sizes every sector from its size code: what does not fit
+// is said in Messages rather than refused, as the Standard DSK save does.
+function TDSKImage.SaveFileTD0(DiskFile: TFileStream): boolean;
+var
+  Header: TTD0Header;
+  CommentHeader: TTD0CommentHeader;
+  TrackHeader: TTD0TrackHeader;
+  SectorHeader: TTD0SectorHeader;
+  Payload, Compressed: TMemoryStream;
+  CommentText: ansistring;
+  Buffer: array[0..MaxSectorSize] of byte;
+  SIdx, TIdx, Size, CopySize: integer;
+  Track, FirstTrack: TDSKTrack;
+  Sector: TDSKSector;
+  AllFM, DroppedCopies, Padded, Truncated: boolean;
+  Year, Month, Day, Hour, Minute, Second, MilliSecond: word;
+  Stamp: TDateTime;
+begin
+  Result := False;
+  if not CanSave(diTeleDisk) then exit;
+
+  AllFM := True;
+  FirstTrack := nil;
+  for Track in Disk.AllTracks do
+    if Track.Sectors > 0 then
+    begin
+      if FirstTrack = nil then FirstTrack := Track;
+      if Track.RecordingMode <> rmFM then AllFM := False;
+    end;
+  if FirstTrack = nil then AllFM := False;
+
+  DroppedCopies := False;
+  Padded := False;
+  Truncated := False;
+
+  Payload := TMemoryStream.Create;
+  Compressed := TMemoryStream.Create;
+  try
+    if Comment <> '' then
+    begin
+      // One NUL-terminated line per line of the comment
+      CommentText := StringReplace(AdjustLineBreaks(Comment, tlbsLF), #10, #0, [rfReplaceAll]) + #0;
+      Stamp := Now;
+      DecodeDate(Stamp, Year, Month, Day);
+      DecodeTime(Stamp, Hour, Minute, Second, MilliSecond);
+      CommentHeader.Length := NtoLE(word(Length(CommentText)));
+      CommentHeader.Year := Year - 1900;
+      CommentHeader.Month := Month - 1;
+      CommentHeader.Day := Day;
+      CommentHeader.Hour := Hour;
+      CommentHeader.Minute := Minute;
+      CommentHeader.Second := Second;
+      CommentHeader.CRC := NtoLE(TD0Crc(PAnsiChar(CommentText)^, Length(CommentText),
+        TD0Crc(CommentHeader.Length, SizeOf(CommentHeader) - SizeOf(CommentHeader.CRC))));
+      Payload.WriteBuffer(CommentHeader, SizeOf(CommentHeader));
+      Payload.WriteBuffer(PAnsiChar(CommentText)^, Length(CommentText));
+    end;
+
+    for TIdx := 0 to Disk.Side[0].Tracks - 1 do
+      for SIdx := 0 to Disk.Sides - 1 do
+      begin
+        Track := Disk.Side[SIdx].Track[TIdx];
+        TrackHeader.Sectors := Track.Sectors;
+        TrackHeader.Cylinder := TIdx;
+        TrackHeader.Head := SIdx;
+        if (Track.RecordingMode = rmFM) and not AllFM then
+          TrackHeader.Head := TrackHeader.Head or TD0HeadFM;
+        TrackHeader.CRC := Byte(TD0Crc(TrackHeader, 3));
+        Payload.WriteBuffer(TrackHeader, SizeOf(TrackHeader));
+
+        for Sector in Track.Sector do
+        begin
+          SectorHeader.Cylinder := Sector.Track;
+          SectorHeader.Head := Sector.Side;
+          SectorHeader.ID := Sector.ID;
+          SectorHeader.Size := Sector.FDCSize;
+          SectorHeader.Flags := 0;
+          SectorHeader.CRC := 0;
+          if ((Sector.FDCStatus[1] and $20) <> 0) or ((Sector.FDCStatus[2] and $20) <> 0) then
+            SectorHeader.Flags := SectorHeader.Flags or TD0FlagCRCError;
+          if (Sector.FDCStatus[2] and $40) <> 0 then
+            SectorHeader.Flags := SectorHeader.Flags or TD0FlagDeleted;
+
+          // A missing address mark on a sector that has data is its ID that
+          // was not found
+          if ((Sector.FDCStatus[1] and $01) <> 0) and (Sector.DataSize > 0) then
+            SectorHeader.Flags := SectorHeader.Flags or TD0FlagNoID;
+
+          if Sector.DataSize = 0 then
+          begin
+            SectorHeader.Flags := SectorHeader.Flags or TD0FlagNoData;
+            Payload.WriteBuffer(SectorHeader, SizeOf(SectorHeader));
+            continue;
+          end;
+
+          // The size code says how much there is, and a weak sector's first
+          // copy is the one a controller reading it would most likely give
+          Size := GetFDCSizeBytes(Sector.FDCSize);
+          if Sector.GetCopyCount > 1 then
+          begin
+            DroppedCopies := True;
+            CopySize := Sector.GetCopySize;
+          end
+          else
+            CopySize := Sector.DataSize;
+          if CopySize < Size then Padded := True;
+          if CopySize > Size then
+          begin
+            Truncated := True;
+            CopySize := Size;
+          end;
+          FillChar(Buffer, Size, Track.Filler);
+          Move(Sector.Data, Buffer, CopySize);
+
+          SectorHeader.CRC := Byte(TD0Crc(Buffer, Size));
+          Payload.WriteBuffer(SectorHeader, SizeOf(SectorHeader));
+          EncodeTD0SectorData(Payload, Buffer, Size);
+        end;
+      end;
+
+    Payload.WriteByte(TD0EndOfImage);
+
+    Payload.Position := 0;
+    LZHufCompress(Payload, Compressed);
+
+    FillChar(Header, SizeOf(Header), 0);
+    Header.Signature := TD0SignatureAdvanced;
+    Header.CheckSig := Random(256);
+    Header.Version := TD0VersionWritten;
+    Header.DataRate := TD0Rate250;
+    if (FirstTrack <> nil) and (FirstTrack.DataRate in [drHighDensity, drExtendedDensity]) then
+      Header.DataRate := TD0Rate500;
+    if AllFM then
+      Header.DataRate := Header.DataRate or TD0RateFM;
+    // The drive the disk was read in: 5.25" 360K, 3.5" 720K or 3.5" 1.44M
+    if Header.DataRate and TD0RateMask = TD0Rate500 then
+      Header.DriveType := 4
+    else if Disk.Side[0].Tracks <= 42 then
+      Header.DriveType := 1
+    else
+      Header.DriveType := 3;
+    if Comment <> '' then
+      Header.Stepping := TD0StepHasComment;
+    Header.Sides := Disk.Sides;
+    Header.CRC := NtoLE(TD0Crc(Header, 10));
+
+    DiskFile.WriteBuffer(Header, SizeOf(Header));
+    Compressed.Position := 0;
+    DiskFile.CopyFrom(Compressed, Compressed.Size);
+  finally
+    Compressed.Free;
+    Payload.Free;
+  end;
+
+  if DroppedCopies then
+    Messages.Add('Teledisk holds one copy of a sector; weak sectors kept only their first.');
+  if Padded then
+    Messages.Add('Sectors shorter than their size code were padded with the track filler.');
+  if Truncated then
+    Messages.Add('Sectors longer than their size code were cut to it.');
 
   Result := True;
 end;

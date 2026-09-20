@@ -1839,6 +1839,7 @@ begin
   case Image.FileFormat of
     diStandardDSK: dlgSave.FilterIndex := 1;
     diRawMGT: dlgSave.FilterIndex := 3;
+    diTeleDisk: dlgSave.FilterIndex := 4;
     else
       dlgSave.FilterIndex := 2;
   end;
@@ -1849,6 +1850,17 @@ begin
   begin
     Settings.LastSaveFolder := ExtractFilePath(dlgSave.FileName);
     case dlgSave.FilterIndex of
+      4:
+      begin
+        // Teledisk keeps one copy of each sector and nothing of a track's
+        // layout past its sectors
+        if (not Settings.WarnConversionProblems) or
+          not (Image.HasOffsetInfo or Image.HasVariantSectors) or
+          (MessageDlg(
+          'This image has weak sectors or SAMdisk OffsetInfo which "Teledisk" does not support. ' +
+          'Save anyway and lose this information?', mtWarning, [mbYes, mbNo], 0) = mrYes) then
+          Result := Image.SaveFile(dlgSave.FileName, diTeleDisk, Copy, False);
+      end;
       3: Result := Image.SaveFile(dlgSave.FileName, diRawMGT, Copy, False);
       2: Result := Image.SaveFile(dlgSave.FileName, diExtendedDSK, Copy,
           Settings.RemoveEmptyTracks);

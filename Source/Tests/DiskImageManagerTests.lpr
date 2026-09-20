@@ -24,7 +24,9 @@ uses
   TestAmstradBasic,
   TestDskImage,
   TestCPMFileSystem,
-  TestFormatAnalysis;
+  TestFormatAnalysis,
+  TestLZHuf,
+  TestTeleDisk;
 
 type
   TDIMTestRunner = class(TTestRunner)
