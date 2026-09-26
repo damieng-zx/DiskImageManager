@@ -1434,7 +1434,7 @@ begin
 
   // Keep the output beside the destination so the final replacement stays on
   // the same volume. GetTempFileName reserves a unique name for this save.
-  TempFileName := GetTempFileName(ExtractFilePath(ExpandFileName(SaveFileName)), 'DIM');
+  TempFileName := SysUtils.GetTempFileName(ExtractFilePath(ExpandFileName(SaveFileName)), 'DIM');
   try
     DiskFile := TFileStream.Create(TempFileName, fmCreate or fmOpenWrite);
     try
@@ -1459,7 +1459,7 @@ begin
       WideTempName := UTF8Decode(TempFileName);
       WideSaveName := UTF8Decode(SaveFileName);
       if not Windows.MoveFileExW(PWideChar(WideTempName), PWideChar(WideSaveName),
-        MOVEFILE_REPLACE_EXISTING or MOVEFILE_WRITE_THROUGH) then
+        MOVEFILE_REPLACE_EXISTING or $00000008 { MOVEFILE_WRITE_THROUGH }) then
         RaiseLastOSError;
     end;
   finally
@@ -2325,7 +2325,7 @@ function TDSKDisk.GetAllStrings(MinLength: integer; MinUniques: integer): TStrin
 var
   Sector: TDSKSector;
   CurrentText: string;
-  Index, CIdx: integer;
+  Index: integer;
   NextByte: byte;
   Uniques: TStringList;
   Seen: TStringList;
@@ -2333,13 +2333,15 @@ var
   Found: string;
 
   procedure FinishText;
+  var
+    I: integer;
   begin
     if CurrentText.Trim(TrimChars).Length >= MinLength then
     begin
       Uniques.Clear;
-      for CIdx := 1 to CurrentText.Length do
+      for I := 1 to CurrentText.Length do
       begin
-        CurrChar := CurrentText[CIdx];
+        CurrChar := CurrentText[I];
         if IsUpper(CurrChar) or IsLower(CurrChar) then Uniques.Append(CurrChar);
         if Uniques.Count >= MinUniques then break;
       end;

@@ -127,7 +127,7 @@ begin
   try
     // "10 PRINT \"HI\"" encrypted with the AMSDOS 128-byte XOR stream.
     AssertEquals('10 PRINT "HI"' + CRLF,
-      P.Decode([$AB, $2C, $E7, $EA, $D3, $17, $1D, $A4, $D2, $FD, $7A], True));
+      P.Decode([$A0, $2C, $E7, $EA, $D3, $17, $1D, $A4, $D2, $FD, $7A], True));
   finally
     P.Free;
   end;

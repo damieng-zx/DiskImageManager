@@ -153,7 +153,7 @@ begin
   try
     R := P.Decode([$00, $0A, $05, $00, $80, $8F, $90, $A2, $0D]);
     AssertTrue('block graphics range is labelled as graphics', Pos('[GRAPH][GRAPH]', R) > 0);
-    AssertTrue('UDG range is labelled as UDGs', Pos('[UDG][UDG][UDG][UDG]', R) > 0);
+    AssertTrue('UDG range is labelled as UDGs', Pos('[UDG][UDG]', R) > 0);
   finally
     P.Free;
   end;
