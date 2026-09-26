@@ -36,6 +36,7 @@ type
     procedure TestRoundTripKeepsDataAndGeometry;
     procedure TestRoundTripKeepsFlagsAndComment;
     procedure TestSaveWritesCompressedHeader;
+    procedure TestCanSaveRejectsCommentBeyondTD0Limit;
     procedure TestRejectsMultiVolume;
     procedure TestRejectsOldAdvancedCompression;
     procedure TestTruncatedImageIsCorrupt;
@@ -524,6 +525,30 @@ begin
     AssertTrue('corrupt', Img.Corrupt);
     AssertTrue('says why', HasMessageLike(Img.Messages, 'ran past the end of the file'));
     AssertEquals('side kept', 2, Img.Disk.Sides);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TTeleDiskTest.TestCanSaveRejectsCommentBeyondTD0Limit;
+var
+  Img: TDSKImage;
+  Spec: TDSKFormatSpecification;
+begin
+  Img := TDSKImage.Create;
+  Spec := TDSKFormatSpecification.Create(0);
+  try
+    Img.Disk.Format(Spec);
+  finally
+    Spec.Free;
+  end;
+  try
+    Img.Comment := StringOfChar('C', High(Word));
+    AssertFalse('terminating NUL would overflow the TD0 comment length',
+      Img.CanSave(diTeleDisk));
+    Img.Comment := StringOfChar('C', High(Word) - 1);
+    AssertTrue('maximum representable comment length is accepted',
+      Img.CanSave(diTeleDisk));
   finally
     Img.Free;
   end;

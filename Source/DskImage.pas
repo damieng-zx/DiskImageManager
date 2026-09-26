@@ -1486,6 +1486,7 @@ var
   Side: TDSKSide;
   Track: TDSKTrack;
   Sector: TDSKSector;
+  NormalizedComment: ansistring;
 begin
   Result := False;
 
@@ -1513,6 +1514,19 @@ begin
   // a sector holding data under a code that gives no size cannot be written
   if SaveFileFormat = diTeleDisk then
   begin
+    if Comment <> '' then
+    begin
+      NormalizedComment := StringReplace(AdjustLineBreaks(Comment, tlbsLF),
+        #10, #0, [rfReplaceAll]) + #0;
+      if Length(NormalizedComment) > High(Word) then
+      begin
+        Messages.Add(SysUtils.Format(
+          'Teledisk comments can be at most %d bytes after line-ending conversion.',
+          [High(Word)]));
+        exit;
+      end;
+    end;
+
     for Side in Disk.Side do
       for Track in Side.Track do
         for Sector in Track.Sector do
