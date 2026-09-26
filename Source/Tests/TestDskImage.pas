@@ -41,6 +41,7 @@ type
     procedure TestDetectFormatNotEmpty;
     procedure TestLoadUnformattedExtendedDSK;
     procedure TestLoadTruncatedOffsetInfo;
+    procedure TestLoadTruncatedDiskInfo;
     procedure TestGetAllStringsDropsDuplicates;
     procedure TestGetAllStringsKeepsDifferentCase;
     procedure TestGetAllStringsOnEmptyDisk;
@@ -408,6 +409,32 @@ begin
       finally
         Img.Free;
       end;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+procedure TDskImageTest.TestLoadTruncatedDiskInfo;
+var
+  Stream: TFileStream;
+  FileName: string;
+  Img: TDSKImage;
+begin
+  FileName := TempName('.dsk');
+  Stream := TFileStream.Create(FileName, fmCreate);
+  try
+    Stream.WriteBuffer(DiskInfoStandard[1], Length(DiskInfoStandard));
+  finally
+    Stream.Free;
+  end;
+  try
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertTrue('a recognized but incomplete header is corrupt', Img.Corrupt);
+      AssertEquals('no geometry was allocated', 0, Img.Disk.Sides);
+    finally
+      Img.Free;
     end;
   finally
     DeleteFile(FileName);

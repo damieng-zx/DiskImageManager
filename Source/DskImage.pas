@@ -771,6 +771,12 @@ begin
   RecoveredTracks := 0;
   LoadedSectors := 0;
 
+  if DiskFile.Size - DiskFile.Position < SizeOf(DSKInfoBlock) then
+  begin
+    Messages.Add('Disk-Info block is truncated.');
+    Corrupt := True;
+    exit;
+  end;
   DiskFile.ReadBuffer(DSKInfoBlock, SizeOf(DSKInfoBlock));
 
   // Get the creator (DU54 puts in wrong place)
