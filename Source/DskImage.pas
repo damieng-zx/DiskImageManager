@@ -501,7 +501,7 @@ function GetTrackFileSize(TrackDataSize: word): integer;
 
 implementation
 
-uses FormatAnalysis, LZHuf;
+uses FormatAnalysis, LZHuf, Windows;
 
 // Image
 constructor TDSKImage.Create;
@@ -1363,6 +1363,8 @@ function TDSKImage.SaveFile(SaveFileName: TFileName; SaveFileFormat: TDSKImageFo
 var
   DiskFile: TFileStream;
   FileSize: int64;
+  TempFileName: string;
+  WideTempName, WideSaveName: WideString;
 begin
   Result := False;
   if Corrupt then
@@ -1371,30 +1373,43 @@ begin
     exit;
   end;
 
-  DiskFile := TFileStream.Create(SaveFileName, fmCreate or fmOpenWrite);
+  // Keep the output beside the destination so the final replacement stays on
+  // the same volume. GetTempFileName reserves a unique name for this save.
+  TempFileName := GetTempFileName(ExtractFilePath(ExpandFileName(SaveFileName)), 'DIM');
   try
-    case SaveFileFormat of
-      diStandardDSK: Result := SaveFileDSK(DiskFile, diStandardDSK, False);
-      diExtendedDSK: Result := SaveFileDSK(DiskFile, diExtendedDSK, Compress);
-      diRawMGT: Result := SaveFileMGT(DiskFile);
-      diTeleDisk: Result := SaveFileTD0(DiskFile);
-      else
-        MessageDlg(SysUtils.Format('Unknown file format %i', [SaveFileFormat]), mtError, [mbOK], 0);
+    DiskFile := TFileStream.Create(TempFileName, fmCreate or fmOpenWrite);
+    try
+      case SaveFileFormat of
+        diStandardDSK: Result := SaveFileDSK(DiskFile, diStandardDSK, False);
+        diExtendedDSK: Result := SaveFileDSK(DiskFile, diExtendedDSK, Compress);
+        diRawMGT: Result := SaveFileMGT(DiskFile);
+        diTeleDisk: Result := SaveFileTD0(DiskFile);
+        else
+          MessageDlg(SysUtils.Format('Unknown file format %i', [SaveFileFormat]), mtError, [mbOK], 0);
+      end;
+
+      FileSize := DiskFile.Size;
+    finally
+      DiskFile.Free;
     end;
 
-    FileSize := DiskFile.Size;
+    if Result then
+    begin
+      // RenameFile cannot replace an existing target on Windows. MoveFileExW
+      // replaces it in one same-volume operation and keeps Unicode paths intact.
+      WideTempName := UTF8Decode(TempFileName);
+      WideSaveName := UTF8Decode(SaveFileName);
+      if not Windows.MoveFileExW(PWideChar(WideTempName), PWideChar(WideSaveName),
+        MOVEFILE_REPLACE_EXISTING or MOVEFILE_WRITE_THROUGH) then
+        RaiseLastOSError;
+    end;
   finally
-    DiskFile.Free;
+    // Also runs for exceptions in the writer or in the final replacement.
+    SysUtils.DeleteFile(TempFileName);
   end;
 
   if not Result then
-  begin
-    // TFileStream(fmCreate) has already truncated the target, so a failed save
-    // would leave a short or corrupt file behind (worse, overwriting a good one).
-    // Remove it so the failure is obvious rather than silent.
-    SysUtils.DeleteFile(SaveFileName);
-    MessageDlg('Could not save file. Save aborted.', mtError, [mbOK], 0);
-  end
+    MessageDlg('Could not save file. Save aborted.', mtError, [mbOK], 0)
   else
   if not Copy then
   begin
