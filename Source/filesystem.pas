@@ -326,6 +326,7 @@ begin
     CalcChecksum := CalcChecksum + Data[Idx];
 
   DiskFile.Checksum := CalcChecksum = Data[127];
+  if not DiskFile.Checksum then exit;
   DiskFile.HeaderType := Sig;
   // A header's length is a promise, and a corrupt or hostile image promises
   // anything: above 2GB the 32-bit value wraps negative once stored in an

@@ -30,6 +30,7 @@ type
     procedure FreeDirectory(Files: TDirectory);
   published
     procedure TestPlus3DOSHeaderSizeClampedToCapacity;
+    procedure TestPlus3DOSBadChecksumDoesNotClaimHeader;
     procedure TestPlus3DOSGetDataClampedToBlocks;
     procedure TestPlus3DOSExactSizeKept;
     procedure TestExtractionStopsAfterPartialSector;
@@ -170,6 +171,35 @@ begin
         AssertTrue('size not negative', DiskFile.Size >= 0);
         AssertTrue('size kept to what the disk can hold',
           DiskFile.Size <= Img.Disk.FormattedCapacity);
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestPlus3DOSBadChecksumDoesNotClaimHeader;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+begin
+  Img := MakePCWDisk;
+  try
+    PlantDirEntry(Img, 2, 0, 2);
+    PlantPlus3DOSHeader(DataSector(Img), 228);
+    DataSector(Img).Data[127] := DataSector(Img).Data[127] xor 1;
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertEquals('header rejected', 'None', Files[0].HeaderType);
+        AssertEquals('directory length kept', 256, Files[0].Size);
+        AssertEquals('header is not stripped', 256, Length(Files[0].GetData(False)));
       finally
         FreeDirectory(Files);
       end;
