@@ -1035,6 +1035,12 @@ begin
 
   if (FileFormat = diExtendedDSK) and (DiskFile.Position < DiskFile.Size) then
   begin
+    if DiskFile.Size - DiskFile.Position < SizeOf(OFFInfoBlock) then
+    begin
+      Messages.Add('Offset-Info marker is truncated.');
+      Corrupt := True;
+      exit;
+    end;
     DiskFile.ReadBuffer(OFFInfoBlock, SizeOf(OFFInfoBlock));
     if (OFFInfoBlock.OFF_Marker = DiskSectorOffsetBlock) then
     begin
@@ -1042,6 +1048,13 @@ begin
         for SIdx := 0 to DSKInfoBlock.Disk_NumSides - 1 do
         begin
           Track := Disk.Side[SIdx].Track[TIdx];
+          if DiskFile.Size - DiskFile.Position <
+            SizeOf(OFFTrackEntry) + Track.Sectors * SizeOf(word) then
+          begin
+            Messages.Add(SysUtils.Format('Side %d track %d Offset-Info entries are truncated.', [SIdx, TIdx]));
+            Corrupt := True;
+            exit;
+          end;
           DiskFile.ReadBuffer(OFFTrackEntry, SizeOf(OFFTrackEntry));
           Track.BitLength := OFFTrackEntry.OFF_TrackLength;
           for EIdx := 0 to Track.Sectors - 1 do

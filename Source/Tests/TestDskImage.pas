@@ -40,6 +40,7 @@ type
     procedure TestRoundTripMGT;
     procedure TestDetectFormatNotEmpty;
     procedure TestLoadUnformattedExtendedDSK;
+    procedure TestLoadTruncatedOffsetInfo;
     procedure TestGetAllStringsDropsDuplicates;
     procedure TestGetAllStringsKeepsDifferentCase;
     procedure TestGetAllStringsOnEmptyDisk;
@@ -365,6 +366,48 @@ begin
       AssertEquals('format', 'Unformatted', Img.Disk.DetectFormat);
     finally
       Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+procedure TDskImageTest.TestLoadTruncatedOffsetInfo;
+var
+  Header: TDSKInfoBlock;
+  OffsetInfo: TOFFInfoBlock;
+  Stream: TFileStream;
+  FileName: string;
+  Img: TDSKImage;
+  CompleteMarker: integer;
+begin
+  FileName := TempName('.dsk');
+  FillChar(Header, SizeOf(Header), 0);
+  Move(DiskInfoExtended[1], Header.DiskInfoBlock, Length(DiskInfoExtended));
+  Header.Disk_NumTracks := 1;
+  Header.Disk_NumSides := 1;
+  FillChar(OffsetInfo, SizeOf(OffsetInfo), 0);
+  Move(DiskSectorOffsetBlock[1], OffsetInfo.OFF_Marker, Length(DiskSectorOffsetBlock));
+
+  try
+    for CompleteMarker := 0 to 1 do
+    begin
+      Stream := TFileStream.Create(FileName, fmCreate);
+      try
+        Stream.WriteBuffer(Header, SizeOf(Header));
+        if CompleteMarker = 1 then
+          Stream.WriteBuffer(OffsetInfo, SizeOf(OffsetInfo))
+        else
+          Stream.WriteBuffer(OffsetInfo, 1);
+      finally
+        Stream.Free;
+      end;
+      Img := TDSKImage.CreateFromFile(FileName);
+      try
+        AssertTrue('short Offset-Info must be marked corrupt', Img.Corrupt);
+      finally
+        Img.Free;
+      end;
     end;
   finally
     DeleteFile(FileName);
