@@ -2377,7 +2377,7 @@ begin
     DiskName := '';
 
   // Amstrad (AMSDOS) tokenized BASIC files
-  if (DiskFile.HeaderType = 'AMSDOS') and (DiskFile.Meta = 'BASIC') then
+  if (DiskFile.HeaderType = 'AMSDOS') and DiskFile.Meta.StartsWith('BASIC') then
   begin
     ShowBasicViewer(DiskImage.Disk, DiskFile, DiskName);
     Exit;

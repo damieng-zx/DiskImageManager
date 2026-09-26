@@ -29,11 +29,12 @@ type
     function DecodeLine(const Data: array of byte; StartPos, EndPos: integer): string;
     function DecodeLineRTF(const Data: array of byte; StartPos, EndPos: integer): string;
     function EscapeRTF(const S: string): string;
+    function DeprotectData(const Data: array of byte): TDiskByteArray;
   public
     constructor Create;
-    function Decode(const Data: array of byte): string;
+    function Decode(const Data: array of byte; IsProtected: boolean = False): string;
     function DecodeFile(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
-    function DecodeRTF(const Data: array of byte): string;
+    function DecodeRTF(const Data: array of byte; IsProtected: boolean = False): string;
     function DecodeFileRTF(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
   end;
 
@@ -61,12 +62,33 @@ const
     ''                                                                         // FF (prefix)
   );
 
+  // AMSDOS protected BASIC uses a repeating 128-byte XOR stream.
+  ProtectedBasicKey: array[0..127] of byte = (
+    $AB, $2C, $ED, $EA, $6C, $37, $3F, $EC, $9B, $DF, $7A, $0C, $3B, $D4, $6D, $F5,
+    $04, $44, $03, $11, $DF, $59, $8F, $21, $73, $7A, $CC, $83, $DD, $30, $6A, $30,
+    $D3, $8F, $02, $F0, $60, $6B, $94, $E4, $B7, $F3, $03, $A8, $60, $88, $F0, $43,
+    $E8, $8E, $43, $A0, $CA, $84, $31, $53, $F3, $1F, $C9, $E8, $AD, $C0, $BA, $6D,
+    $93, $08, $D4, $6A, $2C, $B2, $07, $27, $C0, $99, $EE, $89, $AF, $C3, $53, $AB,
+    $2B, $34, $5C, $2F, $13, $EE, $AA, $2C, $D9, $F4, $BC, $12, $B3, $C5, $1C, $68,
+    $01, $20, $2C, $FA, $77, $A6, $B5, $A4, $FC, $9B, $F1, $32, $5B, $C3, $70, $77,
+    $85, $36, $BE, $5B, $8C, $C8, $B5, $C2, $F0, $0B, $98, $0F, $36, $9D, $D8, $96
+  );
+
 constructor TAmstradBasicParser.Create;
 begin
   inherited Create;
   FFormat := DefaultFormatSettings;
   FFormat.DecimalSeparator := '.';
   FFormat.ThousandSeparator := #0;
+end;
+
+function TAmstradBasicParser.DeprotectData(const Data: array of byte): TDiskByteArray;
+var
+  I: integer;
+begin
+  SetLength(Result, System.Length(Data));
+  for I := 0 to High(Result) do
+    Result[I] := Data[I] xor ProtectedBasicKey[I and $7F];
 end;
 
 function TAmstradBasicParser.GetTokenText(Token: byte): string;
@@ -369,11 +391,17 @@ begin
   end;
 end;
 
-function TAmstradBasicParser.Decode(const Data: array of byte): string;
+function TAmstradBasicParser.Decode(const Data: array of byte; IsProtected: boolean): string;
 var
+  DecodedData: TDiskByteArray;
   Pos, DataLen, LineEnd: integer;
   LineNum, LineLen: word;
 begin
+  if IsProtected then
+  begin
+    DecodedData := DeprotectData(Data);
+    Exit(Decode(DecodedData));
+  end;
   Result := '';
   Pos := 0;
   DataLen := System.Length(Data);
@@ -405,7 +433,8 @@ var
 begin
   Result := '';
 
-  if (DiskFile.HeaderType <> 'AMSDOS') or (DiskFile.Meta <> 'BASIC') then
+  if (DiskFile.HeaderType <> 'AMSDOS') or
+     not ((DiskFile.Meta = 'BASIC') or (DiskFile.Meta = 'BASIC (protected)')) then
     Exit;
 
   FileData := DiskFile.GetData(True);
@@ -417,7 +446,7 @@ begin
     ProgLength := System.Length(FileData) - 128;
 
   BasicData := Copy(FileData, 128, ProgLength);
-  Result := Decode(BasicData);
+  Result := Decode(BasicData, DiskFile.Meta = 'BASIC (protected)');
 end;
 
 function TAmstradBasicParser.EscapeRTF(const S: string): string;
@@ -586,17 +615,23 @@ begin
     Result := Result + '}';
 end;
 
-function TAmstradBasicParser.DecodeRTF(const Data: array of byte): string;
+function TAmstradBasicParser.DecodeRTF(const Data: array of byte; IsProtected: boolean): string;
 const
   RTFHeader = '{\rtf1\ansi\deff0' +
     '{\fonttbl{\f0\fmodern Consolas;}}' +
     '{\colortbl;\red128\green128\blue128;\red0\green0\blue170;\red170\green0\blue0;\red0\green128\blue0;\red0\green0\blue0;}' +
     '\f0\fs26 ';
 var
+  DecodedData: TDiskByteArray;
   Pos, DataLen, LineEnd: integer;
   LineNum, LineLen: word;
   FirstLine: boolean;
 begin
+  if IsProtected then
+  begin
+    DecodedData := DeprotectData(Data);
+    Exit(DecodeRTF(DecodedData));
+  end;
   Result := RTFHeader;
   Pos := 0;
   DataLen := System.Length(Data);
@@ -635,7 +670,8 @@ var
 begin
   Result := '';
 
-  if (DiskFile.HeaderType <> 'AMSDOS') or (DiskFile.Meta <> 'BASIC') then
+  if (DiskFile.HeaderType <> 'AMSDOS') or
+     not ((DiskFile.Meta = 'BASIC') or (DiskFile.Meta = 'BASIC (protected)')) then
     Exit;
 
   FileData := DiskFile.GetData(True);
@@ -647,7 +683,7 @@ begin
     ProgLength := System.Length(FileData) - 128;
 
   BasicData := Copy(FileData, 128, ProgLength);
-  Result := DecodeRTF(BasicData);
+  Result := DecodeRTF(BasicData, DiskFile.Meta = 'BASIC (protected)');
 end;
 
 end.

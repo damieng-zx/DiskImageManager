@@ -25,6 +25,7 @@ type
     procedure TestFunctionPrefix;
     procedure TestDigitConstant;
     procedure TestMultipleLines;
+    procedure TestProtectedBasic;
   end;
 
 implementation
@@ -113,6 +114,20 @@ begin
     AssertEquals('10 PRINT "HI"' + CRLF + '20 CLS' + CRLF,
       P.Decode([$0B, $00, $0A, $00, tPRINT, $20, $22, $48, $49, $22, $00,
                 $06, $00, $14, $00, $8A, $00]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAmstradBasicTest.TestProtectedBasic;
+var
+  P: TAmstradBasicParser;
+begin
+  P := TAmstradBasicParser.Create;
+  try
+    // "10 PRINT \"HI\"" encrypted with the AMSDOS 128-byte XOR stream.
+    AssertEquals('10 PRINT "HI"' + CRLF,
+      P.Decode([$AB, $2C, $E7, $EA, $D3, $17, $1D, $A4, $D2, $FD, $7A], True));
   finally
     P.Free;
   end;
