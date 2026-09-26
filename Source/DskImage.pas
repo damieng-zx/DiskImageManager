@@ -752,7 +752,7 @@ var
   OFFInfoBlock: TOFFInfoBlock;
   Track: TDSKTrack;
   OFFTrackEntry: TOFFTrackEntry;
-  SIdx, TIdx, EIdx: integer;
+  SIdx, TIdx, EIdx, LoadedSectors, TrackSectors: integer;
   TOff: integer;
   ReadSize: integer;
   TrackSizeIdx: integer;
@@ -769,6 +769,7 @@ begin
   FoundIncorrectTrackMarkers := False;
   NextTrackPosition := 0;
   RecoveredTracks := 0;
+  LoadedSectors := 0;
 
   DiskFile.ReadBuffer(DSKInfoBlock, SizeOf(DSKInfoBlock));
 
@@ -911,15 +912,25 @@ begin
           // A Track-Info block is 256 bytes and carries its sector entries in
           // what is left after the header, so the count is capped by the room
           // for them however many the file claims
+          TrackSectors := Min(TRKInfoBlock.TIB_NumSectors, MaxTrackInfoSectors);
+          // A Track-Info block can describe 29 empty sectors in 256 bytes,
+          // while each in-memory sector owns a 32 KiB buffer. Bound the total
+          // before allocating any more, including recovered Extended tracks.
+          if TrackSectors > MaxImageSectors - LoadedSectors then
+          begin
+            Messages.Add(SysUtils.Format('Image declares more than %d sectors; load stopped.', [MaxImageSectors]));
+            Corrupt := True;
+            exit;
+          end;
+          Inc(LoadedSectors, TrackSectors);
+
           if TRKInfoBlock.TIB_NumSectors > MaxTrackInfoSectors then
           begin
             Messages.Add(SysUtils.Format('Side %d track %d indicated %d sectors, more than the %d a track holds.',
               [SIdx, TIdx, TRKInfoBlock.TIB_NumSectors, MaxTrackInfoSectors]));
             Corrupt := True;
-            Sectors := MaxTrackInfoSectors;
-          end
-          else
-            Sectors := TRKInfoBlock.TIB_NumSectors;
+          end;
+          Sectors := TrackSectors;
           // The track's sector size is written back out from this, so it has to
           // be read whatever the format. Taking it only from standard images
           // left every extended track at 0, and saving turned that back into a
