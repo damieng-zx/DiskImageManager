@@ -18,7 +18,7 @@ unit TestDskImage;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, DskImage, DSKFormat, Utils;
+  Classes, SysUtils, fpcunit, testregistry, DskImage, DSKFormat, Utils, MGTFileSystem;
 
 type
   TDskImageTest = class(TTestCase)
@@ -39,6 +39,7 @@ type
     procedure TestRoundTripStandardDSK;
     procedure TestRoundTripMGT;
     procedure TestMGTLogicalSectorWalkReachesSideOne;
+    procedure TestMGTDeletedEntryIsNotAFile;
     procedure TestDetectFormatNotEmpty;
     procedure TestLoadUnformattedExtendedDSK;
     procedure TestLoadTruncatedOffsetInfo;
@@ -343,6 +344,34 @@ begin
     FirstOnSideOne.ID := 1;
     AssertTrue('the logical walk reaches side 1',
       Img.Disk.GetNextLogicalSector(LastOnSideZero) = FirstOnSideOne);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestMGTDeletedEntryIsNotAFile;
+var
+  Img: TDSKImage;
+  FSys: TMGTFileSystem;
+  Sec: TDSKSector;
+begin
+  Img := TDSKImage.Create;
+  try
+    Img.Disk.Sides := 1;
+    Img.Disk.Side[0].Tracks := 1;
+    Img.Disk.Side[0].Track[0].Sectors := 1;
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    Sec.ID := 1;
+    Sec.Data[0] := 0; // erased, but retains a name and one allocated sector
+    Sec.Data[1] := Ord('D');
+    Sec.Data[12] := 1;
+    Sec.Data[14] := 1;
+    FSys := TMGTFileSystem.Create(Img.Disk);
+    try
+      AssertTrue('erased entry is not a file', FSys.ReadFileEntry(Sec.Data, 0) = nil);
+    finally
+      FSys.Free;
+    end;
   finally
     Img.Free;
   end;

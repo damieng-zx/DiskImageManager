@@ -97,6 +97,9 @@ function TMGTFileSystem.ReadFileEntry(Data: array of byte; Offset: integer): TMG
 var
   Track: TDSKTrack;
 begin
+  // Type zero marks a deleted directory slot; its old name and allocation
+  // count may still be present, but it is no longer a live file.
+  if (Data[Offset] and 63) = 0 then exit(nil);
   // Every field is read from Offset, the start of this entry. Only the file
   // name was, so a sector's second entry showed its own name beside the type,
   // size and location of the first.
