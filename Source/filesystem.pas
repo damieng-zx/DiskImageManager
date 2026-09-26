@@ -91,6 +91,7 @@ const
   SYSTEM_OFFSET: integer = 10;
   ARCHIVED_OFFSET: integer = 11;
   EXTENT_LOW: integer = 12;
+  EXTENT_HIGH: integer = 14;
   BYTES_IN_LAST_RECORD_OFFSET: integer = 13;
   RECORD_COUNT_OFFSET: integer = 15;
   ALLOCATION_OFFSET: integer = 16;
@@ -218,7 +219,9 @@ begin
     Archived := Data[Offset + ARCHIVED_OFFSET] > 127;
     HeaderSize := 0;
 
-    Extent := Data[Offset + EXTENT_LOW];
+    // EX wraps after 32 extents; S2 carries the higher part of the number.
+    Extent := (Data[Offset + EXTENT_LOW] and $1F) +
+      (Data[Offset + EXTENT_HIGH] * 32);
     AllocOffset := Offset + ALLOCATION_OFFSET;
     repeat
       begin
