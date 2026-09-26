@@ -20,6 +20,7 @@ type
   published
     procedure TestPrintString;
     procedure TestNumberMarkerSkipped;
+    procedure TestControlParametersSkipped;
     procedure TestTildeIsNotANumberMarker;
     procedure TestModeDependentToken128K;
     procedure TestModeDependentToken48K;
@@ -62,6 +63,20 @@ begin
     // 30 PRINT 1  -- the ASCII '1' is kept, the 5-byte $0E number marker dropped
     AssertEquals('30 PRINT 1' + CRLF,
       P.Decode([$00, $1E, $09, $00, tPRINT, $31, $0E, $00, $00, $01, $00, $00, $0D]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TSinclairBasicTest.TestControlParametersSkipped;
+var
+  P: TSinclairBasicParser;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    // INK carries ' ' and AT carries '12': none are text in the listing.
+    AssertEquals('10 PRINT A' + CRLF,
+      P.Decode([$00, $0A, $08, $00, tPRINT, $10, $20, $16, $31, $32, $41, $0D]));
   finally
     P.Free;
   end;

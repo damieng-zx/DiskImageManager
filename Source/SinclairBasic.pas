@@ -211,6 +211,13 @@ begin
             Pos := EndPos;  // Not enough data, skip to end
         end;
 
+      // INK/PAPER/FLASH/BRIGHT/INVERSE/OVER carry one parameter; AT and TAB
+      // carry two. Their parameters may be printable bytes, not text.
+      $10..$15:
+        if Pos + 1 <= EndPos then Inc(Pos) else Pos := EndPos;
+      $16, $17:
+        if Pos + 2 <= EndPos then Inc(Pos, 2) else Pos := EndPos;
+
       // Tokens $A3 and $A4 (mode-dependent)
       $A3, $A4:
         begin
@@ -364,6 +371,17 @@ begin
 
     if B = $0D then
       Break;
+
+    if B in [$10..$15] then
+    begin
+      if Pos + 1 <= EndPos then Inc(Pos) else Pos := EndPos;
+      Continue;
+    end;
+    if B in [$16, $17] then
+    begin
+      if Pos + 2 <= EndPos then Inc(Pos, 2) else Pos := EndPos;
+      Continue;
+    end;
 
     // Inside a REM comment - everything is green, no token parsing
     if InREM then
