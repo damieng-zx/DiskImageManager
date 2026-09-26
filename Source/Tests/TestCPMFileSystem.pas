@@ -32,6 +32,7 @@ type
     procedure TestPlus3DOSHeaderSizeClampedToCapacity;
     procedure TestPlus3DOSGetDataClampedToBlocks;
     procedure TestPlus3DOSExactSizeKept;
+    procedure TestExtractionStopsAfterPartialSector;
     procedure TestAMSDOSHeaderSizeClampedToCapacity;
     procedure TestExtentSizeFlooredAtZero;
   end;
@@ -245,6 +246,38 @@ begin
         Data := DiskFile.GetData(False);
         AssertEquals('without header', 100, Length(Data));
         AssertEquals('payload marker came back', $5A, Data[0]);
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestExtractionStopsAfterPartialSector;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+  Data: TDiskByteArray;
+begin
+  Img := MakePCWDisk;
+  try
+    PlantDirEntry(Img, 5, 0, 2); // 640 bytes, but two 1 KiB blocks allocated
+    DirSector(Img).Data[17] := 3;
+    FillChar(Img.Disk.Side[0].Track[1].Sector[4].Data, 512, $41);
+    FillChar(Img.Disk.Side[0].Track[1].Sector[5].Data, 512, $42);
+    FillChar(Img.Disk.Side[0].Track[1].Sector[6].Data, 512, $43);
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        Data := Files[0].GetData(True);
+        AssertEquals('only recorded data returned', 640, Length(Data));
+        AssertEquals('last partial sector kept', $42, Data[639]);
       finally
         FreeDirectory(Files);
       end;

@@ -408,6 +408,7 @@ begin
   // Extract the full data out
   for Block in Blocks do
   begin
+    if BytesLeft <= 0 then break;
     Sector := Disk.GetSectorByBlock(Block);
     if Sector = nil then break;
     SectorsLeft := SectorsPerBlock;
@@ -417,6 +418,7 @@ begin
         if (BytesLeft < Sector.GetCopySize) then
         begin
           Move(Sector.Data, FileData[TargetIdx], BytesLeft);
+          BytesLeft := 0;
           SectorsLeft := 0;
         end
         else
