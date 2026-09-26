@@ -59,6 +59,7 @@ type
     itmSaveSelectedWithHeader: TMenuItem;
     itmSaveSelectedWithoutHeader: TMenuItem;
     itmFileSector: TMenuItem;
+    itmRenameFile: TMenuItem;
     itmSaveHeaderlessFile: TMenuItem;
     itmSaveSelectedHeaderlessFiles: TMenuItem;
     itmCollapseAll: TMenuItem;
@@ -454,8 +455,28 @@ begin
 end;
 
 procedure TfrmMain.itmRenameFileClick(Sender: TObject);
+var
+  DiskFile: TCPMFile;
+  NewFileName: string;
 begin
-  if lvwMain.SelCount > 0 then lvwMain.Selected.EditCaption;
+  if (lvwMain.Selected = nil) or (lvwMain.Selected.Data = nil) or
+    (TObject(lvwMain.Selected.Data).ClassType <> TCPMFile) or
+    (tvwMain.Selected = nil) or (tvwMain.Selected.Data = nil) or
+    (TObject(tvwMain.Selected.Data).ClassType <> TCPMFileSystem) then
+    Exit;
+
+  DiskFile := TCPMFile(lvwMain.Selected.Data);
+  NewFileName := DiskFile.FileName;
+  if not InputQuery('Rename CP/M file', 'New filename (NAME.EXT):', NewFileName) then
+    Exit;
+
+  try
+    if TCPMFileSystem(tvwMain.Selected.Data).RenameFile(DiskFile, NewFileName) then
+      RefreshList;
+  except
+    on E: EConvertError do
+      MessageDlg('Invalid CP/M filename', E.Message, mtWarning, [mbOK], 0);
+  end;
 end;
 
 procedure TfrmMain.itmSaveAllFilesToClick(Sender: TObject);
@@ -688,11 +709,13 @@ var
 begin
   itmSaveFile.Visible := False;
   itmSaveHeaderlessFile.Visible := False;
+  itmRenameFile.Visible := False;
 
   if (lvwMain.SelCount = 1) and (lvwMain.Selected.Data <> nil) and
     (TObject(lvwMain.Selected.Data).ClassType = TCPMFile) then
   begin
     DiskFile := TCPMFile((lvwMain.Selected).Data);
+    itmRenameFile.Visible := True;
     itmSaveFile.Visible := DiskFile.HeaderType <> 'None';
     itmSaveFile.Caption := Format('Save %s', [DiskFile.FileName]);
 

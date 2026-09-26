@@ -37,6 +37,7 @@ type
     procedure TestAMSDOSHeaderSizeClampedToCapacity;
     procedure TestExtentSizeFlooredAtZero;
     procedure TestEmptyFileWithoutBlocksIsListed;
+    procedure TestRenameUpdatesCPMDirectoryEntry;
     procedure TestExtentHighByteJoinsPrimaryFile;
     procedure TestHeaderLengthIsNotSummedAcrossExtents;
   end;
@@ -407,6 +408,50 @@ begin
         AssertEquals('empty file is present', 1, Files.Count);
         AssertEquals('empty file has no blocks', 0, Files[0].Blocks.Count);
         AssertEquals('empty file has no data', 0, Length(Files[0].GetData(True)));
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestRenameUpdatesCPMDirectoryEntry;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+begin
+  Img := MakePCWDisk;
+  try
+    PlantDirEntry(Img, 1, 0, 2);
+    DirSector(Img).Data[9] := Ord('B') or $80; // read-only attribute
+    FillChar(DirSector(Img).Data[32], 32, 0);
+    WriteAscii(DirSector(Img), 33, 'TESTFILE');
+    WriteAscii(DirSector(Img), 41, 'BAS');
+    DirSector(Img).Data[44] := 1; // continuation extent of the same file
+    DirSector(Img).Data[47] := 1;
+    DirSector(Img).Data[48] := 3;
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertEquals('one file before rename', 1, Files.Count);
+        AssertTrue('rename succeeds', FSys.RenameFile(Files[0], 'newname.txt'));
+        AssertEquals('model has new name', 'NEWNAME.TXT', Files[0].FileName);
+        AssertEquals('directory basename written', 'NEWNAME',
+          TrimRight(StrBlockClean(DirSector(Img).Data, 1, 8)));
+        AssertEquals('directory extension written', 'TXT',
+          TrimRight(StrBlockClean(DirSector(Img).Data, 9, 3)));
+        AssertEquals('continuation extent renamed too', 'NEWNAME',
+          TrimRight(StrBlockClean(DirSector(Img).Data, 33, 8)));
+        AssertEquals('continuation extension renamed too', 'TXT',
+          TrimRight(StrBlockClean(DirSector(Img).Data, 41, 3)));
+        AssertEquals('read-only attribute preserved', 128, DirSector(Img).Data[9] and $80);
+        AssertTrue('disk marked changed', Img.IsChanged);
       finally
         FreeDirectory(Files);
       end;

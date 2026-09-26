@@ -35,6 +35,7 @@ type
     function ReadLabelEntry(Data: array of byte; Offset: integer): string;
     function ReadFileEntry(Data: array of byte; Offset: integer): TCPMFile;
     function Directory: TFPGList<TCPMFile>;
+    function RenameFile(DiskFile: TCPMFile; const NewFileName: string): boolean;
 
     constructor Create(ParentDisk: TDSKDisk);
     destructor Destroy; override;
@@ -199,6 +200,102 @@ end;
 function TCPMFileSystem.ReadLabelEntry(Data: array of byte; Offset: integer): string;
 begin
   Result := StrBlockClean(Data, Offset + FILENAME_OFFSET, 11);
+end;
+
+function TCPMFileSystem.RenameFile(DiskFile: TCPMFile;
+  const NewFileName: string): boolean;
+var
+  Entry: TDSKDirEntry;
+  Track: TDSKTrack;
+  Sector: TDSKSector;
+  Spec: TDSKSpecification;
+  NamePart, ExtensionPart, UpperName, OldName, CurrentName, CurrentExtension,
+    CurrentFullName: string;
+  DotPos, Idx: integer;
+  Matched: boolean;
+  procedure CheckPart(const Part: string; MaxLength: integer);
+  var
+    CharIdx: integer;
+    C: char;
+  begin
+    if (Length(Part) > MaxLength) then
+      raise EConvertError.CreateFmt('CP/M name component exceeds %d characters.', [MaxLength]);
+    for CharIdx := 1 to Length(Part) do
+    begin
+      C := Part[CharIdx];
+      if not (((C >= 'A') and (C <= 'Z')) or ((C >= '0') and (C <= '9')) or
+        (Pos(C, '!#$%&''()-@^_`{}~') > 0)) then
+        raise EConvertError.Create('CP/M names may contain only letters, digits, and CP/M punctuation.');
+    end;
+  end;
+begin
+  Result := False;
+  if (DiskFile = nil) or (DiskFile.FileName = '') then exit;
+
+  UpperName := UpperCase(Trim(NewFileName));
+  OldName := DiskFile.FileName;
+  DotPos := LastDelimiter('.', UpperName);
+  if DotPos > 0 then
+  begin
+    if Pos('.', Copy(UpperName, 1, DotPos - 1)) > 0 then
+      raise EConvertError.Create('CP/M filenames may have only one extension separator.');
+    NamePart := Copy(UpperName, 1, DotPos - 1);
+    ExtensionPart := Copy(UpperName, DotPos + 1, MaxInt);
+  end
+  else
+  begin
+    NamePart := UpperName;
+    ExtensionPart := '';
+  end;
+  if NamePart = '' then
+    raise EConvertError.Create('A CP/M filename must have a name.');
+  CheckPart(NamePart, 8);
+  CheckPart(ExtensionPart, 3);
+
+  Spec := FParentDisk.Specification;
+  Track := FParentDisk.GetLogicalTrack(Spec.ReservedTracks);
+  if Track = nil then exit;
+  Sector := Track.GetFirstLogicalSector();
+  if Sector = nil then exit;
+
+  Matched := False;
+  for Entry in FParentDisk.DirectoryEntries(Sector, 32,
+    Spec.DirectoryBlocks * Spec.GetBlockSize() div 32) do
+    if Entry.Sector.Data[Entry.Offset] = DiskFile.User then
+    begin
+      CurrentName := StrBlockClean(Entry.Sector.Data,
+        Entry.Offset + FILENAME_OFFSET, 8).TrimRight();
+      CurrentExtension := StrBlockClean(Entry.Sector.Data,
+        Entry.Offset + EXTENSION_OFFSET, 3).TrimRight();
+      CurrentFullName := CurrentName;
+      if CurrentExtension <> '' then
+        CurrentFullName := CurrentFullName + '.' + CurrentExtension;
+      if CurrentFullName = OldName then
+      begin
+        Matched := True;
+        for Idx := 0 to 7 do
+          if Idx < Length(NamePart) then
+            Entry.Sector.Data[Entry.Offset + FILENAME_OFFSET + Idx] := Ord(NamePart[Idx + 1])
+          else
+            Entry.Sector.Data[Entry.Offset + FILENAME_OFFSET + Idx] := Ord(' ');
+        for Idx := 0 to 2 do
+        begin
+          if Idx < Length(ExtensionPart) then
+            Entry.Sector.Data[Entry.Offset + EXTENSION_OFFSET + Idx] :=
+              (Entry.Sector.Data[Entry.Offset + EXTENSION_OFFSET + Idx] and $80) or
+              Ord(ExtensionPart[Idx + 1])
+          else
+            Entry.Sector.Data[Entry.Offset + EXTENSION_OFFSET + Idx] :=
+              (Entry.Sector.Data[Entry.Offset + EXTENSION_OFFSET + Idx] and $80) or Ord(' ');
+        end;
+        Entry.Sector.IsChanged := True;
+      end;
+    end;
+  if Matched then
+  begin
+    DiskFile.FileName := UpperName;
+    Result := True;
+  end;
 end;
 
 function TCPMFileSystem.ReadFileEntry(Data: array of byte; Offset: integer): TCPMFile;

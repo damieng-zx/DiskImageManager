@@ -860,6 +860,11 @@ object frmMain: TfrmMain
       Default = True
       OnClick = ShowFile
     end
+    object itmRenameFile: TMenuItem
+      Caption = 'Rename File...'
+      Hint = 'Rename this CP/M directory entry'
+      OnClick = itmRenameFileClick
+    end
     object itmCopyDetailsClipboard: TMenuItem
       Caption = 'Copy Details to Clipboard'
       Hint = 'Copy details about this file to the clipboard as text'
