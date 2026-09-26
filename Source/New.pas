@@ -373,7 +373,9 @@ begin
     Result := dsFormatCPC_System;
   if (lvwFormats.Selected.ImageIndex = 3) then
     Result := dsFormatCPC_Data;
-  if (CurrentFormat.Sides <> dsSideSingle) then
+  // Double-sided CPC disks still use the CPC system/data spec byte.
+  if (CurrentFormat.Sides <> dsSideSingle) and
+    (Result <> dsFormatCPC_System) and (Result <> dsFormatCPC_Data) then
     Result := dsFormatPCW_DS;
 end;
 
