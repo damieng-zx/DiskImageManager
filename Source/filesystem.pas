@@ -166,7 +166,10 @@ begin
           begin
             PrimaryDiskFile.Blocks.AddList(ExtentEntry.Blocks);
             PrimaryDiskFile.SizeOnDisk := PrimaryDiskFile.SizeOnDisk + ExtentEntry.SizeOnDisk;
-            PrimaryDiskFile.Size := PrimaryDiskFile.Size + ExtentEntry.Size;
+            // PLUS3DOS/AMSDOS headers already give the whole file's length;
+            // directory record counts only need summing for headerless files.
+            if PrimaryDiskFile.HeaderType = 'None' then
+              PrimaryDiskFile.Size := PrimaryDiskFile.Size + ExtentEntry.Size;
             break;
           end;
         end;

@@ -37,6 +37,7 @@ type
     procedure TestAMSDOSHeaderSizeClampedToCapacity;
     procedure TestExtentSizeFlooredAtZero;
     procedure TestExtentHighByteJoinsPrimaryFile;
+    procedure TestHeaderLengthIsNotSummedAcrossExtents;
   end;
 
 implementation
@@ -409,6 +410,39 @@ begin
       try
         AssertEquals('continuation did not become a second file', 1, Files.Count);
         AssertEquals('continuation blocks were merged', 2, Files[0].Blocks.Count);
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestHeaderLengthIsNotSummedAcrossExtents;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+  Sec: TDSKSector;
+begin
+  Img := MakePCWDisk;
+  try
+    PlantDirEntry(Img, 8, 0, 2);
+    Sec := DirSector(Img);
+    Move(Sec.Data[0], Sec.Data[32], 32);
+    Sec.Data[32 + 12] := 1;
+    Sec.Data[32 + 16] := 3;
+    PlantPlus3DOSHeader(DataSector(Img), 1500);
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertEquals('one file with two extents', 1, Files.Count);
+        AssertEquals('header length stays authoritative', 1500, Files[0].Size);
+        AssertEquals('both blocks still available', 2, Files[0].Blocks.Count);
       finally
         FreeDirectory(Files);
       end;
