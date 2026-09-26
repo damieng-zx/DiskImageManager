@@ -46,6 +46,7 @@ type
     procedure TestGetAllStringsDropsDuplicates;
     procedure TestGetAllStringsKeepsDifferentCase;
     procedure TestGetAllStringsOnEmptyDisk;
+    procedure TestGetAllStringsSkipsEmptySectorAndFlushesLastRun;
     procedure TestHighTrackCountOnEmptySide;
     procedure TestIdentifyOnEmptyDisk;
     procedure TestLoadClampsSectorCount;
@@ -535,6 +536,38 @@ begin
     Strings := Img.Disk.GetAllStrings(5, 4);
     try
       AssertEquals('nothing found', 0, Strings.Count);
+    finally
+      Strings.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestGetAllStringsSkipsEmptySectorAndFlushesLastRun;
+var
+  Img: TDSKImage;
+  Strings: TStringList;
+begin
+  Img := TDSKImage.Create;
+  try
+    Img.Disk.Sides := 1;
+    Img.Disk.Side[0].Tracks := 1;
+    Img.Disk.Side[0].Track[0].Sectors := 2;
+    with Img.Disk.Side[0].Track[0] do
+    begin
+      Sector[0].ID := 1;
+      Sector[0].Data[0] := Ord('X');
+      Sector[0].DataSize := 0;
+      Sector[1].ID := 2;
+      Sector[1].DataSize := 5;
+      WriteText(Sector[1], 0, 'HELLO');
+    end;
+    Strings := Img.Disk.GetAllStrings(5, 4);
+    try
+      AssertEquals('last text run emitted without a delimiter', 1,
+        CountOf(Strings, 'HELLO'));
+      AssertEquals('no byte from an empty sector', 1, Strings.Count);
     finally
       Strings.Free;
     end;

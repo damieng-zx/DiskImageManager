@@ -2331,6 +2331,31 @@ var
   Seen: TStringList;
   CurrChar: char;
   Found: string;
+
+  procedure FinishText;
+  begin
+    if CurrentText.Trim(TrimChars).Length >= MinLength then
+    begin
+      Uniques.Clear;
+      for CIdx := 1 to CurrentText.Length do
+      begin
+        CurrChar := CurrentText[CIdx];
+        if IsUpper(CurrChar) or IsLower(CurrChar) then Uniques.Append(CurrChar);
+        if Uniques.Count >= MinUniques then break;
+      end;
+
+      if Uniques.Count >= MinUniques then
+      begin
+        Found := CurrentText.Trim();
+        if Seen.IndexOf(Found) < 0 then
+        begin
+          Seen.Add(Found);
+          Result.Append(Found);
+        end;
+      end;
+    end;
+    CurrentText := '';
+  end;
 begin
   Result := TStringList.Create;
   CurrentText := '';
@@ -2351,43 +2376,23 @@ begin
   try
     while Sector <> nil do
     begin
+      if Index >= Sector.DataSize then
+      begin
+        Sector := GetNextLogicalSector(Sector);
+        Index := 0;
+        continue;
+      end;
       NextByte := Sector.Data[Index];
       if (NextByte >= 32) and (NextByte <= 127) then
       begin
         CurrentText := CurrentText + Chr(NextByte);
       end
       else
-      begin
-        if CurrentText.Trim(TrimChars).Length >= MinLength then
-        begin
-          Uniques.Clear;
-          for CIdx := 1 to CurrentText.Length do
-          begin
-            CurrChar := CurrentText[CIdx];
-            if IsUpper(CurrChar) or IsLower(CurrChar) then Uniques.Append(CurrChar);
-            if (Uniques.Count >= MinUniques) then break;
-          end;
-
-          if (Uniques.Count >= MinUniques) then
-          begin
-            Found := CurrentText.Trim();
-            if Seen.IndexOf(Found) < 0 then
-            begin
-              Seen.Add(Found);
-              Result.Append(Found);
-            end;
-          end;
-        end;
-        CurrentText := '';
-      end;
+        FinishText;
 
       Inc(Index);
-      if Index >= Sector.DataSize then
-      begin
-        Sector := GetNextLogicalSector(Sector);
-        Index := 0;
-      end;
     end;
+    FinishText;
   finally
     Uniques.Free;
     Seen.Free;
