@@ -31,6 +31,7 @@ type
     function HasMessageLike(List: TStringList; const Text: string): boolean;
   published
     procedure TestFormatGeometryPCW;
+    procedure TestFormatRejectsExcessiveGeometry;
     procedure TestFormatSectorData;
     procedure TestFormattedCapacity;
     procedure TestRoundTripExtendedDSK;
@@ -145,6 +146,31 @@ begin
     AssertEquals('tracks', 40, Img.Disk.Side[0].Tracks);
     AssertEquals('sectors per track', 9, Img.Disk.Side[0].Track[0].Sectors);
   finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestFormatRejectsExcessiveGeometry;
+var
+  Img: TDSKImage;
+  Spec: TDSKFormatSpecification;
+begin
+  Img := TDSKImage.Create;
+  Spec := TDSKFormatSpecification.Create(0);
+  try
+    Spec.TracksPerSide := 255;
+    Spec.SectorsPerTrack := 255;
+    Spec.Sides := dsSideDoubleAlternate;
+    try
+      Img.Disk.Format(Spec);
+      Fail('an oversized format must be rejected before allocating sectors');
+    except
+      on E: ERangeError do
+        AssertEquals('no sides were allocated', 0, Img.Disk.Sides);
+    end;
+    AssertFalse('the rejected format has not changed the disk', Img.IsChanged);
+  finally
+    Spec.Free;
     Img.Free;
   end;
 end;

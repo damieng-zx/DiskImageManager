@@ -15,7 +15,7 @@ interface
 
 uses
   DskImage, Main, Utils,
-  SysUtils, Classes, Forms, StdCtrls, ComCtrls, ExtCtrls, Dialogs, Buttons, Math, Controls, Graphics;
+  SysUtils, Classes, Forms, StdCtrls, ComCtrls, ExtCtrls, Dialogs, Buttons, Math, Controls, Graphics, DSKFormat;
 
 type
 
@@ -137,6 +137,7 @@ type
     procedure UpdateDetails;
     procedure UpdateSummary;
     procedure UpdateFileDetails;
+    function FormatLimitMessage: string;
     function IsPlus3Format: boolean;
     function GetFormat: TDSKSpecFormat;
   public
@@ -208,6 +209,7 @@ procedure TfrmNew.UpdateSummary;
 var
   NewWarn: TListItem;
   hexDPB: string;
+  LimitMessage: string;
 begin
   if IsLoading then exit;
 
@@ -250,6 +252,14 @@ begin
   memDPBHex.Text := hexDPB;
 
   lvwWarnings.Items.Clear;
+
+  LimitMessage := FormatLimitMessage;
+  btnFormat.Enabled := LimitMessage = '';
+  if LimitMessage <> '' then
+  begin
+    NewWarn := lvwWarnings.Items.Add;
+    NewWarn.Caption := LimitMessage;
+  end;
 
   // Boot warnings
   if BootSectorSize > 0 then
@@ -340,6 +350,20 @@ begin
       end;
 end;
 
+function TfrmNew.FormatLimitMessage: string;
+var
+  TrackCount: integer;
+begin
+  Result := '';
+  TrackCount := CurrentFormat.TracksPerSide * CurrentFormat.GetSidesCount;
+  if CurrentFormat.SectorsPerTrack > MaxTrackInfoSectors then
+    Result := Format('DSK track headers hold at most %d sectors.', [MaxTrackInfoSectors])
+  else if TrackCount > MaxTracks then
+    Result := Format('Extended DSK headers hold at most %d tracks in total.', [MaxTracks])
+  else if TrackCount * CurrentFormat.SectorsPerTrack > MaxImageSectors then
+    Result := Format('A disk can hold at most %d sectors in memory.', [MaxImageSectors]);
+end;
+
 function TfrmNew.GetFormat: TDSKSpecFormat;
 begin
   Result := dsFormatPCW_SS;
@@ -357,7 +381,16 @@ procedure TfrmNew.btnFormatClick(Sender: TObject);
 var
   NewImage: TDSKImage;
   CopySize: integer;
+  LimitMessage: string;
 begin
+  // Check again at the point of allocation, not just when the controls change.
+  LimitMessage := FormatLimitMessage;
+  if LimitMessage <> '' then
+  begin
+    MessageDlg('Format unavailable', LimitMessage, mtWarning, [mbOK], 0);
+    exit;
+  end;
+
   NewImage := TDSKImage.Create;
   with NewImage do
   begin

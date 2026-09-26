@@ -2124,6 +2124,12 @@ procedure TDSKDisk.Format(Formatter: TDSKFormatSpecification);
 var
   SIdx, TIdx: integer;
 begin
+  // Formatting is public as well as used by the New dialog. Refuse an image
+  // beyond the sector-object budget before changing its existing geometry.
+  if int64(Formatter.TracksPerSide) * Formatter.GetSidesCount *
+    Formatter.SectorsPerTrack > MaxImageSectors then
+    raise ERangeError.CreateFmt('A disk can hold at most %d sectors in memory.', [MaxImageSectors]);
+
   FParentImage.IsChanged := True;
   Sides := Formatter.GetSidesCount;
   for SIdx := 0 to Formatter.GetSidesCount - 1 do
