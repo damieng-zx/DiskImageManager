@@ -165,11 +165,9 @@ function TSinclairBasicParser.GetSpecialChar(B: byte): string;
 begin
   case B of
     $7F: Result := #$C2#$A9;  // Copyright symbol (UTF-8)
-    $80..$8F: Result := '[UDG]';
-    $90..$9F: Result := '[GRAPH]';
-    $A0: Result := ' ';
-    $A1: Result := #$C2#$A3;  // Pound sign (UTF-8)
-    $A2: Result := '$';
+    $80..$8F: Result := '[GRAPH]';
+    $90..$A0, $A2: Result := '[UDG]';
+    $A1: Result := '\';  // Spectrum pound-sign glyph
   else
     Result := '?';
   end;

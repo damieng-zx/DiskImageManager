@@ -25,6 +25,7 @@ type
     procedure TestModeDependentToken128K;
     procedure TestModeDependentToken48K;
     procedure TestPoundSign;
+    procedure TestGraphicsAndUdgRanges;
     procedure TestMultipleLines;
     procedure TestStringArrayTwoDimensions;
     procedure TestStringArraySingleString;
@@ -134,10 +135,25 @@ var
 begin
   P := TSinclairBasicParser.Create(sbMode128K);
   try
-    // Byte $A1 is the pound sign, emitted as UTF-8 (C2 A3)
+    // Byte $A1 is the Spectrum pound-sign glyph, represented by backslash.
     R := P.Decode([$00, $0A, $02, $00, $A1, $0D]);
-    AssertTrue('result should contain UTF-8 pound sign',
-      Pos(#$C2#$A3, R) > 0);
+    AssertTrue('result should contain the Spectrum pound-sign glyph',
+      Pos('\', R) > 0);
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TSinclairBasicTest.TestGraphicsAndUdgRanges;
+var
+  P: TSinclairBasicParser;
+  R: string;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    R := P.Decode([$00, $0A, $05, $00, $80, $8F, $90, $A2, $0D]);
+    AssertTrue('block graphics range is labelled as graphics', Pos('[GRAPH][GRAPH]', R) > 0);
+    AssertTrue('UDG range is labelled as UDGs', Pos('[UDG][UDG][UDG][UDG]', R) > 0);
   finally
     P.Free;
   end;
