@@ -11,7 +11,7 @@ interface
 uses
   DskImage, Utils,
   Forms, SysUtils, Classes, Controls, Graphics, GraphUtil, Types,
-  IntfGraphics, FPImage;
+  IntfGraphics, FPImage, Math;
 
 type
   TSectorClickEvent = procedure(Sender: TObject; Sector: TDSKSector) of object;
@@ -675,6 +675,8 @@ end;
 
 function TSpinDiskMap.CreateImage(SaveWidth: integer; SaveHeight: integer): TBitmap;
 begin
+  SaveWidth := EnsureRange(SaveWidth, 1, 4096);
+  SaveHeight := EnsureRange(SaveHeight, 1, 4096);
   Result := TBitmap.Create;
   // The caller only takes ownership if this returns, so drop the bitmap if
   // rendering into it fails rather than stranding it

@@ -16,7 +16,7 @@ interface
 uses
   Utils, DskImage,
   Classes, Dialogs, SysUtils, IniFiles, Graphics, Forms, FileUtil, ComCtrls,
-  LazFileUtils;
+  LazFileUtils, Math;
 
 type
   TSettings = class(TObject)
@@ -201,8 +201,8 @@ begin
     S := 'Saving';
     WarnConversionProblems := Reg.ReadBool(S, 'WarnConversionProblems', True);
     RemoveEmptyTracks := Reg.ReadBool(S, 'RemoveEmptyTracks', False);
-    SaveDiskMapWidth := Reg.ReadInteger(S, 'MapWidth', 640);
-    SaveDiskMapHeight := Reg.ReadInteger(S, 'MapHeight', 480);
+    SaveDiskMapWidth := EnsureRange(Reg.ReadInteger(S, 'MapWidth', 640), 1, 4096);
+    SaveDiskMapHeight := EnsureRange(Reg.ReadInteger(S, 'MapHeight', 480), 1, 4096);
 
     S := 'Folders';
     LastOpenFolder := Reg.ReadString(S, 'LastOpen', '');
