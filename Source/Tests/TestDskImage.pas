@@ -38,6 +38,7 @@ type
     procedure TestRoundTripExtendedDSK;
     procedure TestRoundTripStandardDSK;
     procedure TestRoundTripMGT;
+    procedure TestMGTLogicalSectorWalkReachesSideOne;
     procedure TestDetectFormatNotEmpty;
     procedure TestLoadUnformattedExtendedDSK;
     procedure TestLoadTruncatedOffsetInfo;
@@ -315,6 +316,32 @@ begin
   finally
     Reloaded.Free;
     DeleteFile(FileName);
+  end;
+end;
+
+procedure TDskImageTest.TestMGTLogicalSectorWalkReachesSideOne;
+var
+  Img: TDSKImage;
+  LastOnSideZero, FirstOnSideOne: TDSKSector;
+begin
+  Img := TDSKImage.Create;
+  try
+    Img.FileFormat := diRawMGT;
+    Img.Disk.Sides := 2;
+    Img.Disk.Side[0].Tracks := 80;
+    Img.Disk.Side[1].Tracks := 1;
+    Img.Disk.Side[0].Track[79].Logical := 79;
+    Img.Disk.Side[0].Track[79].Sectors := 1;
+    LastOnSideZero := Img.Disk.Side[0].Track[79].Sector[0];
+    LastOnSideZero.ID := 10;
+    Img.Disk.Side[1].Track[0].Logical := 128;
+    Img.Disk.Side[1].Track[0].Sectors := 1;
+    FirstOnSideOne := Img.Disk.Side[1].Track[0].Sector[0];
+    FirstOnSideOne.ID := 1;
+    AssertTrue('the logical walk reaches side 1',
+      Img.Disk.GetNextLogicalSector(LastOnSideZero) = FirstOnSideOne);
+  finally
+    Img.Free;
   end;
 end;
 

@@ -2146,7 +2146,12 @@ begin
 
     // Find the next logical track
     NextSectorID := 0;
-    CheckTrack := GetLogicalTrack(CheckTrack.Logical + 1);
+    // Raw MGT numbers side 1 from 128, leaving 80..127 unused after the
+    // 80 tracks on side 0. Continue across that gap rather than stopping.
+    if (FParentImage.FileFormat = diRawMGT) and (CheckTrack.Logical = 79) then
+      CheckTrack := GetLogicalTrack(128)
+    else
+      CheckTrack := GetLogicalTrack(CheckTrack.Logical + 1);
   end;
 end;
 
