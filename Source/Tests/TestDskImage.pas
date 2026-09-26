@@ -70,6 +70,7 @@ type
     procedure TestLoadImageWithNoTracks;
     procedure TestBootableOnDiskWithNoSides;
     procedure TestIdentifyRejectsImpossibleBlockShift;
+    procedure TestIdentifyAcceptsLargeXDpbSector;
     procedure TestLoadedImageIsNotChanged;
     procedure TestSectorEditMarksImageChanged;
     procedure TestSectorFillMarksImageChanged;
@@ -1052,6 +1053,29 @@ begin
     // Would have raised EDivByZero on a block size of 0
     AssertEquals('and a block count to report', True,
       Img.Disk.Specification.GetBlockCount > 0);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestIdentifyAcceptsLargeXDpbSector;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    Sec.Data[0] := 0;
+    Sec.Data[1] := 0;
+    Sec.Data[2] := 40;
+    Sec.Data[3] := 9;
+    Sec.Data[4] := 3; // 1024-byte XDPB sector
+    Sec.Data[5] := 1;
+    Sec.Data[6] := 3;
+    Sec.Data[7] := 2;
+    Img.Disk.Specification.Identify;
+    AssertEquals('size from XDPB retained', 1024, Img.Disk.Specification.SectorSize);
   finally
     Img.Free;
   end;

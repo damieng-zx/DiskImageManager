@@ -3138,7 +3138,6 @@ var
   FirstSector: TDSKSector;
   CheckByte: byte;
   Idx: integer;
-  Check: extended;
 begin
   FFormat := dsFormatInvalid;
 
@@ -3257,9 +3256,8 @@ begin
     FTracksPerSide := Data[2];
     FSectorsPerTrack := Data[3];
 
-    Check := Power(2, (Data[4] + 7));
-    if (Check >= 0) and (Check <= 512) then
-      FSectorSize := Round(Check)
+    if Data[4] <= High(FDCSectorSizes) then
+      FSectorSize := FDCSectorSizes[Data[4]]
     else
       FSectorSize := 0;
 
