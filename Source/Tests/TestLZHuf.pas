@@ -26,8 +26,10 @@ type
     procedure TestRoundTripEveryShortLength;
     procedure TestRoundTripRepeatedByte;
     procedure TestRoundTripPseudoRandom;
+    procedure TestRoundTripTriggersHuffmanReconstruction;
     procedure TestRoundTripTextLongerThanWindow;
     procedure TestRepetitiveInputShrinks;
+    procedure TestPositionPrefixLengths;
     procedure TestDecodesRealTelediskStream;
   end;
 
@@ -145,6 +147,27 @@ begin
   AssertSameBytes('noise', Input, RoundTrip(Input));
 end;
 
+procedure TLZHufTest.TestRoundTripTriggersHuffmanReconstruction;
+var
+  Input, Packed_: TBytes;
+  Idx: integer;
+  Seed: longword;
+begin
+  // More than MaxFreq symbols are processed, forcing THuffTree.Reconst while
+  // using reproducible incompressible data rather than a repetition-heavy run.
+  SetLength(Input, 40000);
+  Seed := $13579BDF;
+  for Idx := 0 to High(Input) do
+  begin
+    Seed := Seed * 1664525 + 1013904223;
+    Input[Idx] := (Seed shr 24) and $FF;
+  end;
+  Packed_ := Compress(Input);
+  AssertTrue('compressed fixture is nonempty', Length(Packed_) > 0);
+  AssertSameBytes('round trip across Huffman reconstruction', Input,
+    RoundTrip(Input));
+end;
+
 procedure TLZHufTest.TestRoundTripTextLongerThanWindow;
 var
   Text: string;
@@ -169,6 +192,45 @@ begin
   AssertTrue('64K of zeros compresses below 4K', Length(Compress(Input)) < 4096);
 end;
 
+procedure TLZHufTest.TestPositionPrefixLengths;
+var
+  Input, Packed_: TBytes;
+  Seed: longword;
+  Hash: int64;
+  Idx, K, TargetPos, SourcePos, OldLength: integer;
+begin
+  // A deterministic noise window followed by 64 three-byte matches at each
+  // position band (0..63). This exercises the complete 3-8 bit prefix table.
+  SetLength(Input, 8192);
+  Seed := $2468ACE1;
+  for Idx := 0 to High(Input) do
+  begin
+    Seed := Seed * 1664525 + 1013904223;
+    Input[Idx] := (Seed shr 24) and $FF;
+  end;
+
+  for K := 0 to 63 do
+  begin
+    OldLength := Length(Input);
+    SetLength(Input, OldLength + 4);
+    Input[OldLength] := (K * 37 + 11) and $FF;
+    TargetPos := OldLength + 1;
+    SourcePos := TargetPos - (K + 1) * 64;
+    Input[TargetPos] := Input[SourcePos];
+    Input[TargetPos + 1] := Input[SourcePos + 1];
+    Input[TargetPos + 2] := Input[SourcePos + 2];
+  end;
+
+  Packed_ := Compress(Input);
+  Hash := 0;
+  for Idx := 0 to High(Packed_) do
+    Hash := (Hash * 131 + Packed_[Idx]) mod 2147483647;
+  // Pins the independently generated encoder stream; the decoder must recover
+  // the expected plaintext from that stable stream via RoundTrip.
+  AssertEquals('compressed position-code fixture signature', 418470217, Hash);
+  AssertSameBytes('all position-code bands', Input, RoundTrip(Input));
+end;
+
 // The opening compressed bytes of a real Teledisk 2.1 image of an Amstrad PCW
 // CP/M-3 boot disc. A prefix of the stream decodes to a prefix of the output,
 // which opens with the image's comment block.
@@ -178,11 +240,18 @@ const
     'WTXpYz2Y/U6DUbHn9zd9nc7/dbzWf8FsgD4/mz+H1qfep8v3/qnNrqthSe2tl4m+4PCwp/e0E3us' +
     'ZNfNDB98uljbiadt+LINi8Z9AoIAysRngOQY3HQxKxANa9pBP8BgL9t3qAG8hFrVf5TpHiE6xZg6' +
     '61KYDnWuWSdlQ0pzmdY=';
+  ExpectedHex =
+    'CDA9460060031D141C2543502F4D2D332E302073797374656D206469736B20666F7220416D' +
+    '7374726164203832353600353132206279746520736563746F722C20312D392C20323A31' +
+    '00000000000000090000340000010200E201020000002809020103022A52000000000004' +
+    '31F0FF3EFF32D0F8CDB4F0210000E51100D00604CD8EF010FB';
 var
   Raw: string;
   Src, Dest: TMemoryStream;
   Output: PByte;
   Text: string;
+  Expected, Actual: TBytes;
+  Idx: integer;
 begin
   Raw := DecodeStringBase64(Slice);
   Src := TMemoryStream.Create;
@@ -191,7 +260,13 @@ begin
     Src.WriteBuffer(Raw[1], Length(Raw));
     Src.Position := 0;
     LZHufDecompress(Src, Dest);
-    AssertTrue('decoded enough', Dest.Size >= 47);
+    AssertEquals('full decoded fixture size', 134, Dest.Size);
+    SetLength(Expected, Length(ExpectedHex) div 2);
+    for Idx := 0 to High(Expected) do
+      Expected[Idx] := StrToInt('$' + Copy(ExpectedHex, Idx * 2 + 1, 2));
+    SetLength(Actual, Dest.Size);
+    Move(Dest.Memory^, Actual[0], Dest.Size);
+    AssertSameBytes('complete Teledisk decompressed payload', Expected, Actual);
     Output := Dest.Memory;
     AssertEquals('comment CRC', $A9CD, Output[0] or (Output[1] shl 8));
     AssertEquals('comment length', 70, Output[2] or (Output[3] shl 8));
