@@ -18,6 +18,9 @@ uses
 
 const
   MaxSectorSize = 32768;
+  // Each sector owns a fixed ~32 KiB buffer. Keep one image below ~128 MiB of
+  // sector objects even when its file declares many sectors without any data.
+  MaxImageSectors = 4096;
   Alt8KSize = 6144;
   FDCSectorSizes: array[0..8] of word = (128, 256, 512, 1024, 2048, 4096, 8192, 16384, MaxSectorSize);
   MGTRawSize = 819200;  // Raw MGT/SAM image: 2 sides x 80 tracks x 10 sectors x 512 bytes
@@ -1115,7 +1118,7 @@ var
   CommentText: ansistring;
   Field: array of byte;
   FieldLength: word;
-  SIdx, TIdx, EIdx, Head, Size, CRCBad, Unreadable: integer;
+  SIdx, TIdx, EIdx, Head, Size, CRCBad, Unreadable, LoadedSectors: integer;
   TD0Track: TDSKTrack;
   DiskFM, Ended: boolean;
 
@@ -1204,6 +1207,7 @@ begin
     Disk.Sides := EnsureRange(Header.Sides, 1, 2);
     CRCBad := 0;
     Unreadable := 0;
+    LoadedSectors := 0;
     Ended := False;
 
     while not Ended do
@@ -1233,6 +1237,25 @@ begin
         Fail('Track header gave cylinder 255, past the last a side can hold.');
         break;
       end;
+
+      // A TD0 track has no DSK-style 29-sector limit, but every declared
+      // sector would allocate a full buffer, even when it has no data field.
+      // Count repeated tracks too: they are freed and rebuilt on every record.
+      if TrackHeader.Sectors > MaxImageSectors - LoadedSectors then
+      begin
+        Fail(SysUtils.Format('Image declares more than %d sectors; load stopped.', [MaxImageSectors]));
+        break;
+      end;
+      // Before allocating the track's sectors, ensure at least their six-byte
+      // headers are present. Data fields need additional bytes and are checked
+      // individually below.
+      if Body.Size - Body.Position < int64(TrackHeader.Sectors) * SizeOf(SectorHeader) then
+      begin
+        Fail(SysUtils.Format('Cylinder %d sector headers ran past the end of the file.',
+          [TrackHeader.Cylinder]));
+        break;
+      end;
+      Inc(LoadedSectors, TrackHeader.Sectors);
 
       Head := TrackHeader.Head and 1;
       if Head >= Disk.Sides then
