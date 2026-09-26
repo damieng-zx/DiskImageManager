@@ -3217,8 +3217,8 @@ begin
       end;
     end;
 
-    // Eleven bytes are compared below, so eleven have to be there
-    if FirstSector.DataSize < 11 then exit;
+    // The checksum at byte 15 is read as well as the first eleven fields.
+    if FirstSector.DataSize < 16 then exit;
 
     // Are the first eleven bytes all the same value? Testing the byte before
     // the bound read one past the last it needed: the loop only leaves when Idx
@@ -3293,8 +3293,9 @@ end;
 function TDSKSpecification.Write: boolean;
 begin
   Result := False;
-  if FParentDisk.GetFirstSector <> nil then
-    with FParentDisk.Side[0].Track[0].Sector[0] do
+  if FParentDisk.GetFirstSector = nil then exit;
+  if FParentDisk.GetFirstSector.DataSize < 16 then exit;
+  with FParentDisk.Side[0].Track[0].Sector[0] do
     begin
       case FFormat of
         dsFormatPCW_SS: Data[0] := 0;

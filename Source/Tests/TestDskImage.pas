@@ -1397,8 +1397,7 @@ begin
   end;
 end;
 
-// The spec probe compares the first eleven bytes of the boot sector, so a
-// sector shorter than that has nothing to compare and must not be read anyway
+// The spec block runs through byte 15, including its checksum.
 procedure TDskImageTest.TestIdentifyOnASectorTooShortToHoldASpec;
 var
   Img: TDSKImage;
@@ -1407,13 +1406,14 @@ begin
   Img := MakeFormatted(0);
   try
     Sec := Img.Disk.Side[0].Track[0].Sector[0];
-    Sec.DataSize := 10;
+    Sec.DataSize := 11;
 
-    // Ten bytes cannot hold the eleven the probe compares, so there is nothing
-    // to identify. Reading them anyway is what it used to do.
+    // Eleven bytes hold the initial fields, but not the checksum.
     Img.Disk.Specification.Identify;
-    AssertEquals('no spec can be read from ten bytes',
+    AssertEquals('no complete spec can be read from eleven bytes',
       Ord(dsFormatInvalid), Ord(Img.Disk.Specification.Format));
+    AssertFalse('cannot write a spec beyond the logical data', Img.Disk.Specification.Write);
+    AssertEquals('checksum byte was not changed', $E5, Sec.Data[15]);
   finally
     Img.Free;
   end;
