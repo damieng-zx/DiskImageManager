@@ -529,7 +529,7 @@ const
 begin
   Create;
 
-  if ExtractFileExt(FileName) = '.gz' then
+  if SameText(ExtractFileExt(FileName), '.gz') then
   begin
     GZStream := TGZFileStream.Create(FileName, gzopenread);
     try
@@ -547,7 +547,9 @@ begin
 
         self.FileName := FileName;
         FileSize := MemStream.Size;
-        CreateFromStream(MemStream, FileName);
+        // Detect the decompressed payload using its actual image extension
+        // (.mgt/.dsk/.td0), while preserving the supplied .gz path on the image.
+        CreateFromStream(MemStream, ChangeFileExt(FileName, ''));
       finally
         MemStream.Free;
       end;

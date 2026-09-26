@@ -18,7 +18,7 @@ unit TestDskImage;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, DskImage, DSKFormat, Utils, MGTFileSystem;
+  Classes, SysUtils, ZStream, fpcunit, testregistry, DskImage, DSKFormat, Utils, MGTFileSystem;
 
 type
   TDskImageTest = class(TTestCase)
@@ -38,6 +38,7 @@ type
     procedure TestRoundTripExtendedDSK;
     procedure TestRoundTripStandardDSK;
     procedure TestRoundTripMGT;
+    procedure TestLoadUppercaseGzippedMGT;
     procedure TestMGTLogicalSectorWalkReachesSideOne;
     procedure TestMGTDeletedEntryIsNotAFile;
     procedure TestDetectFormatNotEmpty;
@@ -320,6 +321,49 @@ begin
   finally
     Reloaded.Free;
     DeleteFile(FileName);
+  end;
+end;
+
+procedure TDskImageTest.TestLoadUppercaseGzippedMGT;
+var
+  Img, Reloaded: TDSKImage;
+  RawFile, GzFile: string;
+  Input: TFileStream;
+  Output: TGZFileStream;
+begin
+  RawFile := TempName('.mgt');
+  GzFile := TempName('.MGT.GZ');
+  Img := MakeFormatted(8);
+  try
+    AssertTrue('raw image saved', Img.SaveFile(RawFile, diRawMGT, False, False));
+  finally
+    Img.Free;
+  end;
+
+  Input := TFileStream.Create(RawFile, fmOpenRead);
+  try
+    Output := TGZFileStream.Create(GzFile, gzopenwrite);
+    try
+      Output.CopyFrom(Input, 0);
+    finally
+      Output.Free;
+    end;
+  finally
+    Input.Free;
+  end;
+
+  try
+    Reloaded := TDSKImage.CreateFromFile(GzFile);
+    try
+      AssertFalse('decompressed MGT is valid', Reloaded.Corrupt);
+      AssertEquals('detected as raw MGT', Ord(diRawMGT), Ord(Reloaded.FileFormat));
+      AssertEquals('compressed path retained', GzFile, Reloaded.FileName);
+    finally
+      Reloaded.Free;
+    end;
+  finally
+    DeleteFile(RawFile);
+    DeleteFile(GzFile);
   end;
 end;
 
