@@ -2171,7 +2171,8 @@ begin
     exit;
 
   FoundSector := StartSector.ParentTrack.ParentSide.ParentDisk.ParentImage.FindText(
-    StartSector, dlgFind.FindText, frMatchCase in dlgFind.Options);
+    StartSector, dlgFind.FindText, frMatchCase in dlgFind.Options,
+    Sender <> itmFindNext);
 
   if FoundSector <> nil then
   begin

@@ -60,6 +60,7 @@ type
     procedure TestLoadTruncatedSectorData;
     procedure TestFormatClampsSectorSize;
     procedure TestFindText;
+    procedure TestImageFindIncludesStartButFindNextSkipsIt;
     procedure TestExtendedDSKPadsTracksToTrackSizeTable;
     procedure TestStandardDSKSizesTracksByTheLargest;
     procedure TestSaveRefusesSidesWithDifferentTrackCounts;
@@ -987,6 +988,26 @@ begin
     end;
   finally
     DeleteFile(FileName);
+  end;
+end;
+
+procedure TDskImageTest.TestImageFindIncludesStartButFindNextSkipsIt;
+var
+  Img: TDSKImage;
+  First, Second: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    First := Img.Disk.Side[0].Track[0].Sector[0];
+    Second := Img.Disk.Side[0].Track[0].Sector[1];
+    WriteText(First, 0, 'SEARCH');
+    WriteText(Second, 0, 'SEARCH');
+    AssertTrue('a new find includes its first sector',
+      Img.FindText(First, 'SEARCH', True, True) = First);
+    AssertTrue('find next starts after its previous match',
+      Img.FindText(First, 'SEARCH', True, False) = Second);
+  finally
+    Img.Free;
   end;
 end;
 

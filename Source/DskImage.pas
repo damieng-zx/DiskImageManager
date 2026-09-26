@@ -139,7 +139,8 @@ type
     // is available without writing anything or putting a dialog on the screen.
     function CanSave(SaveFileFormat: TDSKImageFormat): boolean;
     function SaveFile(SaveFileName: TFileName; SaveFileFormat: TDSKImageFormat; Copy: boolean; Compress: boolean): boolean;
-    function FindText(From: TDSKSector; Text: string; CaseSensitive: boolean): TDSKSector;
+    function FindText(From: TDSKSector; Text: string; CaseSensitive: boolean;
+      IncludeFrom: boolean = True): TDSKSector;
     function HasV5Extensions: boolean;
     function HasOffsetInfo: boolean;
     function HasVariantSectors: boolean;
@@ -676,7 +677,8 @@ begin
   Result := False;
 end;
 
-function TDSKImage.FindText(From: TDSKSector; Text: string; CaseSensitive: boolean): TDSKSector;
+function TDSKImage.FindText(From: TDSKSector; Text: string; CaseSensitive: boolean;
+  IncludeFrom: boolean): TDSKSector;
 var
   NextSector: TDSKSector;
 begin
@@ -688,6 +690,8 @@ begin
       exit;
     NextSector := Disk.Side[0].Track[0].Sector[0];
   end
+  else if IncludeFrom then
+    NextSector := From
   else
     NextSector := Disk.GetNextLogicalSector(From);
 
