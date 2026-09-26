@@ -322,8 +322,38 @@ end;
 
 procedure TSettings.Reset;
 begin
-  DeleteFile(ChangeFileExt(Application.ExeName, '.ini'));
-  Load(true);
+  DarkBlankSectors := True;
+  ReadFontInto(DiskMapFont, 'Tahoma,7pt,,');
+  DiskMapBackgroundColor := clGray;
+  DiskMapGridColor := clSilver;
+  DiskMapTrackMark := 5;
+
+  ReadFontInto(WindowFont, 'Tahoma,8pt,,');
+  RestoreWindow := False;
+  OpenView := 'Image';
+
+  UnknownASCII := '?';
+  BytesPerLine := 8;
+  ReadFontInto(SectorFont, 'Consolas,8pt,,');
+  WarnSectorChange := True;
+  Mapping := '1252';
+
+  RestoreWorkspace := False;
+  ExpandRestoredFiles := True;
+  ReadFontInto(StringsFont, 'Tahoma,8pt,,');
+  StringMinLength := 5;
+  StringSort := 'Alpha';
+  RecentFiles.Clear;
+  NavHistoryRaw.Clear;
+  NavHistoryIndex := -1;
+
+  WarnConversionProblems := True;
+  RemoveEmptyTracks := False;
+  SaveDiskMapWidth := 640;
+  SaveDiskMapHeight := 480;
+  LastOpenFolder := '';
+  LastSaveFolder := '';
+  Apply;
 end;
 
 procedure TSettings.AddRecentFile(FileName: string);

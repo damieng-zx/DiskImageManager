@@ -92,6 +92,7 @@ type
   private
     FontMain, FontSector, FontStrings: TFont;
     Settings: TSettings;
+    FResetRequested: boolean;
     procedure Read;
     procedure Write;
     function PickFont(Current: TFont; Edit: TEdit; FixedOnly: boolean): boolean;
@@ -116,6 +117,7 @@ constructor TfrmOptions.Create(Owner: TForm; Settings: TSettings);
 begin
   inherited Create(Owner);
   self.Settings := Settings;
+  FResetRequested := False;
   // The pending choices, held here until OK writes them back to the settings.
   // They are assigned into so that neither the settings nor the font dialog
   // ever hands over ownership of a font.
@@ -201,7 +203,10 @@ begin
   begin
     Write;
     Settings.Apply;
+    Settings.Save;
   end;
+  if not Result and FResetRequested then
+    Settings.Load(True);
 end;
 
 procedure TfrmOptions.Read;
@@ -285,6 +290,7 @@ end;
 
 procedure TfrmOptions.btnResetClick(Sender: TObject);
 begin
+  FResetRequested := True;
   Settings.Reset;
   Read;
 end;
