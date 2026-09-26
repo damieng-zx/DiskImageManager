@@ -36,6 +36,7 @@ type
     procedure TestExtractionStopsAfterPartialSector;
     procedure TestAMSDOSHeaderSizeClampedToCapacity;
     procedure TestExtentSizeFlooredAtZero;
+    procedure TestEmptyFileWithoutBlocksIsListed;
     procedure TestExtentHighByteJoinsPrimaryFile;
     procedure TestHeaderLengthIsNotSummedAcrossExtents;
   end;
@@ -379,6 +380,33 @@ begin
         AssertEquals('size floored at nothing', 0, DiskFile.Size);
         Data := DiskFile.GetData(True);
         AssertEquals('nothing to extract', 0, Length(Data));
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestEmptyFileWithoutBlocksIsListed;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+begin
+  Img := MakePCWDisk;
+  try
+    PlantDirEntry(Img, 0, 0, 0);
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertEquals('empty file is present', 1, Files.Count);
+        AssertEquals('empty file has no blocks', 0, Files[0].Blocks.Count);
+        AssertEquals('empty file has no data', 0, Length(Files[0].GetData(True)));
       finally
         FreeDirectory(Files);
       end;

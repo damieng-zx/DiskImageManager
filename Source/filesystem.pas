@@ -135,7 +135,9 @@ begin
         begin
           DiskFile := ReadFileEntry(Entry.Sector.Data, Entry.Offset);
           DiskFile.EntryIndex := Entry.Index;
-          if (DiskFile.FileName <> '') and (DiskFile.Blocks.Count > 0) then
+          // A primary entry with no records or blocks is still an empty file.
+          if (DiskFile.FileName <> '') and
+            ((DiskFile.Blocks.Count > 0) or ((DiskFile.Extent = 0) and (DiskFile.Size = 0))) then
           begin
             if DiskFile.Extent = 0 then
               Result.Add(DiskFile)
