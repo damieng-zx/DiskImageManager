@@ -34,6 +34,7 @@ type
     procedure TestFormatRejectsExcessiveGeometry;
     procedure TestFormatSectorData;
     procedure TestFormattedCapacity;
+    procedure TestTrackSizeAbove64KiB;
     procedure TestRoundTripExtendedDSK;
     procedure TestRoundTripStandardDSK;
     procedure TestRoundTripMGT;
@@ -200,6 +201,28 @@ begin
   try
     // 40 tracks x 9 sectors x 512 bytes = 184320 bytes of sector data
     AssertEquals(40 * 9 * 512, Img.Disk.FormattedCapacity);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestTrackSizeAbove64KiB;
+var
+  Img: TDSKImage;
+  Track: TDSKTrack;
+begin
+  Img := TDSKImage.Create;
+  try
+    Img.Disk.Sides := 1;
+    Img.Disk.Side[0].Tracks := 1;
+    Track := Img.Disk.Side[0].Track[0];
+    Track.Sectors := 2;
+    Track.Sector[0].DataSize := MaxSectorSize;
+    Track.Sector[1].DataSize := MaxSectorSize;
+    AssertEquals('track holds both large sectors', 65536, Track.Size);
+    AssertEquals('capacity uses the whole track', 65536, Img.Disk.FormattedCapacity);
+    AssertEquals('largest track is not truncated', 65536,
+      Img.Disk.Side[0].GetLargestTrackSize);
   finally
     Img.Free;
   end;

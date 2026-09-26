@@ -251,7 +251,7 @@ type
     procedure Unformat;
     procedure MarkChanged;
     function ParentImage: TDSKImage;
-    function GetTrackSizeFromSectors: word;
+    function GetTrackSizeFromSectors: integer;
     function GetFirstLogicalSector: TDSKSector;
     function SafeSector(Index: integer): TDSKSector;
     function GetLogicalSectorByID(SectorID: byte): TDSKSector;
@@ -262,7 +262,7 @@ type
     property LowSectorID: byte read GetLowSectorID;
     property ParentSide: TDSKSide read FParentSide;
     property Sectors: byte read GetSectors write SetSectors;
-    property Size: word read GetTrackSizeFromSectors;
+    property Size: integer read GetTrackSizeFromSectors;
   end;
 
 
@@ -500,7 +500,7 @@ function GetFDCSectorSize(SectorSize: word): byte;
 // it unchecked reads past the end of it.
 function GetFDCSizeBytes(FDCSize: byte): word;
 
-function GetTrackFileSize(TrackDataSize: word): integer;
+function GetTrackFileSize(TrackDataSize: integer): integer;
 
 implementation
 
@@ -2565,7 +2565,7 @@ begin
       Result := Sector.ID;
 end;
 
-function TDSKTrack.GetTrackSizeFromSectors: word;
+function TDSKTrack.GetTrackSizeFromSectors: integer;
 var
   Sector: TDSKSector;
 begin
@@ -3574,7 +3574,7 @@ end;
 // The room a track takes in the file: its Track-Info block, plus its sector
 // data rounded up to whole blocks. Both formats size tracks in these blocks, so
 // this is what a header says about a track however much its sectors add up to.
-function GetTrackFileSize(TrackDataSize: word): integer;
+function GetTrackFileSize(TrackDataSize: integer): integer;
 begin
   Result := ((TrackDataSize + TrackBlockSize - 1) div TrackBlockSize + 1) * TrackBlockSize;
 end;
