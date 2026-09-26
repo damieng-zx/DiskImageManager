@@ -39,6 +39,7 @@ type
     procedure TestRejectsMultiVolume;
     procedure TestRejectsOldAdvancedCompression;
     procedure TestTruncatedImageIsCorrupt;
+    procedure TestTruncatedDataTrimsUnreadSectors;
   end;
 
 implementation
@@ -523,6 +524,30 @@ begin
     AssertTrue('corrupt', Img.Corrupt);
     AssertTrue('says why', HasMessageLike(Img.Messages, 'ran past the end of the file'));
     AssertEquals('side kept', 2, Img.Disk.Sides);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TTeleDiskTest.TestTruncatedDataTrimsUnreadSectors;
+var
+  Stream: TMemoryStream;
+  Img: TDSKImage;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PutHeader(Stream, 'TD', 0, 21, TD0Rate250, 0, 1);
+    PutTrack(Stream, 2, 0, 0);
+    PutSector(Stream, 0, 0, 1, 1, TD0FlagNoData, [], []);
+    PutSector(Stream, 0, 0, 2, 1, 0, [], []); // missing data field
+    Img := LoadBytes(Stream);
+  finally
+    Stream.Free;
+  end;
+  try
+    AssertTrue('incomplete data marks the image corrupt', Img.Corrupt);
+    AssertEquals('only the complete sector remains', 1,
+      Img.Disk.Side[0].Track[0].Sectors);
   finally
     Img.Free;
   end;

@@ -1357,6 +1357,7 @@ begin
             begin
               Fail(SysUtils.Format('Cylinder %d head %d sector ID %d data ran past the end of the file.',
                 [TrackHeader.Cylinder, Head, ID]));
+              TD0Track.Sectors := EIdx;
               exit;
             end;
             FieldLength := LEtoN(FieldLength);
@@ -1365,6 +1366,7 @@ begin
             begin
               Fail(SysUtils.Format('Cylinder %d head %d sector ID %d data ran past the end of the file.',
                 [TrackHeader.Cylinder, Head, ID]));
+              TD0Track.Sectors := EIdx;
               exit;
             end;
 
