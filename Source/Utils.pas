@@ -39,7 +39,8 @@ function StrBlockClean(S: array of byte; Start, Len: integer): string;
 function StrYesNo(IsEmpty: boolean): string;
 function StrInByteArray(ByteArray: array of byte; SubString: string;
   Start: integer): boolean;
-function StrBufPos(ByteArray: array of byte; SubString: string): integer;
+function StrBufPos(ByteArray: array of byte; SubString: string;
+  MaxLen: integer = MaxInt): integer;
 
 function ReadWordLE(const Data: array of byte; Offset: integer): word;
 function ReadWordBE(const Data: array of byte; Offset: integer): word;
@@ -314,12 +315,15 @@ begin
     Result := 'No';
 end;
 
-function StrBufPos(ByteArray: array of byte; SubString: string): integer;
+function StrBufPos(ByteArray: array of byte; SubString: string; MaxLen: integer): integer;
 var
   BIdx, SIdx, Last: integer;
 begin
-  Last := Length(ByteArray) - Length(SubString);
   Result := -1;
+  if MaxLen < 0 then exit;
+  Last := Length(ByteArray);
+  if MaxLen < Last then Last := MaxLen;
+  Last := Last - Length(SubString);
 
   for BIdx := 0 to Last do
   begin

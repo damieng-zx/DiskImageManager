@@ -119,6 +119,10 @@ begin
   AssertEquals(2, StrBufPos([72, 69, 76, 76, 79], 'LL'));
   AssertEquals(0, StrBufPos([72, 69, 76, 76, 79], 'HE'));
   AssertEquals(-1, StrBufPos([72, 69, 76, 76, 79], 'XY'));
+  AssertEquals('bytes outside a short sector are ignored', -1,
+    StrBufPos([72, 69, 76, 76, 79], 'LLO', 3));
+  AssertEquals('the same text inside the sector is found', 2,
+    StrBufPos([72, 69, 76, 76, 79], 'LLO', 5));
 end;
 
 procedure TUtilsTest.TestStrInByteArray;

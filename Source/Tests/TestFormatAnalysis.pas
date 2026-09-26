@@ -26,6 +26,7 @@ type
     procedure BreakSector(Sector: TDSKSector);
   published
     procedure TestCleanUniformDiskIsUnprotected;
+    procedure TestSignatureBeyondSectorLengthIsIgnored;
     procedure TestUniformDiskWithBadSectorIsUnprotected;
     procedure TestUniformDiskWithUnformattedTailIsUnprotected;
     procedure TestGenuinelyNonUniformDiskWithErrorsIsReported;
@@ -107,6 +108,25 @@ begin
   Img := MakeFormatted(0);
   try
     AssertEquals('nothing to report on a clean disk', '',
+      DetectProtection(Img.Disk.Side[0]));
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TFormatAnalysisTest.TestSignatureBeyondSectorLengthIsIgnored;
+const
+  Signature = ' THE ALKATRAZ PROTECTION SYSTEM   (C) 1987  Appleby Associates';
+var
+  Img: TDSKImage;
+  Sector: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sector := Img.Disk.Side[0].Track[0].Sector[0];
+    Move(Signature[1], Sector.Data[128], Length(Signature));
+    Sector.DataSize := 128;
+    AssertEquals('padding after the data does not certify protection', '',
       DetectProtection(Img.Disk.Side[0]));
   finally
     Img.Free;

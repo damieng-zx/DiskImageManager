@@ -578,7 +578,7 @@ begin
   if S0 = nil then exit;
 
   // Alkatraz +3 (note: 1 leading, 3 mid, 2 mid spaces)
-  if StrBufPos(S0.Data, ' THE ALKATRAZ PROTECTION SYSTEM   (C) 1987  Appleby Associates') > -1 then
+  if StrBufPos(S0.Data, ' THE ALKATRAZ PROTECTION SYSTEM   (C) 1987  Appleby Associates', S0.DataSize) > -1 then
   begin
     Result := ProtConfirmed('Alkatraz +3', 'signed T0/S0');
     exit;
@@ -588,7 +588,7 @@ begin
   TiAddr := '***Loader Copyright Three Inch Software 1988, All Rights Reserved. Three Inch Software, 73 Surbiton Road, Kingston upon Thames, KT1 2HG***';
   TiPhone := '***Loader Copyright Three Inch Software 1988, All Rights Reserved. 01-546 2754';
 
-  if StrBufPos(S0.Data, TiAddr) > -1 then
+  if StrBufPos(S0.Data, TiAddr, S0.DataSize) > -1 then
   begin
     Result := ProtConfirmed('Three Inch Loader type 1', 'signed T0/S0');
     exit;
@@ -596,13 +596,13 @@ begin
   if T0.Sectors > 7 then
   begin
     S7 := GetSec(T0, 7);
-    if (S7 <> nil) and (StrBufPos(S7.Data, TiAddr) > -1) then
+    if (S7 <> nil) and (StrBufPos(S7.Data, TiAddr, S7.DataSize) > -1) then
     begin
       Result := ProtConfirmed('Three Inch Loader type 1-0-7', 'signed T0/S7');
       exit;
     end;
   end;
-  if StrBufPos(S0.Data, TiPhone) > -1 then
+  if StrBufPos(S0.Data, TiPhone, S0.DataSize) > -1 then
   begin
     Result := ProtConfirmed('Three Inch Loader type 2', 'signed T0/S0');
     exit;
@@ -612,7 +612,7 @@ begin
   if T0.Sectors > 2 then
   begin
     S2 := GetSec(T0, 2);
-    if (S2 <> nil) and (StrBufPos(S2.Data, 'Laser Load   By C.J.Pink For Consult Computer    Systems') > -1) then
+    if (S2 <> nil) and (StrBufPos(S2.Data, 'Laser Load   By C.J.Pink For Consult Computer    Systems', S2.DataSize) > -1) then
     begin
       Result := ProtConfirmed('Laser Load by C.J. Pink', 'signed T0/S2');
       exit;
@@ -620,22 +620,22 @@ begin
   end;
 
   // P.M.S.
-  if StrBufPos(S0.Data, '[C] P.M.S. 1986') > -1 then
+  if StrBufPos(S0.Data, '[C] P.M.S. 1986', S0.DataSize) > -1 then
   begin
     Result := ProtConfirmed('P.M.S. 1986', 'signed T0/S0');
     exit;
   end;
-  if StrBufPos(S0.Data, 'P.M.S. LOADER [C]1986') > -1 then
+  if StrBufPos(S0.Data, 'P.M.S. LOADER [C]1986', S0.DataSize) > -1 then
   begin
     Result := ProtConfirmed('P.M.S. Loader 1986 v1', 'signed T0/S0');
     exit;
   end;
-  if StrBufPos(S0.Data, 'P.M.S.LOADER [C]1986') > -1 then
+  if StrBufPos(S0.Data, 'P.M.S.LOADER [C]1986', S0.DataSize) > -1 then
   begin
     Result := ProtConfirmed('P.M.S. Loader 1986 v2', 'signed T0/S0');
     exit;
   end;
-  if StrBufPos(S0.Data, 'P.M.S.LOADER [C]1987') > -1 then
+  if StrBufPos(S0.Data, 'P.M.S.LOADER [C]1987', S0.DataSize) > -1 then
   begin
     Result := ProtConfirmed('P.M.S. 1987', 'signed T0/S0');
     exit;
@@ -647,12 +647,12 @@ begin
     begin
       Sector := GetSec(T0, SIdx);
       if Sector = nil then continue;
-      if StrBufPos(Sector.Data, 'PROTECTION      Remi HERBULOT') > -1 then
+      if StrBufPos(Sector.Data, 'PROTECTION      Remi HERBULOT', Sector.DataSize) > -1 then
       begin
         Result := ProtConfirmed('ERE/Remi HERBULOT', 'signed T0');
         exit;
       end;
-      if StrBufPos(Sector.Data, 'PROTECTION  V2.1Remi HERBULOT') > -1 then
+      if StrBufPos(Sector.Data, 'PROTECTION  V2.1Remi HERBULOT', Sector.DataSize) > -1 then
       begin
         Result := ProtConfirmed('ERE/Remi HERBULOT 2.1', 'signed T0');
         exit;
@@ -660,14 +660,14 @@ begin
     end;
 
   // ARMOURLOC ("0K free" exactly at offset 2)
-  if (T0.Sectors = 9) and (StrBufPos(S0.Data, '0K free') = 2) then
+  if (T0.Sectors = 9) and (StrBufPos(S0.Data, '0K free', S0.DataSize) = 2) then
   begin
     Result := ProtConfirmed('ARMOURLOC', 'anti-hacker protection');
     exit;
   end;
 
   // Studio B
-  if StrBufPos(S0.Data, 'Disc format (c) 1986 Studio B Ltd.') > -1 then
+  if StrBufPos(S0.Data, 'Disc format (c) 1986 Studio B Ltd.', S0.DataSize) > -1 then
   begin
     Result := ProtConfirmed('Studio B Disc format', 'signed T0/S0');
     exit;
@@ -758,12 +758,12 @@ begin
     for SIdx := 0 to Track.Sectors - 1 do
     begin
       Sector := Track.Sector[SIdx];
-      if StrBufPos(Sector.Data, 'HEXAGON DISK PROTECTION c 1989') > -1 then
+      if StrBufPos(Sector.Data, 'HEXAGON DISK PROTECTION c 1989', Sector.DataSize) > -1 then
       begin
         Result := ProtConfirmed('Hexagon', SysUtils.Format('signed T%d/S%d', [T, SIdx]));
         exit;
       end;
-      if StrBufPos(Sector.Data, 'HEXAGON Disk Protection c 1989') > -1 then
+      if StrBufPos(Sector.Data, 'HEXAGON Disk Protection c 1989', Sector.DataSize) > -1 then
       begin
         Result := ProtConfirmed('Hexagon', SysUtils.Format('signed T%d/S%d', [T, SIdx]));
         exit;
@@ -862,7 +862,7 @@ begin
     for SIdx := 0 to T0.Sectors - 1 do
     begin
       Sector := T0.Sector[SIdx];
-      if StrBufPos(Sector.Data, 'MEAN PROTECTION SYSTEM') > -1 then
+      if StrBufPos(Sector.Data, 'MEAN PROTECTION SYSTEM', Sector.DataSize) > -1 then
       begin
         Result := ProtConfirmed('Mean Protection System', 'signed T0');
         exit;
@@ -904,7 +904,7 @@ begin
   if T0.Sectors > 1 then
   begin
     S1 := GetSec(T0, 1);
-    if (S1 <> nil) and (StrBufPos(S1.Data, '(c) 1986 for KBI ') > -1) then
+    if (S1 <> nil) and (StrBufPos(S1.Data, '(c) 1986 for KBI ', S1.DataSize) > -1) then
     begin
       Result := ProtConfirmed('KBI-19', 'signed T0/S1');
       exit;
@@ -912,7 +912,7 @@ begin
   end;
 
   S0 := GetSec(T0, 0);
-  if (S0 <> nil) and (StrBufPos(S0.Data, 'ALAIN LAURENT GENERATION 5 1989') > -1) then
+  if (S0 <> nil) and (StrBufPos(S0.Data, 'ALAIN LAURENT GENERATION 5 1989', S0.DataSize) > -1) then
   begin
     Result := ProtConfirmed('CAAV', 'signed T0/S0');
     exit;
@@ -1025,7 +1025,7 @@ begin
   if T0.Sectors = 9 then
   begin
     S2 := GetSec(T0, 2);
-    if (S2 <> nil) and (StrBufPos(S2.Data, Sig) > -1) then
+    if (S2 <> nil) and (StrBufPos(S2.Data, Sig, S2.DataSize) > -1) then
     begin
       Result := ProtConfirmed('Paul Owens', 'signed T0/S2');
       exit;
@@ -1035,7 +1035,7 @@ begin
   if T2.Sectors > 0 then
   begin
     T2S0 := GetSec(T2, 0);
-    if (T2S0 <> nil) and (StrBufPos(T2S0.Data, 'DISCLOC') > -1) then
+    if (T2S0 <> nil) and (StrBufPos(T2S0.Data, 'DISCLOC', T2S0.DataSize) > -1) then
     begin
       Result := ProtConfirmed('DiscLoc/Oddball', 'signed T2/S0');
       exit;
@@ -1046,7 +1046,7 @@ begin
     for SIdx := 0 to T0.Sectors - 1 do
     begin
       Sector := GetSec(T0, SIdx);
-      if (Sector <> nil) and (StrBufPos(Sector.Data, 'MEAN PROTECTION SYSTEM') > -1) then
+      if (Sector <> nil) and (StrBufPos(Sector.Data, 'MEAN PROTECTION SYSTEM', Sector.DataSize) > -1) then
       begin
         Result := ProtConfirmed('Mean Protection System', 'signed T0 + DiscSYS T2');
         exit;
@@ -1114,8 +1114,8 @@ begin
       T3S0 := GetSec(T3, 0);
       if (T3S0 <> nil) and (T3S0.DataSize = 512) then
       begin
-        Offset := StrBufPos(T3S0.Data, 'Amsoft disc protection system');
-        if (Offset > 1) and (StrBufPos(T3S0.Data, 'EXOPAL') > -1) then
+        Offset := StrBufPos(T3S0.Data, 'Amsoft disc protection system', T3S0.DataSize);
+        if (Offset > 1) and (StrBufPos(T3S0.Data, 'EXOPAL', T3S0.DataSize) > -1) then
         begin
           Result := ProtConfirmed('Amsoft/EXOPAL', 'signed T3/S0');
           exit;
@@ -1132,9 +1132,9 @@ begin
     begin
       S9 := GetSec(T8, 9);
       if (S9 <> nil) and (S9.DataSize > 128) then
-        if (StrBufPos(S9.Data, 'W.R.M Disc') = 0) and
-           (StrBufPos(S9.Data, 'Protection') > -1) and
-           (StrBufPos(S9.Data, 'System (c) 1987') > -1) then
+        if (StrBufPos(S9.Data, 'W.R.M Disc', S9.DataSize) = 0) and
+           (StrBufPos(S9.Data, 'Protection', S9.DataSize) > -1) and
+           (StrBufPos(S9.Data, 'System (c) 1987', S9.DataSize) > -1) then
         begin
           Result := ProtConfirmed('W.R.M Disc Protection', 'signed T8/S9');
           exit;
@@ -1166,7 +1166,7 @@ begin
       for SIdx := 0 to T1.Sectors - 1 do
       begin
         Sector := T1.Sector[SIdx];
-        if StrBufPos(Sector.Data, 'NEW DISK PROTECTION SYSTEM. (C) 1990 BY NEW FRONTIER SOFT.') > -1 then
+        if StrBufPos(Sector.Data, 'NEW DISK PROTECTION SYSTEM. (C) 1990 BY NEW FRONTIER SOFT.', Sector.DataSize) > -1 then
         begin
           Result := ProtConfirmed('Frontier', 'signed T1');
           exit;
@@ -1179,7 +1179,7 @@ begin
         if S4 <> nil then
         begin
           Sig := 'Loader ' + #127 + '1988 Three Inch Software';
-          if StrBufPos(S4.Data, Sig) > -1 then
+          if StrBufPos(S4.Data, Sig, S4.DataSize) > -1 then
           begin
             Result := ProtConfirmed('Three Inch Loader type 3-1-4', 'signed T1/S4');
             exit;
@@ -1290,14 +1290,14 @@ begin
       if Ht.Sectors > 1 then
       begin
         S1 := GetSec(Ht, 1);
-        if (S1 <> nil) and (StrBufPos(S1.Data, '(c) 1986 for KBI ') > -1) then
+        if (S1 <> nil) and (StrBufPos(S1.Data, '(c) 1986 for KBI ', S1.DataSize) > -1) then
         begin
           Result := ProtConfirmed('KBI-19', SysUtils.Format('signed T%d/S1', [T]));
           exit;
         end;
       end;
       S0 := GetSec(Ht, 0);
-      if (S0 <> nil) and (StrBufPos(S0.Data, 'ALAIN LAURENT GENERATION 5 1989') > -1) then
+      if (S0 <> nil) and (StrBufPos(S0.Data, 'ALAIN LAURENT GENERATION 5 1989', S0.DataSize) > -1) then
       begin
         Result := ProtConfirmed('CAAV', SysUtils.Format('signed T%d/S0', [T]));
         exit;
@@ -1501,7 +1501,7 @@ begin
         for SIdx := 0 to T0.Sectors - 1 do
         begin
           Sector := GetSec(T0, SIdx);
-          if (Sector <> nil) and (StrBufPos(Sector.Data, 'MEAN PROTECTION SYSTEM') > -1) then
+          if (Sector <> nil) and (StrBufPos(Sector.Data, 'MEAN PROTECTION SYSTEM', Sector.DataSize) > -1) then
           begin
             Result := ProtConfirmed('Mean Protection System',
               SysUtils.Format('signed T0/S%d + DiscSYS T1', [SIdx]));
