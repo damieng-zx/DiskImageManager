@@ -64,6 +64,7 @@ type
     procedure TestCopyCountOnUnknownFDCSize;
     procedure TestTrackSizeUniformOnSideWithNoTracks;
     procedure TestLoadImageWithNoTracks;
+    procedure TestBootableOnDiskWithNoSides;
     procedure TestIdentifyRejectsImpossibleBlockShift;
     procedure TestLoadedImageIsNotChanged;
     procedure TestSectorEditMarksImageChanged;
@@ -860,6 +861,38 @@ begin
       AssertEquals('track size is uniform', True, Img.Disk.IsTrackSizeUniform);
       AssertEquals('nothing formatted', 0, Img.Disk.FormattedCapacity);
       AssertEquals('and no largest track', 0, Img.Disk.Side[0].GetLargestTrackSize);
+    finally
+      Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+procedure TDskImageTest.TestBootableOnDiskWithNoSides;
+var
+  Header: TDSKInfoBlock;
+  Stream: TFileStream;
+  FileName: string;
+  Img: TDSKImage;
+begin
+  FileName := TempName('.dsk');
+  FillChar(Header, SizeOf(Header), 0);
+  Move(DiskInfoStandard[1], Header.DiskInfoBlock, Length(DiskInfoStandard));
+  Header.Disk_NumTracks := 1;
+  Header.Disk_NumSides := 0;
+  Stream := TFileStream.Create(FileName, fmCreate);
+  try
+    Stream.WriteBuffer(Header, SizeOf(Header));
+  finally
+    Stream.Free;
+  end;
+
+  try
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertEquals('header has no sides', 0, Img.Disk.Sides);
+      AssertEquals('no boot sector to inspect', '', Img.Disk.BootableOn);
     finally
       Img.Free;
     end;

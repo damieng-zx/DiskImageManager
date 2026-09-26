@@ -2262,6 +2262,7 @@ var
   Mod256: integer;
 begin
   Result := '';
+  if Sides = 0 then exit;
   if (Side[0].Tracks > 0) and (Side[0].Track[0].Sectors > 0) then
   begin
     if Side[0].Track[0].Sector[0].Status = ssFormattedInUse then
