@@ -16,14 +16,27 @@ implementation
 
 function CompareItems(Item1, Item2: TListItem; ListView: TListView): integer;
 var
-  column: longint;
+  Column: integer;
+  Value1, Value2: string;
 begin
-  column := ListView.SortColumn - 1;
-
-  if column = -1 then
-    Result := CompareValues(Item1.Caption, Item2.Caption)
+  if ListView.SortColumn <= 0 then
+  begin
+    Value1 := Item1.Caption;
+    Value2 := Item2.Caption;
+  end
   else
-    Result := CompareValues(Item1.SubItems[column], Item2.SubItems[column]);
+  begin
+    Column := ListView.SortColumn - 1;
+    if Column < Item1.SubItems.Count then
+      Value1 := Item1.SubItems[Column]
+    else
+      Value1 := '';
+    if Column < Item2.SubItems.Count then
+      Value2 := Item2.SubItems[Column]
+    else
+      Value2 := '';
+  end;
+  Result := CompareValues(Value1, Value2);
 
   if ListView.SortDirection = sdDescending then Result := -Result;
 end;
@@ -79,28 +92,23 @@ end;
 function TryStrToFileBytes(const S: ansistring; out Value: integer): boolean;
 var
   Parts: array of string;
-  NumValue: integer;
+  NumValue, Multiplier, BytesValue: int64;
 begin
   Result := False;
   Parts := S.Split(' ');
   if High(Parts) = 1 then
   begin
-    if not TryStrToInt(Parts[0], NumValue) then exit;
-    if Parts[1] = 'bytes' then
-    begin
-      Value := NumValue;
-      Result := True;
-    end;
-    if Parts[1] = 'KB' then
-    begin
-      Value := NumValue * 1024;
-      Result := True;
-    end;
-    if Parts[1] = 'MB' then
-    begin
-      Value := NumValue * 1024 * 1024;
-      Result := True;
-    end;
+    if Parts[1] = 'bytes' then Multiplier := 1
+    else if Parts[1] = 'KB' then Multiplier := 1024
+    else if Parts[1] = 'MB' then Multiplier := 1024 * 1024
+    else exit;
+    if not TryStrToInt64(Parts[0], NumValue) then exit;
+    if (NumValue > 0) and (NumValue > High(Int64) div Multiplier) then exit;
+    if (NumValue < 0) and (NumValue < Low(Int64) div Multiplier) then exit;
+    BytesValue := NumValue * Multiplier;
+    if (BytesValue < Low(integer)) or (BytesValue > High(integer)) then exit;
+    Value := integer(BytesValue);
+    Result := True;
   end;
 end;
 

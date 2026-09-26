@@ -12,7 +12,7 @@ unit TestComparers;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, Comparers;
+  Classes, SysUtils, Forms, ComCtrls, fpcunit, testregistry, Comparers;
 
 type
   TComparersTest = class(TTestCase)
@@ -23,6 +23,7 @@ type
     procedure TestFileBytesRejectsNoUnit;
     procedure TestFileBytesRejectsUnknownUnit;
     procedure TestFileBytesRejectsNonNumeric;
+    procedure TestFileBytesRejectsOverflow;
     procedure TestCompareValuesBySize;
     procedure TestCompareValuesByText;
     procedure TestCompareValuesEqual;
@@ -37,6 +38,8 @@ type
     procedure TestCompareValuesTiesBreakOnText;
     procedure TestCompareValuesHexAsText;
     procedure TestCompareValuesSmallIntegers;
+    procedure TestCompareItemsHandlesNegativeSortColumn;
+    procedure TestCompareItemsHandlesMissingSubitems;
   end;
 
 implementation
@@ -85,6 +88,16 @@ var
   V: integer;
 begin
   AssertFalse(TryStrToFileBytes('big KB', V));
+end;
+
+procedure TComparersTest.TestFileBytesRejectsOverflow;
+var
+  V: integer;
+begin
+  AssertFalse('large KB value rejected', TryStrToFileBytes('2147483647 KB', V));
+  AssertFalse('large MB value rejected', TryStrToFileBytes('2147483647 MB', V));
+  AssertFalse('outside integer byte range rejected',
+    TryStrToFileBytes('2147483648 bytes', V));
 end;
 
 procedure TComparersTest.TestCompareValuesBySize;
@@ -195,6 +208,53 @@ begin
   // Integers 1..31 once parsed as dates; they must compare as numbers
   AssertTrue(CompareValues('2', '3') < 0);
   AssertTrue(CompareValues('31', '2') > 0);
+end;
+
+procedure TComparersTest.TestCompareItemsHandlesNegativeSortColumn;
+var
+  ListView: TListView;
+  A, B: TListItem;
+  SortColumn: integer;
+begin
+  ListView := TListView.Create(nil);
+  try
+    ListView.SortDirection := sdAscending;
+    A := ListView.Items.Add;
+    A.Caption := 'alpha';
+    B := ListView.Items.Add;
+    B.Caption := 'beta';
+    for SortColumn := -2 to 0 do
+    begin
+      ListView.SortColumn := SortColumn;
+      AssertTrue('negative/unset column sorts by caption', CompareItems(A, B, ListView) < 0);
+    end;
+  finally
+    ListView.Free;
+  end;
+end;
+
+procedure TComparersTest.TestCompareItemsHandlesMissingSubitems;
+var
+  ListView: TListView;
+  A, B: TListItem;
+begin
+  ListView := TListView.Create(nil);
+  try
+    ListView.SortDirection := sdAscending;
+    A := ListView.Items.Add;
+    A.Caption := 'first';
+    A.SubItems.Add('value');
+    B := ListView.Items.Add;
+    B.Caption := 'second';
+    ListView.SortColumn := 2; // second displayed column, absent on both rows
+    AssertEquals('missing values compare equal', 0, CompareItems(A, B, ListView));
+    B.SubItems.Add('first value');
+    B.SubItems.Add('other');
+    AssertTrue('missing value sorts safely against a populated value',
+      CompareItems(A, B, ListView) < 0);
+  finally
+    ListView.Free;
+  end;
 end;
 
 initialization
