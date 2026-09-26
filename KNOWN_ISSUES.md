@@ -11,26 +11,6 @@ its own compiler settings. Do not infer that every read beyond a sector's
 
 ## Low — UI, interoperability, and hardening
 
-- **18. Rename file has no effect.** `Source/Main.pas:456-459` calls
-  `EditCaption`, but the list is set read-only at `1460`, with no edit handler
-  or filesystem rename operation. Implement the operation or remove the menu
-  action.
-
-- **19. `.GZ` and gzipped raw MGT files do not load.** The gzip-extension test
-  is case-sensitive (`Source/DskImage.pas:531`), and MGT detection later checks
-  the unstripped original extension (`612`). Normalize extension case and
-  identify the decompressed payload using its underlying filename/type.
-
-- **20. Options Reset persists despite Cancel.** `Settings.Reset` deletes the
-  INI immediately (`Source/settings.pas:323-327`), when Reset is clicked
-  (`Source/Options.pas:286-289`). Reset only the pending dialog values and
-  persist them on OK.
-
-- **21. The Win32 list-width constants emit range warnings.**
-  `Source/Utils.pas:447-455` assigns `LVSCW_AUTOSIZE*` constants to column
-  widths. Check the intended signed/API types and remove the conversion
-  warnings without changing the autosize behaviour.
-
 - **32. The sort comparer can index a negative subitem.**
   `Source/Comparers.pas:21-26` subtracts one from `SortColumn`, handles `-1`
   for the caption, but sends `-2` to `SubItems` when the current view sets
