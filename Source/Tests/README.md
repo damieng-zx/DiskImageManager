@@ -15,6 +15,9 @@ The tests target the non-UI domain logic. Forms and viewers are out of scope.
 | `TestAmstradBasic.pas` | `AmstradBasic.pas` | Locomotive BASIC detokeniser |
 | `TestDskImage.pas` | `DskImage.pas` | format / save / reload round-trips |
 | `TestCPMFileSystem.pas` | `filesystem.pas` | directory parsing, header size clamping |
+| `TestFormatAnalysis.pas` | `FormatAnalysis.pas` | disk format and protection identification |
+| `TestLZHuf.pas` | `LZHuf.pas` | Teledisk LZHUF compression and decompression |
+| `TestTeleDisk.pas` | `TeleDisk.pas` | CRC, header validation, sector encoding |
 
 The BASIC tests feed hand-built tokenised byte streams straight into the
 decoders. The `DskImage` tests generate their fixtures **synthetically in
