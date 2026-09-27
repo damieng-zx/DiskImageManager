@@ -26,7 +26,8 @@ uses
   TestFormatAnalysis,
   TestLZHuf,
   TestTeleDisk,
-  TestUIUtils;
+  TestUIUtils,
+  TestNavigationHistory;
 
 type
   TDIMTestRunner = class(TTestRunner)

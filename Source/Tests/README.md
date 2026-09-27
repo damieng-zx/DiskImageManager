@@ -20,6 +20,7 @@ configuration helpers. Forms and viewers are out of scope.
 | `TestFormatAnalysis.pas` | `FormatAnalysis.pas` | disk format and protection identification |
 | `TestLZHuf.pas` | `LZHuf.pas` | Teledisk LZHUF compression and decompression |
 | `TestTeleDisk.pas` | `TeleDisk.pas` | CRC, header validation, sector encoding |
+| `TestNavigationHistory.pas` | `NavigationHistory.pas` | location serialization and malformed input |
 
 The BASIC tests feed hand-built tokenised byte streams straight into the
 decoders. The `DskImage` tests generate their fixtures **synthetically in

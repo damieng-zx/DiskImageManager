@@ -14,7 +14,7 @@ unit Main;
 interface
 
 uses
-  DiskMap, DskImage, DIMUtils, Utils, About, Options, SectorProperties,
+  DiskMap, DskImage, DIMUtils, Utils, NavigationHistory, About, Options, SectorProperties,
   TrackProperties, Settings, FileSystem, MGTFileSystem, ListViewPresenter,
   Comparers, FileViewer, SinclairBasic, ZXScreenViewer, SpectrumScreen,
   CPCScreenViewer, AmstradScreen, ShellDragDrop,
@@ -23,20 +23,6 @@ uses
   Clipbrd, StdCtrls, FileUtil, StrUtils, LazFileUtils, LConvEncoding, CommCtrl;
 
 type
-  { TNavLocation }
-
-  // A serializable descriptor of a place the user has visited: the disk image,
-  // the path of child indices from that disk's root node down to the selected
-  // node, and the selected row in the detail list (-1 if none). Stored rather
-  // than raw node/object pointers so it survives images closing and app restart.
-  TNavLocation = class
-    ImageFile: string;
-    NodePath: array of integer;
-    ListRow: integer;
-    function Serialize: string;
-    class function Deserialize(const Text: string): TNavLocation;
-  end;
-
   { TfrmMain }
 
   TfrmMain = class(TForm)
@@ -309,45 +295,6 @@ implementation
 {$R *.lfm}
 
 uses New;
-
-{ TNavLocation }
-
-// Serialize as "ImageFile|i0.i1.i2|ListRow" ('|' can't appear in a Windows path)
-function TNavLocation.Serialize: string;
-var
-  PathStr: string;
-  Idx: integer;
-begin
-  PathStr := '';
-  for Idx := 0 to High(NodePath) do
-  begin
-    if PathStr <> '' then
-      PathStr := PathStr + '.';
-    PathStr := PathStr + IntToStr(NodePath[Idx]);
-  end;
-  Result := ImageFile + '|' + PathStr + '|' + IntToStr(ListRow);
-end;
-
-class function TNavLocation.Deserialize(const Text: string): TNavLocation;
-var
-  Parts, PathParts: TStringArray;
-  Idx: integer;
-begin
-  Result := nil;
-  Parts := Text.Split(['|']);
-  if Length(Parts) <> 3 then
-    Exit;
-  Result := TNavLocation.Create;
-  Result.ImageFile := Parts[0];
-  Result.ListRow := StrToIntDef(Parts[2], -1);
-  if Parts[1] <> '' then
-  begin
-    PathParts := Parts[1].Split(['.']);
-    SetLength(Result.NodePath, Length(PathParts));
-    for Idx := 0 to High(PathParts) do
-      Result.NodePath[Idx] := StrToIntDef(PathParts[Idx], 0);
-  end;
-end;
 
 procedure TfrmMain.FormCreate(Sender: TObject);
 var
