@@ -14,7 +14,7 @@ unit ListViewPresenter;
 interface
 
 uses
-  DskImage, FileSystem, MGTFileSystem, Utils, Settings,
+  DskImage, FileSystem, MGTFileSystem, DIMUtils, Settings,
   Classes, SysUtils, ComCtrls, Contnrs, Graphics, LConvEncoding, FGL;
 
 type

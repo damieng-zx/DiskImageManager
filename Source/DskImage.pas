@@ -14,7 +14,7 @@ unit DskImage;
 interface
 
 uses
-  DSKFormat, TeleDisk, Utils, Classes, Dialogs, SysUtils, Math, Character, ZStream;
+  DSKFormat, TeleDisk, DIMUtils, Classes, Dialogs, SysUtils, Math, Character, ZStream;
 
 const
   MaxSectorSize = 32768;

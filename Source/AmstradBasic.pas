@@ -14,7 +14,7 @@ unit AmstradBasic;
 interface
 
 uses
-  DskImage, FileSystem, Utils, SysUtils, Math;
+  DskImage, FileSystem, DIMUtils, SysUtils, Math;
 
 type
   TAmstradBasicParser = class

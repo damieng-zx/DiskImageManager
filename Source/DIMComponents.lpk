@@ -34,12 +34,16 @@
     </CompilerOptions>
     <Description Value="Components required by Disk Image Manager"/>
     <License Value="Apache 2.0"/>
-    <Files Count="1">
+    <Files Count="2">
       <Item1>
         <Filename Value="DiskMap.pas"/>
         <HasRegisterProc Value="True"/>
         <UnitName Value="DiskMap"/>
       </Item1>
+      <Item2>
+        <Filename Value="DIMUtils.pas"/>
+        <UnitName Value="DIMUtils"/>
+      </Item2>
     </Files>
     <CompatibilityMode Value="True"/>
     <RequiredPkgs Count="1">

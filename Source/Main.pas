@@ -14,7 +14,7 @@ unit Main;
 interface
 
 uses
-  DiskMap, DskImage, Utils, About, Options, SectorProperties,
+  DiskMap, DskImage, DIMUtils, Utils, About, Options, SectorProperties,
   TrackProperties, Settings, FileSystem, MGTFileSystem, ListViewPresenter,
   Comparers, FileViewer, SinclairBasic, ZXScreenViewer, SpectrumScreen,
   CPCScreenViewer, AmstradScreen, ShellDragDrop,

@@ -14,7 +14,7 @@ unit MGTFileSystem;
 interface
 
 uses
-  DSKImage, Utils,
+  DSKImage, DIMUtils,
   Classes, SysUtils, FGL;
 
 type

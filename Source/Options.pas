@@ -14,7 +14,7 @@ unit Options;
 interface
 
 uses
-  DiskMap, Utils, Settings,
+  DiskMap, DIMUtils, Utils, Settings,
   Graphics, Forms, ComCtrls, StdCtrls, Controls, ExtCtrls, Dialogs, StrUtils, Classes;
 
 type

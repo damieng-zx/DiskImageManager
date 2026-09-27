@@ -9,7 +9,7 @@ unit DiskMap;
 interface
 
 uses
-  DskImage, Utils,
+  DskImage, DIMUtils, Utils,
   Forms, SysUtils, Classes, Controls, Graphics, GraphUtil, Types,
   IntfGraphics, FPImage, Math;
 

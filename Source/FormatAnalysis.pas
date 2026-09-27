@@ -17,7 +17,7 @@ function DetectInterleave(Track: TDskTrack): string;
 
 implementation
 
-uses Utils;
+uses DIMUtils;
 
 function AnalyseFormat(Disk: TDSKDisk): string;
 var

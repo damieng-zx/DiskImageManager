@@ -16,7 +16,7 @@ unit SpectrumScreen;
 interface
 
 uses
-  Graphics, Classes, SysUtils, Utils;
+  Graphics, Classes, SysUtils, DIMUtils;
 
 const
   ScreenWidth = 256;

@@ -15,7 +15,7 @@ interface
 
 uses
   Classes, SysUtils, Types, Forms, Controls, Graphics, ExtCtrls, ComCtrls,
-  StdCtrls, Buttons, Menus, DskImage, FileSystem, Utils, AmstradScreen;
+  StdCtrls, Buttons, Menus, DskImage, FileSystem, DIMUtils, Utils, AmstradScreen;
 
 type
 

@@ -13,7 +13,7 @@ unit TestCPMFileSystem;
 interface
 
 uses
-  Classes, SysUtils, FGL, fpcunit, testregistry, Utils, DskImage, DSKFormat, FileSystem;
+  Classes, SysUtils, FGL, fpcunit, testregistry, DIMUtils, DskImage, DSKFormat, FileSystem;
 
 type
   TDirectory = specialize TFPGList<TCPMFile>;

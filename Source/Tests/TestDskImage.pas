@@ -18,7 +18,7 @@ unit TestDskImage;
 interface
 
 uses
-  Classes, SysUtils, FGL, ZStream, fpcunit, testregistry, DskImage, DSKFormat, Utils, MGTFileSystem;
+  Classes, SysUtils, FGL, ZStream, fpcunit, testregistry, DskImage, DSKFormat, DIMUtils, MGTFileSystem;
 
 type
   TMGTFileList = specialize TFPGList<TMGTFile>;

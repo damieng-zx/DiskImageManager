@@ -6,10 +6,9 @@ program DiskImageManagerTests;
   Disk Image Manager - console test runner.
 
   This is a console-subsystem program that links the LCL widgetset (via the
-  Interfaces unit). The LCL-dependent logic units (Utils, Comparers, DskImage,
-  ...) need a real widgetset to link, but the runner never creates a window, so
-  the suite still runs headless. (The "nogui" widgetset can't be used because
-  these units drag in ComCtrls/StdCtrls, whose widgetset classes nogui omits.)
+  Interfaces unit). Comparers, Utils, and DskImage still depend on LCL classes,
+  so a real widgetset is needed to link; the runner never creates a window. (The
+  "nogui" widgetset omits classes these units use.)
 
   Run with no arguments to execute every registered test in plain-text form.
   Pass --format=xml for a JUnit-style report, or --help for all options.
@@ -26,7 +25,8 @@ uses
   TestCPMFileSystem,
   TestFormatAnalysis,
   TestLZHuf,
-  TestTeleDisk;
+  TestTeleDisk,
+  TestUIUtils;
 
 type
   TDIMTestRunner = class(TTestRunner)

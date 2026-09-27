@@ -14,7 +14,7 @@ unit AmstradScreen;
 interface
 
 uses
-  Graphics, Classes, SysUtils, Utils;
+  Graphics, Classes, SysUtils, DIMUtils;
 
 const
   CPCScreenSize = 16384;       // Standard CPC screen RAM dump

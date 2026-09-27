@@ -3,7 +3,7 @@ unit TestDIMUtils;
 {$mode objfpc}{$H+}
 
 {
-  Disk Image Manager - Unit tests for the Utils unit.
+  Disk Image Manager - Unit tests for portable helper functions.
 
   Covers the pure string / byte / size helper functions. The LCL-dependent
   drawing and list-view helpers are exercised only indirectly (they need a
@@ -17,7 +17,7 @@ unit TestDIMUtils;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, Graphics, Utils;
+  Classes, SysUtils, fpcunit, testregistry, DIMUtils;
 
 type
   TUtilsTest = class(TTestCase)
@@ -41,7 +41,6 @@ type
     procedure TestSafeFileNameBlocksPathEscapes;
     procedure TestSafeFileNameBlocksDeviceNames;
     procedure TestSafeFileNameNeverReturnsNothing;
-    procedure TestFontFromDescriptionSurvivesRubbish;
   end;
 
 implementation
@@ -257,30 +256,6 @@ begin
   AssertEquals('unnamed', SafeFileName('...'));
   AssertEquals('unnamed', SafeFileName('   '));
   AssertEquals('fallback', SafeFileName('.', 'fallback'));
-end;
-
-// A font is stored in the ini as a description and read back with no checking.
-// The name was taken from the first field without asking whether there was one,
-// so an ini line of "Font=" put an index out of range in the way of starting,
-// and stranded the list and the font on the way out.
-procedure TUtilsTest.TestFontFromDescriptionSurvivesRubbish;
-var
-  AFont: TFont;
-begin
-  AFont := FontFromDescription('');
-  try
-    AssertNotNull('an empty description still gives a font', AFont);
-  finally
-    AFont.Free;
-  end;
-
-  AFont := FontFromDescription('Tahoma,8pt,,');
-  try
-    AssertEquals('a normal description is read back', 'Tahoma', AFont.Name);
-    AssertEquals('with its size', 8, AFont.Size);
-  finally
-    AFont.Free;
-  end;
 end;
 
 initialization

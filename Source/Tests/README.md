@@ -5,11 +5,13 @@ framework that ships with Free Pascal and Lazarus (no external dependencies).
 
 ## What's covered
 
-The tests target the non-UI domain logic. Forms and viewers are out of scope.
+Most tests target non-UI domain logic; the small `Utils` suite covers font
+configuration helpers. Forms and viewers are out of scope.
 
 | Test unit | Unit under test | Notes |
 |---|---|---|
-| `TestDIMUtils.pas` | `Utils.pas` | string / byte / hex / size helpers |
+| `TestDIMUtils.pas` | `DIMUtils.pas` | portable string / byte / hex / size helpers |
+| `TestUIUtils.pas` | `Utils.pas` | font-description parsing |
 | `TestComparers.pas` | `Comparers.pas` | file-size parsing & column sorting |
 | `TestSinclairBasic.pas` | `SinclairBasic.pas` | Spectrum BASIC detokeniser |
 | `TestAmstradBasic.pas` | `AmstradBasic.pas` | Locomotive BASIC detokeniser |
@@ -44,10 +46,12 @@ lazbuild --ws=win32 DiskImageManagerTests.lpi
 .\DiskImageManagerTests.exe --suite=TDskImageTest
 ```
 
-Or use the helper that does both:
+Or use the helper to build and run the suite. Pass `-Xml` to also write
+`results.xml`:
 
 ```powershell
 .\run-tests.ps1
+.\run-tests.ps1 -Xml
 ```
 
 ## Adding tests
@@ -64,9 +68,12 @@ Or use the helper that does both:
 
 ## Why win32, not nogui
 
-`nogui` is the usual headless widgetset, but `Utils`/`Comparers` reference
-`ComCtrls`/`StdCtrls`, whose widgetset classes `nogui` doesn't implement — so it
-fails at link time (`Undefined symbol: WSRegister...`). Linking the native
-win32 widgetset resolves them; the runner simply never creates a form. A future
-refactor that splits the pure helpers out of the LCL-dependent units would let
-the suite run under `nogui`.
+The portable helpers live in `DIMUtils`, but the suite still links UI-dependent
+code: `Comparers.CompareItems` accepts LCL list-view objects, `Utils` contains
+visual helpers, and `DskImage` currently depends on LCL dialogs. Those
+dependencies require widgetset classes that `nogui` does not implement, so the
+build fails at link time
+(`Undefined symbol: WSRegister...`). Linking the native win32 widgetset resolves
+them; the runner remains a console app and never creates a window. Decoupling
+those UI adapters and diagnostics from the tested logic would allow the suite
+to use `nogui`.

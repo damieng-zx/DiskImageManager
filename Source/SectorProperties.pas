@@ -14,7 +14,7 @@ unit SectorProperties;
 interface
 
 uses
-  DskImage, Utils,
+  DskImage, DIMUtils, Utils,
   SysUtils, Classes, Forms, StdCtrls, ComCtrls, ExtCtrls, CheckLst, Dialogs, Graphics;
 
 type

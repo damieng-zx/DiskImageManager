@@ -14,7 +14,7 @@ unit New;
 interface
 
 uses
-  DskImage, Main, Utils,
+  DskImage, Main, DIMUtils,
   SysUtils, Classes, Forms, StdCtrls, ComCtrls, ExtCtrls, Dialogs, Buttons, Math, Controls, Graphics, DSKFormat;
 
 type

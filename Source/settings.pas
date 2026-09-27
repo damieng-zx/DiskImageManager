@@ -14,7 +14,7 @@ unit Settings;
 interface
 
 uses
-  Utils, DskImage,
+  DIMUtils, Utils, DskImage,
   Classes, Dialogs, SysUtils, IniFiles, Graphics, Forms, FileUtil, ComCtrls,
   LazFileUtils, Math;
 
