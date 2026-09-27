@@ -30,6 +30,7 @@ type
     procedure TestRoundTripTextLongerThanWindow;
     procedure TestRepetitiveInputShrinks;
     procedure TestPositionPrefixLengths;
+    procedure TestEverySingleByteStreamTerminatesSafely;
     procedure TestDecodesRealTelediskStream;
   end;
 
@@ -229,6 +230,30 @@ begin
   // the expected plaintext from that stable stream via RoundTrip.
   AssertEquals('compressed position-code fixture signature', 418470217, Hash);
   AssertSameBytes('all position-code bands', Input, RoundTrip(Input));
+end;
+
+procedure TLZHufTest.TestEverySingleByteStreamTerminatesSafely;
+var
+  Src, Dest: TMemoryStream;
+  Value: integer;
+begin
+  // Arbitrary one-byte inputs can end in the middle of an adaptive symbol or a
+  // position code. The decoder should consume the available bits safely.
+  for Value := 0 to 255 do
+  begin
+    Src := TMemoryStream.Create;
+    Dest := TMemoryStream.Create;
+    try
+      Src.WriteByte(Value);
+      Src.Position := 0;
+      LZHufDecompress(Src, Dest);
+      AssertTrue(Format('one-byte input %d stays within a small output bound', [Value]),
+        Dest.Size <= 4096);
+    finally
+      Dest.Free;
+      Src.Free;
+    end;
+  end;
 end;
 
 // The opening compressed bytes of a real Teledisk 2.1 image of an Amstrad PCW

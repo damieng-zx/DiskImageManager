@@ -38,6 +38,8 @@ type
     procedure TestUnknownNonXDPBStaysBlank;
     procedure TestInterleaveOneForSequentialIDs;
     procedure TestInterleaveThreeForSkewedIDs;
+    procedure TestInterleaveRejectsShortAndNonSequentialTracks;
+    procedure TestAnalyseFormatForEmptyAndRecognizedImages;
   end;
 
 implementation
@@ -328,6 +330,50 @@ begin
       Img.Disk.Side[0].Track[0].Sector[EIdx].ID := Layout[EIdx];
     AssertEquals('1:3 interleave is detected', '3',
       DetectInterleave(Img.Disk.Side[0].Track[0]));
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TFormatAnalysisTest.TestInterleaveRejectsShortAndNonSequentialTracks;
+var
+  Img: TDSKImage;
+  Idx: integer;
+begin
+  Img := BuildUniform(1, 1, 2, 512, 1);
+  try
+    AssertEquals('a two-sector track cannot establish interleave', ' Too few sectors',
+      DetectInterleave(Img.Disk.Side[0].Track[0]));
+  finally
+    Img.Free;
+  end;
+
+  Img := BuildUniform(1, 1, 4, 512, 1);
+  try
+    for Idx := 0 to 3 do
+      Img.Disk.Side[0].Track[0].Sector[Idx].ID := 1 + Idx * 2;
+    AssertEquals('IDs without a consecutive pair have no interleave',
+      'Non-sequential IDs', DetectInterleave(Img.Disk.Side[0].Track[0]));
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TFormatAnalysisTest.TestAnalyseFormatForEmptyAndRecognizedImages;
+var
+  Img: TDSKImage;
+begin
+  Img := TDSKImage.Create;
+  try
+    AssertEquals('no sectors means unformatted', 'Unformatted', AnalyseFormat(Img.Disk));
+  finally
+    Img.Free;
+  end;
+
+  Img := MakeFormatted(0);
+  try
+    AssertTrue('recognized format is included in the analysis summary',
+      Pos('Amstrad PCW/Spectrum +3 CF2', AnalyseFormat(Img.Disk)) = 1);
   finally
     Img.Free;
   end;

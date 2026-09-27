@@ -26,6 +26,11 @@ type
     procedure TestDigitConstant;
     procedure TestMultipleLines;
     procedure TestProtectedBasic;
+    procedure TestSixteenBitBinaryAndHexConstants;
+    procedure TestTokenizedVariableName;
+    procedure TestFloatingPointSignAndZero;
+    procedure TestRemCommentKeepsOnlyPrintableBytes;
+    procedure TestRTFEscapesStringPunctuation;
   end;
 
 implementation
@@ -128,6 +133,82 @@ begin
     // "10 PRINT \"HI\"" encrypted with the AMSDOS 128-byte XOR stream.
     AssertEquals('10 PRINT "HI"' + CRLF,
       P.Decode([$A0, $2C, $E7, $EA, $D3, $17, $1D, $A4, $D2, $FD, $7A], True));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAmstradBasicTest.TestSixteenBitBinaryAndHexConstants;
+var
+  P: TAmstradBasicParser;
+begin
+  P := TAmstradBasicParser.Create;
+  try
+    AssertEquals('16-bit, binary and hexadecimal constants',
+      '10 PRINT 4660 &X10100101 &1234' + CRLF,
+      P.Decode([$12, $00, $0A, $00, tPRINT, $20,
+        $1A, $34, $12, $20, $1B, $A5, $00, $20, $1C, $34, $12, $00]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAmstradBasicTest.TestTokenizedVariableName;
+var
+  P: TAmstradBasicParser;
+begin
+  P := TAmstradBasicParser.Create;
+  try
+    // $02 is an integer variable; bit 7 marks the last character in its name.
+    AssertEquals('10 PRINT N%' + CRLF,
+      P.Decode([$0B, $00, $0A, $00, tPRINT, $20, $02, $00, $00, $CE, $00]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAmstradBasicTest.TestFloatingPointSignAndZero;
+var
+  P: TAmstradBasicParser;
+begin
+  P := TAmstradBasicParser.Create;
+  try
+    // An implicit leading mantissa bit and exponent 128 encode +/-1; exponent
+    // zero is the dedicated representation for 0.
+    AssertEquals('10 PRINT 0.5' + CRLF + '20 PRINT -0.5' + CRLF + '30 PRINT 0' + CRLF,
+      P.Decode([$0D, $00, $0A, $00, tPRINT, $20, $1F, $00, $00, $00, $00, $80, $00,
+                $0D, $00, $14, $00, tPRINT, $20, $1F, $00, $00, $00, $80, $80, $00,
+                $0D, $00, $1E, $00, tPRINT, $20, $1F, $00, $00, $00, $00, $00, $00]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAmstradBasicTest.TestRemCommentKeepsOnlyPrintableBytes;
+var
+  P: TAmstradBasicParser;
+begin
+  P := TAmstradBasicParser.Create;
+  try
+    AssertEquals('10 PRINT REMhi' + CRLF,
+      P.Decode([$0B, $00, $0A, $00, tPRINT, $20, $C5, $68, $69, $BF, $00]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TAmstradBasicTest.TestRTFEscapesStringPunctuation;
+var
+  P: TAmstradBasicParser;
+  RTF: string;
+begin
+  P := TAmstradBasicParser.Create;
+  try
+    RTF := P.DecodeRTF([$0D, $00, $0A, $00, tPRINT, $20,
+      $22, $41, $7B, $42, $7D, $22, $00]);
+    AssertTrue('opening brace escaped in RTF', Pos('\{', RTF) > 0);
+    AssertTrue('closing brace escaped in RTF', Pos('\}', RTF) > 0);
+    AssertTrue('BASIC string uses its syntax color', Pos('\cf3', RTF) > 0);
   finally
     P.Free;
   end;

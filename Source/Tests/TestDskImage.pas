@@ -18,9 +18,11 @@ unit TestDskImage;
 interface
 
 uses
-  Classes, SysUtils, ZStream, fpcunit, testregistry, DskImage, DSKFormat, Utils, MGTFileSystem;
+  Classes, SysUtils, FGL, ZStream, fpcunit, testregistry, DskImage, DSKFormat, Utils, MGTFileSystem;
 
 type
+  TMGTFileList = specialize TFPGList<TMGTFile>;
+
   TDskImageTest = class(TTestCase)
   private
     function MakeFormatted(FormatIndex: integer): TDSKImage;
@@ -41,9 +43,11 @@ type
     procedure TestLoadUppercaseGzippedMGT;
     procedure TestMGTLogicalSectorWalkReachesSideOne;
     procedure TestMGTDeletedEntryIsNotAFile;
+    procedure TestMGTDirectoryDecodesProtectedHiddenMetadata;
     procedure TestDetectFormatNotEmpty;
     procedure TestLoadUnformattedExtendedDSK;
     procedure TestLoadTruncatedOffsetInfo;
+    procedure TestRecoverExtendedTrackWithMissingSizeEntry;
     procedure TestLoadTruncatedDiskInfo;
     procedure TestGetAllStringsDropsDuplicates;
     procedure TestGetAllStringsKeepsDifferentCase;
@@ -58,6 +62,7 @@ type
     procedure TestToDataRateRejectsValuesOutsideTheEnum;
     procedure TestToRecordingModeRejectsValuesOutsideTheEnum;
     procedure TestLoadClampsTrackDataRateAndRecordingMode;
+    procedure TestRoundTripExtendedOffsetInfo;
     procedure TestLoadWarnsTooManyTrackSizes;
     procedure TestReloadEmptyStandardDSK;
     procedure TestLoadTruncatedSectorData;
@@ -75,6 +80,13 @@ type
     procedure TestBootableOnDiskWithNoSides;
     procedure TestIdentifyRejectsImpossibleBlockShift;
     procedure TestIdentifyAcceptsLargeXDpbSector;
+    procedure TestIdentifyCPCSystemAndDataSpecs;
+    procedure TestIdentifyMGTSpecFromGeometry;
+    procedure TestGetSectorByAllocationBlock;
+    procedure TestDiskUniformityAndFdcErrors;
+    procedure TestBootableOnRecognizesChecksumsAndCPC;
+    procedure TestVariantAndOffsetFeatures;
+    procedure TestSpecificationDefaultsAndWriteRoundTrip;
     procedure TestLoadedImageIsNotChanged;
     procedure TestSectorEditMarksImageChanged;
     procedure TestSectorFillMarksImageChanged;
@@ -421,6 +433,49 @@ begin
   end;
 end;
 
+procedure TDskImageTest.TestMGTDirectoryDecodesProtectedHiddenMetadata;
+var
+  Img: TDSKImage;
+  FSys: TMGTFileSystem;
+  Files: TMGTFileList;
+  FileItem: TMGTFile;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(8);
+  try
+    Sec := Img.Disk.GetFirstSector;
+    Sec.AdvertisedSize := 512; // raw MGT sectors advertise their on-disk size
+    Sec.Data[0] := 1 or 64 or 128; // BASIC, protected and hidden
+    FillChar(Sec.Data[1], 10, Ord(' '));
+    WriteText(Sec, 1, 'PROGRAM');
+    Sec.Data[11] := 0;
+    Sec.Data[12] := 2; // two sectors allocated, big-endian
+    Sec.Data[13] := 0; // first logical track
+    Sec.Data[14] := 1; // first sector ID
+
+    FSys := TMGTFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertEquals('one live directory entry', 1, Files.Count);
+        FileItem := Files[0];
+        AssertEquals('filename', 'PROGRAM', FileItem.FileName);
+        AssertEquals('metadata flags', 'BASIC (protected) (hidden)', FileItem.Meta);
+        AssertEquals('sector count', 2, FileItem.SectorsAllocated);
+        AssertEquals('allocated bytes', 1024, FileItem.AllocatedSize);
+        AssertTrue('first sector resolved', FileItem.FirstSector = Sec);
+      finally
+        for FileItem in Files do FileItem.Free;
+        Files.Free;
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
 procedure TDskImageTest.TestDetectFormatNotEmpty;
 var
   Img: TDSKImage;
@@ -512,6 +567,68 @@ begin
       finally
         Img.Free;
       end;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+procedure TDskImageTest.TestRecoverExtendedTrackWithMissingSizeEntry;
+var
+  Header: TDSKInfoBlock;
+  TrackInfo: TTRKInfoBlock;
+  SectorInfo: TSCTInfoBlock;
+  Payload: array[0..127] of byte;
+  Stream: TFileStream;
+  FileName: string;
+  Img: TDSKImage;
+  Idx: integer;
+begin
+  FileName := TempName('.dsk');
+  FillChar(Header, SizeOf(Header), 0);
+  Move(DiskInfoExtended[1], Header.DiskInfoBlock, Length(DiskInfoExtended));
+  Header.Disk_NumTracks := 1;
+  Header.Disk_NumSides := 1;
+  // Extended track-size table intentionally left zero despite following data.
+
+  FillChar(TrackInfo, SizeOf(TrackInfo), 0);
+  Move(DiskInfoTrack[1], TrackInfo.TrackData, Length(DiskInfoTrack));
+  TrackInfo.TIB_TrackNum := 0;
+  TrackInfo.TIB_SideNum := 0;
+  TrackInfo.TIB_DataRate := 1;
+  TrackInfo.TIB_RecordingMode := 1;
+  TrackInfo.TIB_SectorSize := 0;
+  TrackInfo.TIB_NumSectors := 1;
+  FillChar(SectorInfo, SizeOf(SectorInfo), 0);
+  SectorInfo.SIB_TrackNum := 0;
+  SectorInfo.SIB_SideNum := 0;
+  SectorInfo.SIB_ID := 1;
+    SectorInfo.SIB_Size := 0;
+    SectorInfo.SIB_DataLength := SizeOf(Payload);
+  for Idx := 0 to High(Payload) do Payload[Idx] := Idx xor $A5;
+  Move(SectorInfo, TrackInfo.SectorInfoList[0], SizeOf(SectorInfo));
+
+  Stream := TFileStream.Create(FileName, fmCreate);
+  try
+    Stream.WriteBuffer(Header, SizeOf(Header));
+    Stream.WriteBuffer(TrackInfo, SizeOf(TrackInfo));
+    Stream.WriteBuffer(Payload, SizeOf(Payload));
+  finally
+    Stream.Free;
+  end;
+
+  try
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertFalse('recovered track is valid', Img.Corrupt);
+      AssertTrue('recovery is reported', HasMessageLike(Img.Messages, 'recovered 1 track'));
+      AssertEquals('one sector recovered', 1, Img.Disk.Side[0].Track[0].Sectors);
+      AssertEquals('sector length from its size code', 128,
+        Img.Disk.Side[0].Track[0].Sector[0].DataSize);
+      AssertEquals('sector payload recovered', Payload[127],
+        Img.Disk.Side[0].Track[0].Sector[0].Data[127]);
+    finally
+      Img.Free;
     end;
   finally
     DeleteFile(FileName);
@@ -1208,6 +1325,207 @@ begin
   end;
 end;
 
+procedure TDskImageTest.TestIdentifyCPCSystemAndDataSpecs;
+var
+  Img: TDSKImage;
+begin
+  Img := MakeFormatted(2);
+  try
+    Img.Disk.Specification.Identify;
+    AssertEquals('CPC system sector ID identifies the format',
+      Ord(dsFormatCPC_System), Ord(Img.Disk.Specification.Format));
+    AssertEquals('CPC system reserves two tracks', 2,
+      Img.Disk.Specification.ReservedTracks);
+  finally
+    Img.Free;
+  end;
+
+  Img := MakeFormatted(3);
+  try
+    Img.Disk.Specification.Identify;
+    AssertEquals('CPC data sector ID identifies the format',
+      Ord(dsFormatCPC_Data), Ord(Img.Disk.Specification.Format));
+    AssertEquals('CPC data reserves no tracks', 0,
+      Img.Disk.Specification.ReservedTracks);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestIdentifyMGTSpecFromGeometry;
+var
+  Img: TDSKImage;
+begin
+  Img := MakeFormatted(8);
+  try
+    Img.Disk.Specification.Identify;
+    AssertEquals('MGT geometry identifies the specification', Ord(dsFormatMGT),
+      Ord(Img.Disk.Specification.Format));
+    AssertEquals('full 80-track MGT geometry retained', 80,
+      Img.Disk.Specification.TracksPerSide);
+    AssertEquals('MGT sides are sequential', Ord(dsSideDoubleSuccessive),
+      Ord(Img.Disk.Specification.Side));
+    AssertEquals('MGT has four directory blocks', 4,
+      Img.Disk.Specification.DirectoryBlocks);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestGetSectorByAllocationBlock;
+var
+  Img: TDSKImage;
+  Spec: TDSKSpecification;
+begin
+  Img := MakeFormatted(0);
+  try
+    Spec := Img.Disk.Specification;
+    AssertTrue('the first data block resolves',
+      Img.Disk.GetSectorByBlock(0) = Img.Disk.Side[0].Track[1].Sector[0]);
+    AssertTrue('the second 1KB block starts two sectors later',
+      Img.Disk.GetSectorByBlock(1) = Img.Disk.Side[0].Track[1].Sector[2]);
+    AssertTrue('a block beyond the disk has no sector',
+      Img.Disk.GetSectorByBlock(Spec.GetBlockCount + 1) = nil);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestDiskUniformityAndFdcErrors;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    AssertTrue('freshly formatted geometry is uniform', Img.Disk.IsUniform(False));
+    AssertFalse('no initial FDC errors', Img.Disk.HasFDCErrors);
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    Sec.FDCStatus[1] := $80; // not an error according to the controller
+    AssertFalse('the status-only bit is ignored', Img.Disk.HasFDCErrors);
+    Sec.FDCStatus[1] := $20;
+    AssertTrue('ST1 data error is reported', Img.Disk.HasFDCErrors);
+    Sec.FDCStatus[1] := 0;
+    Sec.FDCStatus[2] := $40;
+    AssertTrue('ST2 deleted-data flag is reported', Img.Disk.HasFDCErrors);
+
+    Img.Disk.Side[0].Track[10].Sectors := 0;
+    AssertFalse('an empty track changes strict uniformity', Img.Disk.IsUniform(False));
+    AssertTrue('empty tracks may be ignored for uniformity', Img.Disk.IsUniform(True));
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestBootableOnRecognizesChecksumsAndCPC;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    FillChar(Sec.Data, Sec.DataSize, 0);
+    Sec.Data[0] := 1;
+    AssertEquals('checksum 1 indicates PCW 9512', 'Amstrad PCW 9512',
+      Img.Disk.BootableOn);
+    Sec.Data[0] := 3;
+    AssertEquals('checksum 3 indicates Spectrum +3', 'Spectrum +3',
+      Img.Disk.BootableOn);
+    Sec.Data[0] := 254;
+    Sec.Data[1] := 1;
+    AssertEquals('checksum 255 indicates PCW 8256', 'Amstrad PCW 8256',
+      Img.Disk.BootableOn);
+
+  finally
+    Img.Free;
+  end;
+
+  Img := MakeFormatted(2);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    FillChar(Sec.Data, Sec.DataSize, 0);
+    Sec.Data[0] := 1;
+    Sec.Data[1] := 255;
+    AssertEquals('CPC system boot sector uses its sector ID', 'Amstrad CPC 664/6128',
+      Img.Disk.BootableOn);
+    Sec.FDCStatus[1] := $20;
+    AssertEquals('controller error marks boot status as suspect',
+      'Amstrad CPC 664/6128 (Corrupt?)', Img.Disk.BootableOn);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestVariantAndOffsetFeatures;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    AssertFalse('single-copy sector is not variant', Img.HasVariantSectors);
+    AssertFalse('no index offsets initially', Img.HasOffsetInfo);
+    AssertEquals('single copy', 1, Sec.GetCopyCount);
+
+    Sec.DataSize := 1024;
+    Sec.Data[0] := $11;
+    Sec.Data[512] := $22;
+    AssertEquals('two copies inferred from doubled data length', 2, Sec.GetCopyCount);
+    AssertEquals('copy size', 512, Sec.GetCopySize);
+    AssertEquals('second copy starts at its own data', $22, Sec.GetCopy(1)^);
+    AssertTrue('variant copy marks the image as V5', Img.HasVariantSectors);
+    AssertTrue('variant copy implies V5 extensions', Img.HasV5Extensions);
+
+    Sec.IndexPointOffset := 17;
+    AssertTrue('index point offsets are reported', Img.HasOffsetInfo);
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TDskImageTest.TestSpecificationDefaultsAndWriteRoundTrip;
+var
+  Img: TDSKImage;
+  Spec: TDSKSpecification;
+  Sec: TDSKSector;
+begin
+  Img := MakeFormatted(0);
+  try
+    Spec := Img.Disk.Specification;
+    AssertEquals('default block size', 1024, Spec.GetBlockSize);
+    AssertEquals('default usable capacity', 179712, Spec.GetUsableCapacity);
+    AssertEquals('default block count', 175, Spec.GetBlockCount);
+    AssertEquals('default records per track', 36, Spec.GetRecordsPerTrack);
+
+    Spec.Format := dsFormatPCW_SS;
+    Spec.Side := dsSideSingle;
+    Spec.Track := dsTrackSingle;
+    Spec.TracksPerSide := 40;
+    Spec.SectorsPerTrack := 9;
+    Spec.SectorSize := 512;
+    Spec.ReservedTracks := 1;
+    Spec.BlockShift := 3;
+    Spec.DirectoryBlocks := 2;
+    Spec.GapReadWrite := 42;
+    Spec.GapFormat := 82;
+    Spec.Checksum := $5A;
+    AssertTrue('specification writes into a full sector', Spec.Write);
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    AssertEquals('format byte written', 0, Sec.Data[0]);
+    AssertEquals('track count written', 40, Sec.Data[2]);
+    AssertEquals('checksum byte written', $5A, Sec.Data[15]);
+
+    Spec.Identify;
+    AssertEquals('format read back', Ord(dsFormatPCW_SS), Ord(Spec.Format));
+    AssertEquals('checksum read back', $5A, Spec.Checksum);
+    AssertEquals('sector size read back', 512, Spec.SectorSize);
+  finally
+    Img.Free;
+  end;
+end;
+
 // Only the image is asked whether there is anything worth saving, so an edit
 // that marks a sector but not the image was thrown away on close without a
 // prompt. These pin both halves: loading marks nothing, editing marks the image.
@@ -1359,6 +1677,44 @@ begin
         HasMessageLike(Img.Messages, 'does not define'));
     finally
       Img.Free;
+    end;
+  finally
+    DeleteFile(FileName);
+  end;
+end;
+
+procedure TDskImageTest.TestRoundTripExtendedOffsetInfo;
+var
+  Img, Reloaded: TDSKImage;
+  FileName: string;
+  Track: TDSKTrack;
+begin
+  FileName := TempName('.dsk');
+  Img := MakeFormatted(0);
+  try
+    Track := Img.Disk.Side[0].Track[2];
+    Track.BitLength := 6250;
+    Track.Sector[3].IndexPointOffset := 137;
+    Track.Sector[7].IndexPointOffset := 4095;
+    AssertTrue('extended image with offsets saved',
+      Img.SaveFile(FileName, diExtendedDSK, False, False));
+  finally
+    Img.Free;
+  end;
+
+  try
+    Reloaded := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertFalse('saved image is valid', Reloaded.Corrupt);
+      AssertTrue('offset information detected', Reloaded.HasOffsetInfo);
+      AssertEquals('track bit length restored', 6250,
+        Reloaded.Disk.Side[0].Track[2].BitLength);
+      AssertEquals('first sector offset restored', 137,
+        Reloaded.Disk.Side[0].Track[2].Sector[3].IndexPointOffset);
+      AssertEquals('last sector offset restored', 4095,
+        Reloaded.Disk.Side[0].Track[2].Sector[7].IndexPointOffset);
+    finally
+      Reloaded.Free;
     end;
   finally
     DeleteFile(FileName);

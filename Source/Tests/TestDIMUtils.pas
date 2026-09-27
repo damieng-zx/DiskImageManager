@@ -30,7 +30,9 @@ type
     procedure TestBlockShiftToBlockSize;
     procedure TestStrFileSize;
     procedure TestStrBufPos;
+    procedure TestStrBufPosBoundaryConditions;
     procedure TestStrInByteArray;
+    procedure TestStrInByteArrayStartBounds;
     procedure TestCompareBlock;
     procedure TestCompareBlockInsensitive;
     procedure TestCompareBlockStart;
@@ -125,6 +127,18 @@ begin
     StrBufPos([72, 69, 76, 76, 79], 'LLO', 5));
 end;
 
+procedure TUtilsTest.TestStrBufPosBoundaryConditions;
+begin
+  AssertEquals('empty string matches at the start', 0,
+    StrBufPos([65, 66], '', 2));
+  AssertEquals('nonempty text cannot fit a zero-byte sector', -1,
+    StrBufPos([65, 66], 'A', 0));
+  AssertEquals('length cap larger than the buffer is clamped', 1,
+    StrBufPos([65, 66], 'B', 100));
+  AssertEquals('empty buffer with empty search', 0,
+    StrBufPos([], '', 0));
+end;
+
 procedure TUtilsTest.TestStrInByteArray;
 begin
   // 'HELLO WORLD' starting at 0
@@ -137,6 +151,15 @@ begin
   AssertTrue(StrInByteArray([0, 0, 72, 69, 76, 76], 'HELL', 2));
   // A substring that would run past the end of the buffer is not a hit
   AssertFalse(StrInByteArray([88, 88, 72, 69], 'HELL', 2));
+end;
+
+procedure TUtilsTest.TestStrInByteArrayStartBounds;
+begin
+  AssertFalse('negative start is invalid', StrInByteArray([65, 66], 'A', -1));
+  AssertFalse('start at end cannot hold a byte', StrInByteArray([65, 66], 'A', 2));
+  AssertFalse('start past end cannot hold a byte', StrInByteArray([65, 66], 'A', 3));
+  AssertTrue('empty substring matches independent of the offset',
+    StrInByteArray([65, 66], '', -100));
 end;
 
 procedure TUtilsTest.TestCompareBlock;

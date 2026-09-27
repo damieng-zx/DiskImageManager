@@ -38,6 +38,10 @@ type
     procedure TestExtentSizeFlooredAtZero;
     procedure TestEmptyFileWithoutBlocksIsListed;
     procedure TestRenameUpdatesCPMDirectoryEntry;
+    procedure TestRenameRejectsInvalidCPMNameWithoutEditing;
+    procedure TestDirectoryWalkContinuesIntoNextSector;
+    procedure TestDirectorySkipsDeletedAndUnnamedEntries;
+    procedure TestDirectoryUsesEntryAttributesAndUserNumbers;
     procedure TestExtentHighByteJoinsPrimaryFile;
     procedure TestHeaderLengthIsNotSummedAcrossExtents;
   end;
@@ -452,6 +456,166 @@ begin
           TrimRight(StrBlockClean(DirSector(Img).Data, 41, 3)));
         AssertEquals('read-only attribute preserved', 128, DirSector(Img).Data[9] and $80);
         AssertTrue('disk marked changed', Img.IsChanged);
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestRenameRejectsInvalidCPMNameWithoutEditing;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+  Rejected: boolean;
+begin
+  Img := MakePCWDisk;
+  try
+    PlantDirEntry(Img, 1, 0, 2);
+    Img.IsChanged := False;
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        Rejected := False;
+        try
+          FSys.RenameFile(Files[0], 'BAD/NAME.TXT');
+        except
+          on E: EConvertError do Rejected := True;
+        end;
+        AssertTrue('path separators are rejected', Rejected);
+        AssertEquals('directory name is unchanged', 'TESTFILE.BAS', Files[0].FileName);
+        AssertEquals('directory bytes are unchanged', 'TESTFILE',
+          TrimRight(StrBlockClean(DirSector(Img).Data, 1, 8)));
+        AssertFalse('rejected rename does not dirty the image', Img.IsChanged);
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestDirectoryWalkContinuesIntoNextSector;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+  Sec: TDSKSector;
+begin
+  Img := MakePCWDisk;
+  try
+    Sec := DirSector(Img).ParentTrack.Sector[1];
+    FillChar(Sec.Data[0], 32, 0);
+    WriteAscii(Sec, 1, 'SECOND');
+    WriteAscii(Sec, 9, 'DAT');
+    Sec.Data[15] := 1;
+    Sec.Data[16] := 2;
+
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertEquals('entry in the next directory sector is found', 1, Files.Count);
+        AssertEquals('name decoded across sector boundary', 'SECOND.DAT', Files[0].FileName);
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestDirectorySkipsDeletedAndUnnamedEntries;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+  Sec: TDSKSector;
+begin
+  Img := MakePCWDisk;
+  try
+    Sec := DirSector(Img);
+    FillChar(Sec.Data[0], 96, 0);
+    Sec.Data[0] := $E5; // erased slot, old name and allocation are retained
+    WriteAscii(Sec, 1, 'OLDNAME');
+    Sec.Data[15] := 1;
+    Sec.Data[16] := 2;
+    Sec.Data[32] := 0; // active user number but blank name is not a file
+    Sec.Data[32 + 15] := 1;
+    Sec.Data[32 + 16] := 2;
+    Sec.Data[64] := 0;
+    WriteAscii(Sec, 65, 'LIVE');
+    Sec.Data[64 + 15] := 1;
+    Sec.Data[64 + 16] := 2;
+
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertEquals('only the named live file is listed', 1, Files.Count);
+        AssertEquals('live name', 'LIVE', Files[0].FileName);
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestDirectoryUsesEntryAttributesAndUserNumbers;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+  Sec: TDSKSector;
+begin
+  Img := MakePCWDisk;
+  try
+    Sec := DirSector(Img);
+    FillChar(Sec.Data[0], 64, 0);
+    Sec.Data[0] := 1;
+    WriteAscii(Sec, 1, 'USERONE');
+    WriteAscii(Sec, 9, 'TXT');
+    Sec.Data[9] := Sec.Data[9] or $80; // read-only is encoded in extension bit 7
+    Sec.Data[10] := Sec.Data[10] or $80; // system file
+    Sec.Data[12] := 0;
+    Sec.Data[15] := 1;
+    Sec.Data[16] := 2;
+
+    Sec.Data[32] := 2;
+    WriteAscii(Sec, 33, 'USERTWO');
+    WriteAscii(Sec, 41, 'TXT');
+    Sec.Data[32 + 12] := 0;
+    Sec.Data[32 + 15] := 1;
+    Sec.Data[32 + 16] := 3;
+
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertEquals('same names belonging to different users remain distinct',
+          2, Files.Count);
+        AssertEquals('first user', 1, Files[0].User);
+        AssertTrue('read-only attribute decoded', Files[0].ReadOnly);
+        AssertTrue('system attribute decoded', Files[0].System);
+        AssertEquals('second user', 2, Files[1].User);
+        AssertFalse('attributes do not leak between entries', Files[1].ReadOnly);
+        AssertFalse('system flag does not leak', Files[1].System);
       finally
         FreeDirectory(Files);
       end;

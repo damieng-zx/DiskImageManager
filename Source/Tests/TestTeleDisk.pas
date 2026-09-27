@@ -41,6 +41,8 @@ type
     procedure TestRejectsOldAdvancedCompression;
     procedure TestTruncatedImageIsCorrupt;
     procedure TestTruncatedDataTrimsUnreadSectors;
+    procedure TestSectorDecodersFillShortFields;
+    procedure TestSectorDecodersRejectMalformedFields;
   end;
 
 implementation
@@ -576,6 +578,47 @@ begin
   finally
     Img.Free;
   end;
+end;
+
+procedure TTeleDiskTest.TestSectorDecodersFillShortFields;
+var
+  Dest: array[0..7] of byte;
+begin
+  AssertTrue('short raw fields decode and pad',
+    DecodeTD0SectorData([$41, $42], TD0EncodingRaw, Dest, SizeOf(Dest), $E5));
+  AssertEquals('raw first byte', $41, Dest[0]);
+  AssertEquals('raw short-field filler', $E5, Dest[2]);
+  AssertEquals('raw final filler', $E5, Dest[7]);
+
+  AssertTrue('repeat words decode and pad',
+    DecodeTD0SectorData([2, 0, $12, $34], TD0EncodingRepeat, Dest, SizeOf(Dest), $E5));
+  AssertEquals('repeated word first byte', $12, Dest[0]);
+  AssertEquals('repeated word fourth byte', $34, Dest[3]);
+  AssertEquals('repeated field filler', $E5, Dest[4]);
+
+  AssertTrue('literal and repeated RLE runs decode',
+    DecodeTD0SectorData([0, 2, $41, $42, 1, 2, $58, $59],
+      TD0EncodingRLE, Dest, SizeOf(Dest), $E5));
+  AssertEquals('RLE literal run', $42, Dest[1]);
+  AssertEquals('RLE repeated word', $58, Dest[2]);
+  AssertEquals('second repeated word', $59, Dest[5]);
+  AssertEquals('RLE short field filler', $E5, Dest[6]);
+end;
+
+procedure TTeleDiskTest.TestSectorDecodersRejectMalformedFields;
+var
+  Dest: array[0..7] of byte;
+begin
+  AssertFalse('repeat encoding needs a count and word',
+    DecodeTD0SectorData([1, 0, $41], TD0EncodingRepeat, Dest, SizeOf(Dest), $E5));
+  AssertFalse('RLE control needs a count byte',
+    DecodeTD0SectorData([0], TD0EncodingRLE, Dest, SizeOf(Dest), $E5));
+  AssertFalse('literal RLE run must fit the stored field',
+    DecodeTD0SectorData([0, 3, $41], TD0EncodingRLE, Dest, SizeOf(Dest), $E5));
+  AssertFalse('pattern RLE run must include its whole word',
+    DecodeTD0SectorData([1, 1, $41], TD0EncodingRLE, Dest, SizeOf(Dest), $E5));
+  AssertFalse('unknown encoding rejected',
+    DecodeTD0SectorData([], $FF, Dest, SizeOf(Dest), $E5));
 end;
 
 initialization

@@ -31,6 +31,9 @@ type
     procedure TestStringArraySingleString;
     procedure TestStringArrayTrimsPadding;
     procedure TestStringArrayHeaderClampedToData;
+    procedure TestStringArrayMapsExtendedCharactersAndTokens;
+    procedure TestStringArrayRejectsInvalidDimensions;
+    procedure TestPlainTextRTFHandlesLineEndingsAndEscaping;
   end;
 
 implementation
@@ -234,6 +237,54 @@ begin
     // Claims 65535 x 65535 elements, with four bytes of data behind it
     AssertEquals('AB' + CRLF + 'CD' + CRLF,
       P.DecodeStringArray([$02, $FF, $FF, $02, $00, $41, $42, $43, $44]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TSinclairBasicTest.TestStringArrayMapsExtendedCharactersAndTokens;
+var
+  P: TSinclairBasicParser;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    // Character arrays contain literal Spectrum bytes, not BASIC number
+    // markers: pound glyph, the mode-dependent token, and block graphics.
+    AssertEquals('\SPECTRUM[GRAPH]' + CRLF,
+      P.DecodeStringArray([$01, $03, $00, $A1, $A3, $80]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TSinclairBasicTest.TestStringArrayRejectsInvalidDimensions;
+var
+  P: TSinclairBasicParser;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    AssertEquals('empty data has no array header', '', P.DecodeStringArray([]));
+    AssertEquals('zero dimensions are invalid', '', P.DecodeStringArray([$00]));
+    AssertEquals('truncated dimension table is invalid', '',
+      P.DecodeStringArray([$02, $02, $00, $03]));
+    AssertEquals('zero-length dimension is invalid', '',
+      P.DecodeStringArray([$01, $00, $00]));
+  finally
+    P.Free;
+  end;
+end;
+
+procedure TSinclairBasicTest.TestPlainTextRTFHandlesLineEndingsAndEscaping;
+var
+  P: TSinclairBasicParser;
+  RTF: string;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    RTF := P.DecodeTextRTF([Ord('A'), Ord(','), Ord('{'), Ord('B'), Ord('}'),
+      $0D, $0A, Ord('C'), $0A, Ord('D'), $0D, Ord('E')]);
+    AssertTrue('CRLF and lone CR/LF are normalized to paragraphs',
+      Pos('A,\{B\}\par C\par D\par E', RTF) > 0);
   finally
     P.Free;
   end;
