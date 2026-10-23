@@ -9,13 +9,12 @@ object frmAbout: TfrmAbout
   ClientHeight = 95
   ClientWidth = 367
   Color = clBtnFace
-  DesignTimePPI = 96
   Font.CharSet = ANSI_CHARSET
   Font.Color = clWindowText
   Font.Height = -11
   Font.Name = 'Tahoma'
   Position = poOwnerFormCenter
-  LCLVersion = '4.2.0.0'
+  LCLVersion = '4.8.0.0'
   OnCreate = FormCreate
   OnShow = FormShow
   object imgAppIcon: TImage
@@ -185,8 +184,8 @@ object frmAbout: TfrmAbout
     Left = 12
     Height = 13
     Top = 67
-    Width = 229
-    Caption = 'https://github.com/damieng/DiskImageManager'
+    Width = 244
+    Caption = 'https://github.com/damieng-zx/DiskImageManager'
     Font.CharSet = ANSI_CHARSET
     Font.Color = clBlue
     Font.Height = -11

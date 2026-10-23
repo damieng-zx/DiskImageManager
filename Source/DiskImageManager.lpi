@@ -147,8 +147,9 @@
         <UnitName Value="Settings"/>
       </Unit8>
       <Unit9>
-        <Filename Value="FileSystem.pas"/>
+        <Filename Value="filesystem.pas"/>
         <IsPartOfProject Value="True"/>
+        <UnitName Value="FileSystem"/>
       </Unit9>
       <Unit10>
         <Filename Value="FormatAnalysis.pas"/>
@@ -222,12 +223,10 @@
       <Unit24>
         <Filename Value="LZHuf.pas"/>
         <IsPartOfProject Value="True"/>
-        <UnitName Value="LZHuf"/>
       </Unit24>
       <Unit25>
         <Filename Value="TeleDisk.pas"/>
         <IsPartOfProject Value="True"/>
-        <UnitName Value="TeleDisk"/>
       </Unit25>
       <Unit26>
         <Filename Value="DIMUtils.pas"/>

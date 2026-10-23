@@ -1,7 +1,7 @@
 object frmMain: TfrmMain
-  Left = 1624
+  Left = 1315
   Height = 372
-  Top = 517
+  Top = 507
   Width = 556
   AllowDropFiles = True
   ClientHeight = 372
@@ -12,7 +12,7 @@ object frmMain: TfrmMain
   Font.Quality = fqDraft
   Menu = mnuMain
   Position = poDesktopCenter
-  LCLVersion = '4.2.0.0'
+  LCLVersion = '4.8.0.0'
   OnClose = FormClose
   OnCreate = FormCreate
   OnDestroy = FormDestroy
