@@ -141,6 +141,14 @@ begin
   Result := Trim(StringReplace(FontToDescription(ThisFont), ',', ' ', [rfReplaceAll]));
 end;
 
+// Autosizing a column on win32 is asked for by assigning one of these negative
+// sentinels rather than a width: the widgetset passes the value straight on to
+// ListView_SetColumnWidth, which is the only way it knows to measure. They are
+// therefore not widths and cannot be made to look like one - TListColumn.Width
+// is a TWidth, which starts at zero - so the range check stands down for these
+// assignments, as it does inside the LCL for the same reason. Without this the
+// unit does not compile at all once range checks are turned on.
+{$PUSH}{$R-}{$WARN 4110 OFF}
 procedure AutoResizeColumn(const Column: TListColumn; Mode: integer);
 var
   Width: integer;
@@ -157,6 +165,7 @@ begin
     LVSCW_AUTOSIZE_USEHEADER: Column.Width := LVSCW_AUTOSIZE_USEHEADER;
   end;
 end;
+{$POP}
 
 procedure AutoResizeListView(const ListView: TListView; const Mode: integer);
 var
