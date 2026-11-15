@@ -503,6 +503,17 @@ function GetFDCSizeBytes(FDCSize: byte): word;
 
 function GetTrackFileSize(TrackDataSize: integer): integer;
 
+// Bytes a sector takes in a DSK file. A standard image has no field for a
+// sector's length, so the only length the reader can reconstruct is the one
+// the size code promises: a sector holding more is cut to it and one holding
+// less is padded out to it. An extended image states the length in each
+// sector's own header, so it carries exactly what the sector holds.
+function GetSectorFileSize(Sector: TDSKSector; SaveFileFormat: TDSKImageFormat): integer;
+
+// The sector data bytes a whole track takes in a DSK file, which is what its
+// sectors are written as rather than what they hold.
+function GetTrackFileDataSize(Track: TDSKTrack; SaveFileFormat: TDSKImageFormat): integer;
+
 implementation
 
 uses FormatAnalysis, LZHuf, Windows;
@@ -1596,6 +1607,22 @@ begin
   end;
 end;
 
+// Write one sector's data field as Count bytes: what the sector holds, cut to
+// Count if it holds more, then filled out to Count with the track's filler if
+// it holds less. A standard DSK records no length for a sector, so this is the
+// only way to keep the sectors that follow it where their headers say they are.
+procedure WriteSectorData(DiskFile: TFileStream; Sector: TDSKSector;
+  Count: integer; Filler: byte);
+var
+  Written: integer;
+begin
+  Written := Sector.DataSize;
+  if Written > Count then Written := Count;
+  if Written > 0 then
+    DiskFile.WriteBuffer(Sector.Data, Written);
+  WriteFiller(DiskFile, Count - Written, Filler);
+end;
+
 // Save a DSK file
 function TDSKImage.SaveFileDSK(DiskFile: TFileStream; SaveFileFormat: TDSKImageFormat; Compress: boolean): boolean;
 var
@@ -1604,8 +1631,9 @@ var
   SCTInfoBlock: TSCTInfoBlock;
   OFFInfoBlock: TOFFInfoBlock;
   SIdx, TIdx, EIdx: integer;
+  TrackDataSize: integer;
   Side: TDSKSide;
-  Track: TDSKTrack;
+  Track, CurTrack: TDSKTrack;
 begin
   Result := False;
   FillChar(DSKInfoBlock, SizeOf(DSKInfoBlock), 0);
@@ -1632,9 +1660,9 @@ begin
             if (Compress and (Disk.Side[SIdx].Track[TIdx].Sectors = 0)) then
               Disk_ExtTrackSize[(TIdx * Disk_NumSides) + SIdx] := 0
             else
-            if Disk.Side[SIdx].Track[TIdx].Size > 0 then
+            if GetTrackFileDataSize(Disk.Side[SIdx].Track[TIdx], SaveFileFormat) > 0 then
               Disk_ExtTrackSize[(TIdx * Disk_NumSides) + SIdx] :=
-                GetTrackFileSize(Disk.Side[SIdx].Track[TIdx].Size) div TrackBlockSize
+                GetTrackFileSize(GetTrackFileDataSize(Disk.Side[SIdx].Track[TIdx], SaveFileFormat)) div TrackBlockSize
             else
               Disk_ExtTrackSize[(TIdx * Disk_NumSides) + SIdx] := 0;
       end;
@@ -1642,10 +1670,10 @@ begin
       begin
         DiskInfoBlock := DiskInfoStandard;
         // A standard image gives every track the one size, so the largest track
-        // has to set it. Track.Size counts only sector data where the header's
-        // size also counts the Track-Info block, and comparing the two straight
-        // let a track larger than the first go unnoticed and be written past
-        // where the header said the next one starts.
+        // has to set it, and the header's size also counts the Track-Info
+        // block. Comparing only the size the sectors hold let a track whose
+        // sectors are padded out to their size codes go unnoticed, and it was
+        // then written past where the header said the next one starts.
         Disk_StdTrackSize := 0;
         for SIdx := 0 to Disk_NumSides - 1 do
           for TIdx := 0 to Disk_NumTracks - 1 do
@@ -1653,8 +1681,9 @@ begin
             Track := Disk.Side[SIdx].Track[TIdx];
             Track.DataRate := drUnknown;
             Track.RecordingMode := rmUnknown;
-            if (Track.Size > 0) and (GetTrackFileSize(Track.Size) > Disk_StdTrackSize) then
-              Disk_StdTrackSize := GetTrackFileSize(Track.Size);
+            if (GetTrackFileDataSize(Track, SaveFileFormat) > 0) and
+              (GetTrackFileSize(GetTrackFileDataSize(Track, SaveFileFormat)) > Disk_StdTrackSize) then
+              Disk_StdTrackSize := GetTrackFileSize(GetTrackFileDataSize(Track, SaveFileFormat));
           end;
       end;
     end;
@@ -1665,7 +1694,8 @@ begin
   for TIdx := 0 to DSKInfoBlock.Disk_NumTracks - 1 do
     for Side in Disk.Side do
     begin
-      with Side.Track[TIdx] do
+      CurTrack := Side.Track[TIdx];
+      with CurTrack do
       begin
         // Set various track info properties
         FillChar(TRKInfoBlock, SizeOf(TRKInfoBlock), 0);
@@ -1710,18 +1740,24 @@ begin
 
           DiskFile.WriteBuffer(TRKInfoBlock, SizeOf(TRKInfoBlock));
 
-          // Now write actual sector data
+          // Now write actual sector data. A standard image records no length
+          // per sector, so each is written at the length its size code gives:
+          // writing what the sector holds instead left every sector after a
+          // short one short of where its own header said it began, and the
+          // loader read it back shifted into the sector before it.
+          TrackDataSize := GetTrackFileDataSize(CurTrack, SaveFileFormat);
           for EIdx := 0 to Sectors - 1 do
-            DiskFile.WriteBuffer(Sector[EIdx].Data, Sector[EIdx].DataSize);
+            WriteSectorData(DiskFile, Sector[EIdx],
+              GetSectorFileSize(Sector[EIdx], SaveFileFormat), Filler);
 
           // The size a header gives a track is a promise about where the next
           // one starts, and it is made in whole 256-byte blocks. Writing only
           // the sectors broke that promise for any track that did not fill its
           // last block, leaving every track after it at the wrong offset.
           if SaveFileFormat = diStandardDSK then
-            WriteFiller(DiskFile, DSKInfoBlock.Disk_StdTrackSize - TrackBlockSize - Size, Filler)
+            WriteFiller(DiskFile, DSKInfoBlock.Disk_StdTrackSize - TrackBlockSize - TrackDataSize, Filler)
           else
-            WriteFiller(DiskFile, GetTrackFileSize(Size) - TrackBlockSize - Size, Filler);
+            WriteFiller(DiskFile, GetTrackFileSize(TrackDataSize) - TrackBlockSize - TrackDataSize, Filler);
         end
         else
         if (SaveFileFormat = diStandardDSK) and (DSKInfoBlock.Disk_StdTrackSize > 0) then
@@ -3629,6 +3665,30 @@ end;
 function GetTrackFileSize(TrackDataSize: integer): integer;
 begin
   Result := ((TrackDataSize + TrackBlockSize - 1) div TrackBlockSize + 1) * TrackBlockSize;
+end;
+
+function GetSectorFileSize(Sector: TDSKSector; SaveFileFormat: TDSKImageFormat): integer;
+begin
+  if SaveFileFormat <> diStandardDSK then
+    // An extended image carries the length in the sector's own header
+    Result := Sector.DataSize
+  else
+  if Sector.FDCSize <= High(FDCSectorSizes) then
+    // A standard image only carries the size code, and the loader rebuilds the
+    // length from it, so that is the length that has to go in the file
+    Result := FDCSectorSizes[Sector.FDCSize]
+  else
+    // The loader gives a sector whose size code names no size the largest one
+    Result := MaxSectorSize;
+end;
+
+function GetTrackFileDataSize(Track: TDSKTrack; SaveFileFormat: TDSKImageFormat): integer;
+var
+  Sector: TDSKSector;
+begin
+  Result := 0;
+  for Sector in Track.Sector do
+    Result := Result + GetSectorFileSize(Sector, SaveFileFormat);
 end;
 
 end.

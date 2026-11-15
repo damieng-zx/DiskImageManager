@@ -91,6 +91,7 @@ type
     procedure TestSectorEditMarksImageChanged;
     procedure TestSectorFillMarksImageChanged;
     procedure TestTrackUnformatMarksImageChanged;
+    procedure TestStandardSaveWritesLengthedSectorsAtTheirSizeCode;
   end;
 
 implementation
@@ -1878,6 +1879,53 @@ begin
     AssertEquals('checksum byte was not changed', $E5, Sec.Data[15]);
   finally
     Img.Free;
+  end;
+end;
+
+// A standard image has no per-sector length field, so the loader sizes every
+// sector from its FDC size code. A sector holding fewer bytes than its code
+// promises therefore has to be padded out to that length in the file: writing
+// only what it holds slid every later sector on the track forward, and the
+// loader read one sector's data back as the tail of the one before it.
+procedure TDskImageTest.TestStandardSaveWritesLengthedSectorsAtTheirSizeCode;
+var
+  Img: TDSKImage;
+  FileName: string;
+  Track: TDSKTrack;
+begin
+  FileName := TempName('.dsk');
+  try
+    Img := MakeFormatted(0);
+    try
+      Track := Img.Disk.Side[0].Track[0];
+      // Code 2 promises 512 bytes but the sector holds 256, as the Sector
+      // Properties window can leave it
+      Track.Sector[0].FDCSize := 2;
+      Track.Sector[0].DataSize := 256;
+      FillChar(Track.Sector[0].Data[0], 256, $AA);
+      FillChar(Track.Sector[1].Data[0], 512, $BB);
+      AssertTrue('saved', Img.SaveFile(FileName, diStandardDSK, True, False));
+    finally
+      Img.Free;
+    end;
+
+    Img := TDSKImage.CreateFromFile(FileName);
+    try
+      Track := Img.Disk.Side[0].Track[0];
+      AssertEquals('sector 0 reloads at its size code', 512,
+        Track.Sector[0].DataSize);
+      AssertEquals('and keeps its own data', $AA, Track.Sector[0].Data[0]);
+      AssertEquals('padded to its size code with the track filler',
+        Track.Filler, Track.Sector[0].Data[256]);
+      AssertEquals('the next sector starts where its header says', $BB,
+        Track.Sector[1].Data[0]);
+      AssertEquals('later sectors are untouched', 512,
+        Track.Sector[8].DataSize);
+    finally
+      Img.Free;
+    end;
+  finally
+    if FileExists(FileName) then DeleteFile(FileName);
   end;
 end;
 
