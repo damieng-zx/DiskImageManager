@@ -43,6 +43,7 @@ type
     procedure TestTruncatedDataTrimsUnreadSectors;
     procedure TestSectorDecodersFillShortFields;
     procedure TestSectorDecodersRejectMalformedFields;
+    procedure TestLoadedTrackReportsASectorSizeToFallBackOn;
   end;
 
 implementation
@@ -619,6 +620,43 @@ begin
     DecodeTD0SectorData([1, 1, $41], TD0EncodingRLE, Dest, SizeOf(Dest), $E5));
   AssertFalse('unknown encoding rejected',
     DecodeTD0SectorData([], $FF, Dest, SizeOf(Dest), $E5));
+end;
+
+// A Teledisk track states each sector's size in that sector's own header and
+// never states one for the track. The sector commands and the sector
+// properties window fall back to the track's size when a sector names none,
+// and a track left at 0 meant "blank sector data" erased the sector rather
+// than blanking it.
+procedure TTeleDiskTest.TestLoadedTrackReportsASectorSizeToFallBackOn;
+var
+  Img, Reloaded: TDSKImage;
+  Spec: TDSKFormatSpecification;
+  FileName: string;
+begin
+  FileName := TempName('.td0');
+  Img := TDSKImage.Create;
+  Spec := TDSKFormatSpecification.Create(0); // PCW 40T SS 9 x 512
+  try
+    Img.Disk.Format(Spec);
+  finally
+    Spec.Free;
+  end;
+
+  try
+    AssertTrue('save succeeded: ' + Img.Messages.Text,
+      Img.SaveFile(FileName, diTeleDisk, False, False));
+
+    Reloaded := TDSKImage.CreateFromFile(FileName);
+    try
+      AssertEquals('the track names the size its sectors hold', 512,
+        Reloaded.Disk.Side[0].Track[0].SectorSize);
+    finally
+      Reloaded.Free;
+    end;
+  finally
+    Img.Free;
+    if FileExists(FileName) then DeleteFile(FileName);
+  end;
 end;
 
 initialization

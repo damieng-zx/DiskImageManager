@@ -264,10 +264,16 @@ begin
     if FSector.DataSize <> 0 then
       udSize.Position := FSector.DataSize
     else
-      // The track's sector size is already a count of bytes. Multiplying it by
-      // 256 offered 131072 for a 512 byte sector, which the spin control holds
-      // in a SmallInt: 512 came out as 0 and 128 as -32768.
-      udSize.Position := FSector.ParentTrack.SectorSize;
+    // The track's sector size is already a count of bytes. Multiplying it by
+    // 256 offered 131072 for a 512 byte sector, which the spin control holds
+    // in a SmallInt: 512 came out as 0 and 128 as -32768.
+    //
+    // A track need not state a size of its own - a Teledisk track states each
+    // sector's instead - and offering 0 there made the sector look unformatted.
+    if FSector.ParentTrack.SectorSize <> 0 then
+      udSize.Position := FSector.ParentTrack.SectorSize
+    else
+      udSize.Position := GetFDCSizeBytes(FSector.FDCSize);
 
   UpdateFill;
 end;

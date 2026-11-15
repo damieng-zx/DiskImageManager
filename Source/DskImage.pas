@@ -1336,6 +1336,12 @@ begin
 
       TD0Track.Filler := TD0Filler;
       TD0Track.GapLength := TD0GapLength;
+      // Teledisk states each sector's size in its own header, so a track has no
+      // one size of its own to take. What it does have is one its sectors hold,
+      // which is what the sector commands and the sector properties window fall
+      // back to when a sector names no size itself. Leaving this at 0 made
+      // "blank sector data" erase the sector instead of blanking it.
+      TD0Track.SectorSize := 0;
       case Header.DataRate and TD0RateMask of
         TD0Rate500: TD0Track.DataRate := drHighDensity;
         else
@@ -1416,6 +1422,16 @@ begin
             end;
           end;
           AdvertisedSize := DataSize;
+        end;
+
+      // The size to fall back to for a sector that names none: the one most of
+      // the track's sectors actually hold
+      TD0Track.SectorSize := 0;
+      for EIdx := 0 to TD0Track.Sectors - 1 do
+        if TD0Track.Sector[EIdx].DataSize > 0 then
+        begin
+          TD0Track.SectorSize := TD0Track.Sector[EIdx].DataSize;
+          break;
         end;
     end;
 

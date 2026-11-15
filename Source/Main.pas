@@ -2038,11 +2038,22 @@ end;
 procedure TfrmMain.itmSectorBlankDataClick(Sender: TObject);
 var
   Sector: TDSKSector;
+  BlankSize: word;
 begin
   Sector := GetSelectedSector(popSector.PopupComponent);
   if (Sector <> nil) and (ConfirmChange('format', 'sector')) then
   begin
-    Sector.DataSize := Sector.ParentTrack.SectorSize;
+    // A track need not state a size of its own - a Teledisk track states each
+    // sector's instead - and taking that as the sector's new size blanked
+    // nothing and erased the sector. A sector already holding data keeps its
+    // length, and only one that has none has to fall back to what the size
+    // code says it should be.
+    BlankSize := Sector.ParentTrack.SectorSize;
+    if BlankSize = 0 then
+      BlankSize := Sector.DataSize;
+    if BlankSize = 0 then
+      BlankSize := GetFDCSizeBytes(Sector.FDCSize);
+    Sector.DataSize := BlankSize;
     Sector.FillSector(Sector.ParentTrack.Filler);
     // FillSector only notices a change when the fill byte differs, and the size
     // was set here regardless, so mark it either way
