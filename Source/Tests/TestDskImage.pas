@@ -59,6 +59,7 @@ type
     procedure TestSectorLayoutUnchangedWhenNumberingFromZero;
     procedure TestSectorLayoutUnchangedWhenNumberingWraps;
     procedure TestSectorIDsSurviveANegativeTrackSkew;
+    procedure TestSectorIDsSurviveAnInterleaveWiderThanTheTrack;
     procedure TestToDataRateRejectsValuesOutsideTheEnum;
     procedure TestToRecordingModeRejectsValuesOutsideTheEnum;
     procedure TestLoadClampsTrackDataRateAndRecordingMode;
@@ -1829,6 +1830,40 @@ begin
     end;
   finally
     IDs.Free;
+  end;
+end;
+
+// An interleave as wide as the track or wider steps clean off the end of the
+// sector table instead of onto another sector. The step was normalised by one
+// track at most, and Pascal's mod keeps the sign of what it divides, so the
+// index went negative and the table was read and written before its start. The
+// New disk dialog offers -127..127, so a plain nine-sector track can be asked
+// for it.
+procedure TDskImageTest.TestSectorIDsSurviveAnInterleaveWiderThanTheTrack;
+const
+  Interleaves: array[0..3] of shortint = (-20, -9, 9, 20);
+var
+  IDs: TStringList;
+  Idx, ID, Seen: integer;
+  Interleave: shortint;
+begin
+  for Interleave in Interleaves do
+  begin
+    IDs := LayoutFrom(1, Interleave, 9, 0, 0);
+    try
+      AssertEquals(Format('interleave %d: one ID per sector', [Interleave]),
+        9, IDs.Count);
+      for ID := 1 to 9 do
+      begin
+        Seen := 0;
+        for Idx := 0 to IDs.Count - 1 do
+          if IDs[Idx] = IntToStr(ID) then Inc(Seen);
+        AssertEquals(Format('interleave %d: ID %d used exactly once',
+          [Interleave, ID]), 1, Seen);
+      end;
+    finally
+      IDs.Free;
+    end;
   end;
 end;
 

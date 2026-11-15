@@ -6,6 +6,7 @@
 ### Fixes
 - Save a standard DSK image with sectors that hold fewer bytes than their size code: every sector after one was written short, so reloading read one sector's data as the tail of the one before it
 - Keep a formatted track whose sectors carry no data field when saving, instead of dropping it from an extended image or zeroing its sector entries in a standard one
+- Keep the sector IDs of a track whose interleave is as wide as the track or wider within the table, instead of indexing outside it and handing out duplicate and missing IDs
 
 ## 2.12.0 (14 July 2026)
 ### Changes

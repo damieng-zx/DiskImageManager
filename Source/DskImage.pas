@@ -3545,8 +3545,12 @@ begin
     Taken[SIdx mod SectorsPerTrack] := True;
     Inc(LastSectorID);
     SIdx := SIdx + Interleave;
-    if SIdx < 0 then
-      SIdx := SectorsPerTrack + SIdx;
+    // An interleave the track cannot space out - as wide as the track or wider
+    // - leaves SIdx more than one whole track outside the table, and Pascal's
+    // mod keeps the sign of what it divides, so indexing with it read and wrote
+    // before the start of the table. The New disk dialog offers -127..127, so
+    // this has to be brought back into range however far out it lands.
+    SIdx := ((SIdx mod SectorsPerTrack) + SectorsPerTrack) mod SectorsPerTrack;
   end;
 end;
 
