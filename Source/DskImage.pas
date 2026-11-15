@@ -1713,8 +1713,12 @@ begin
           for TIdx := 0 to Disk_NumTracks - 1 do
           begin
             Track := Disk.Side[SIdx].Track[TIdx];
-            Track.DataRate := drUnknown;
-            Track.RecordingMode := rmUnknown;
+            // Neither a track's data rate nor its recording mode is written by
+            // a standard image, so there is nothing to prepare here. Clearing
+            // them on the track used to stand in for that, and it edited the
+            // image being saved: "save a copy as Standard DSK" stripped the
+            // v5 information from the image that stayed open, and the save
+            // then marked it unchanged, so the loss was never mentioned.
             if (Track.Sectors > 0) and
               (GetTrackFileSize(GetTrackFileDataSize(Track, SaveFileFormat)) > Disk_StdTrackSize) then
               Disk_StdTrackSize := GetTrackFileSize(GetTrackFileDataSize(Track, SaveFileFormat));

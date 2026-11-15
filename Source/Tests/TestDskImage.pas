@@ -96,6 +96,7 @@ type
     procedure TestSaveKeepsTrackWhoseSectorsHoldNoData;
     procedure TestSpecificationSizeCodeMatchesASectorSize;
     procedure TestSpecificationCapacitySurvivesAnImpossibleXDpb;
+    procedure TestSavingACopyAsStandardDSKLeavesTheImageAlone;
   end;
 
 implementation
@@ -2096,6 +2097,40 @@ begin
       High(word), Spec.GetBlockCount);
   finally
     Img.Free;
+  end;
+end;
+
+// A save must not edit what it is saving. A standard image has no field for a
+// track's data rate or recording mode, and the writer used to clear them on the
+// track instead of simply not writing them - so "save a copy as Standard DSK"
+// stripped the v5 information out of the image that stayed open. Saving a copy
+// does not mark the image unchanged, so nothing then warned about the loss.
+procedure TDskImageTest.TestSavingACopyAsStandardDSKLeavesTheImageAlone;
+var
+  Img: TDSKImage;
+  FileName: string;
+  Track: TDSKTrack;
+begin
+  FileName := TempName('.dsk');
+  try
+    Img := MakeFormatted(0);
+    try
+      Track := Img.Disk.Side[0].Track[0];
+      Track.DataRate := drHighDensity;
+      Track.RecordingMode := rmFM;
+
+      AssertTrue('saved', Img.SaveFile(FileName, diStandardDSK, True, False));
+
+      Track := Img.Disk.Side[0].Track[0];
+      AssertEquals('the track keeps its data rate', Ord(drHighDensity),
+        Ord(Track.DataRate));
+      AssertEquals('and its recording mode', Ord(rmFM),
+        Ord(Track.RecordingMode));
+    finally
+      Img.Free;
+    end;
+  finally
+    if FileExists(FileName) then DeleteFile(FileName);
   end;
 end;
 
