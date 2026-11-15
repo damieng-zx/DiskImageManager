@@ -223,6 +223,11 @@ type
     FNavHistory: TObjectList;
     FNavIndex: integer;
     FNavigating: boolean;
+    // The tree reports a selection change by message rather than during the
+    // assignment that made it, so a navigation that sets the selection has a
+    // change still to come after it has finished. That one change is the
+    // navigation's own and is not a new place to record.
+    FNavChangePending: boolean;
     // Drag-out gesture: which control armed it on mouse-down, and from where, so
     // a move past the threshold can begin an Explorer-style file drag.
     FDragArmedTree: boolean;
@@ -238,6 +243,7 @@ type
     procedure RecordNavLocation;
     procedure RestoreNavHistory;
     procedure SaveNavHistory;
+    procedure ApplyMenuState;
     function AddTree(Parent: TTreeNode; Text: string; ImageIdx: integer;
       NodeObject: TObject): TTreeNode;
     function GetSelectedData(Sender: TObject; AClass: TClass): TObject;
@@ -325,6 +331,7 @@ begin
   FNavHistory := TObjectList.Create(True);
   FNavIndex := -1;
   FNavigating := False;
+  FNavChangePending := False;
   lvwMain.OnSelectItem := lvwMainSelectItem;
   // Route physical mouse back/forward buttons from across the window
   OnMouseDown := NavMouseDown;
@@ -841,6 +848,13 @@ end;
 
 // Select the node/row described by Loc, letting the normal refresh flow rebuild
 // the detail pane. Guarded so it doesn't record itself as new history.
+//
+// The tree does not report a new selection as it is made: the change arrives
+// later, by message. Waiting for it would leave the list holding the previous
+// node's rows, so the navigation would pick its row out of the wrong list and
+// then have it wiped by the refresh the change finally brings. Rebuild the
+// list here instead, pick the row against that, and let the change that is
+// still on its way be recognised as this navigation's own.
 procedure TfrmMain.NavigateTo(Loc: TNavLocation);
 var
   Node: TTreeNode;
@@ -851,9 +865,12 @@ begin
 
   FNavigating := True;
   try
+    // Only a selection that actually moves the tree owes a change; asking for
+    // the node already selected is answered without one
+    FNavChangePending := tvwMain.Selected <> Node;
     Node.Selected := True;
     Node.MakeVisible;
-    // Selecting the node fires tvwMainChange -> RefreshList, repopulating lvwMain
+    RefreshList;
     if (Loc.ListRow >= 0) and (Loc.ListRow < lvwMain.Items.Count) then
     begin
       lvwMain.Selected := lvwMain.Items[Loc.ListRow];
@@ -1300,9 +1317,18 @@ end;
 
 procedure TfrmMain.tvwMainChange(Sender: TObject; Node: TTreeNode);
 begin
+  if FNavigating then
+    Exit;
+  // A change still owed by NavigateTo: the detail pane and the history entry
+  // are already in place, so acting on it again would only undo them
+  if FNavChangePending then
+  begin
+    FNavChangePending := False;
+    ApplyMenuState;
+    Exit;
+  end;
   UpdateMenus;
-  if not FNavigating then
-    RecordNavLocation;
+  RecordNavLocation;
 end;
 
 // Jump the treeview to the sector clicked on the disk map
@@ -1335,7 +1361,18 @@ begin
     end;
 end;
 
+// The menu and popup state that follows whatever the tree has selected, which
+// the detail list is then rebuilt for
 procedure TfrmMain.UpdateMenus;
+begin
+  ApplyMenuState;
+  RefreshList;
+  UpdateNavButtons;
+end;
+
+// UpdateMenus without rebuilding the detail list, for a caller that has just
+// built it and put a row in it
+procedure TfrmMain.ApplyMenuState;
 var
   AllowImageFile: boolean;
   ObjectData: TObject;
@@ -1372,9 +1409,6 @@ begin
     pnlMemo.Visible := False;
     lvwMain.Visible := True;
   end;
-
-  RefreshList;
-  UpdateNavButtons;
 end;
 
 function TfrmMain.GetTitle(Data: TTreeNode): string;

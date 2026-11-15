@@ -4,10 +4,11 @@
 
 unit DIMComponents;
 
+{$warn 5023 off : no warning about unused units}
 interface
 
 uses
-  DiskMap, LazarusPackageIntf;
+  DiskMap, DIMUtils, LazarusPackageIntf;
 
 implementation
 
