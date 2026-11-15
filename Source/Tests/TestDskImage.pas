@@ -92,6 +92,7 @@ type
     procedure TestSectorFillMarksImageChanged;
     procedure TestTrackUnformatMarksImageChanged;
     procedure TestStandardSaveWritesLengthedSectorsAtTheirSizeCode;
+    procedure TestSaveKeepsTrackWhoseSectorsHoldNoData;
   end;
 
 implementation
@@ -1926,6 +1927,57 @@ begin
     end;
   finally
     if FileExists(FileName) then DeleteFile(FileName);
+  end;
+end;
+
+// A track is formatted whenever it holds sectors, whatever those sectors'
+// data fields hold. A sector with no data field is a state a real image can
+// describe - Teledisk's "skipped" and "no data" flags load as exactly that -
+// and both writers used the amount of data on the track to decide whether the
+// track was there at all. A track of such sectors was dropped by an extended
+// save and had its sector entries zeroed by a standard one, losing every ID,
+// size code and FDC flag on it.
+procedure TDskImageTest.TestSaveKeepsTrackWhoseSectorsHoldNoData;
+var
+  Img: TDSKImage;
+  FileName: string;
+  Track: TDSKTrack;
+  Idx: integer;
+  Fmt: TDSKImageFormat;
+begin
+  for Fmt := diStandardDSK to diExtendedDSK do
+  begin
+    FileName := TempName('.dsk');
+    try
+      Img := MakeFormatted(0);
+      try
+        Track := Img.Disk.Side[0].Track[3];
+        // Every sector an ID with no data field, as a Teledisk image of an
+        // unallocated track leaves them
+        for Idx := 0 to Track.Sectors - 1 do
+        begin
+          Track.Sector[Idx].DataSize := 0;
+          Track.Sector[Idx].FDCStatus[1] := $01;
+        end;
+        AssertTrue('saved', Img.SaveFile(FileName, Fmt, True, False));
+      finally
+        Img.Free;
+      end;
+
+      Img := TDSKImage.CreateFromFile(FileName);
+      try
+        Track := Img.Disk.Side[0].Track[3];
+        AssertEquals(Format('%s: the track keeps its sector count', [DSKImageFormats[Fmt]]),
+          9, Track.Sectors);
+        AssertEquals('and their FDC status', $01, Track.Sector[0].FDCStatus[1]);
+        AssertEquals('and the track after it is whole', 9,
+          Img.Disk.Side[0].Track[4].Sectors);
+      finally
+        Img.Free;
+      end;
+    finally
+      if FileExists(FileName) then DeleteFile(FileName);
+    end;
   end;
 end;
 

@@ -775,6 +775,7 @@ var
   TrackSizeIdx: integer;
   SizeT: word;
   FoundIncorrectTrackMarkers: boolean;
+  TrackPresent: boolean;
   NextTrackPosition: integer;
   ErrorMessage: string;
   RecoveredTracks, RecoveredSize: integer;
@@ -826,13 +827,23 @@ begin
     begin
       with Disk.Side[SIdx].Track[TIdx] do
       begin
+        // Whether the header says this track is in the file at all, which is
+        // not the same as saying it has sector data: a formatted track whose
+        // sectors all have empty data fields is still a Track-Info block.
+        TrackPresent := False;
         case FileFormat of
           // A standard image with nothing formatted on it records a track size
           // of 0, which this app writes itself, and SizeT is unsigned: taking
-          // the Track-Info block off a size that never counted one wraps round
+          // the Track-Info block off a size that never counted one wraps round.
+          // A size of exactly one block is a formatted track whose sectors
+          // hold no data, so it is there to be read even though nothing follows
+          // the header.
           diStandardDSK:
-            if DSKInfoBlock.Disk_StdTrackSize > 256 then
-              SizeT := DSKInfoBlock.Disk_StdTrackSize - 256
+            if DSKInfoBlock.Disk_StdTrackSize >= TrackBlockSize then
+            begin
+              SizeT := DSKInfoBlock.Disk_StdTrackSize - 256;
+              TrackPresent := True;
+            end
             else
               SizeT := 0;
           diExtendedDSK:
@@ -847,6 +858,10 @@ begin
               SizeT := 0
             else
             begin
+              // The entry counts the Track-Info block, so any entry at all
+              // means the track is there. An entry of one block is a track
+              // whose sectors carry no data, and SizeT below is then 0.
+              TrackPresent := DSKInfoBlock.Disk_ExtTrackSize[TrackSizeIdx] > 0;
               SizeT := (DSKInfoBlock.Disk_ExtTrackSize[TrackSizeIdx] * 256);
               if (SizeT > 0) then
                 SizeT := SizeT - 256; // Remove track-info size
@@ -864,17 +879,18 @@ begin
         // Some writers (e.g. CPDRead) emit an Extended DSK with a blank track-
         // size table even though real track data follows. Recover by reading
         // the actual Track-Info block at the current position.
-        if (FileFormat = diExtendedDSK) and (SizeT = 0) then
+        if (FileFormat = diExtendedDSK) and (not TrackPresent) then
         begin
           RecoveredSize := RecoverExtTrackSize(DiskFile, TIdx, SIdx);
           if RecoveredSize > 256 then
           begin
             SizeT := RecoveredSize - 256;
+            TrackPresent := True;
             Inc(RecoveredTracks);
           end;
         end;
 
-        if SizeT > 0 then // Don't load if track is unformatted
+        if TrackPresent then
         begin
           ReadSize := SizeT + 256;
           if (FileSize > 0) and (TOff + ReadSize > FileSize) then
@@ -1660,7 +1676,9 @@ begin
             if (Compress and (Disk.Side[SIdx].Track[TIdx].Sectors = 0)) then
               Disk_ExtTrackSize[(TIdx * Disk_NumSides) + SIdx] := 0
             else
-            if GetTrackFileDataSize(Disk.Side[SIdx].Track[TIdx], SaveFileFormat) > 0 then
+            if Disk.Side[SIdx].Track[TIdx].Sectors > 0 then
+              // An entry of one block is a formatted track whose sectors hold
+              // no data, which the loader has to tell apart from no track
               Disk_ExtTrackSize[(TIdx * Disk_NumSides) + SIdx] :=
                 GetTrackFileSize(GetTrackFileDataSize(Disk.Side[SIdx].Track[TIdx], SaveFileFormat)) div TrackBlockSize
             else
@@ -1681,7 +1699,7 @@ begin
             Track := Disk.Side[SIdx].Track[TIdx];
             Track.DataRate := drUnknown;
             Track.RecordingMode := rmUnknown;
-            if (GetTrackFileDataSize(Track, SaveFileFormat) > 0) and
+            if (Track.Sectors > 0) and
               (GetTrackFileSize(GetTrackFileDataSize(Track, SaveFileFormat)) > Disk_StdTrackSize) then
               Disk_StdTrackSize := GetTrackFileSize(GetTrackFileDataSize(Track, SaveFileFormat));
           end;
@@ -1716,8 +1734,11 @@ begin
           end;
         end;
 
-        // Write tracks
-        if Size > 0 then
+        // Write tracks. A track is written whenever it is formatted, not only
+        // when its sectors hold data: an empty data field is a sector's state
+        // and part of what the image describes, so a track whose sectors all
+        // carry none still has its Track-Info block and its sector entries.
+        if Sectors > 0 then
         begin
           // Write sector info out
           for EIdx := 0 to Sectors - 1 do
@@ -1760,7 +1781,7 @@ begin
             WriteFiller(DiskFile, GetTrackFileSize(TrackDataSize) - TrackBlockSize - TrackDataSize, Filler);
         end
         else
-        if (SaveFileFormat = diStandardDSK) and (DSKInfoBlock.Disk_StdTrackSize > 0) then
+        if (SaveFileFormat = diStandardDSK) and (DSKInfoBlock.Disk_StdTrackSize > TrackBlockSize) then
         begin
           // A standard image has no way to say a track is not there: they all
           // take the header's size, so an unformatted one still has to fill it

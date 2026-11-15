@@ -5,6 +5,7 @@
 - Teledisk (.td0) image support: open normal and advanced-compressed images (including gzipped ones), showing the image's comment and keeping sector flags, FM tracks and data rate, and save any disk as a compressed .td0
 ### Fixes
 - Save a standard DSK image with sectors that hold fewer bytes than their size code: every sector after one was written short, so reloading read one sector's data as the tail of the one before it
+- Keep a formatted track whose sectors carry no data field when saving, instead of dropping it from an extended image or zeroing its sector entries in a standard one
 
 ## 2.12.0 (14 July 2026)
 ### Changes
