@@ -95,6 +95,7 @@ type
     procedure TestStandardSaveWritesLengthedSectorsAtTheirSizeCode;
     procedure TestSaveKeepsTrackWhoseSectorsHoldNoData;
     procedure TestSpecificationSizeCodeMatchesASectorSize;
+    procedure TestSpecificationCapacitySurvivesAnImpossibleXDpb;
   end;
 
 implementation
@@ -2056,6 +2057,43 @@ begin
     Spec.SectorSize := 0;
     AssertTrue('a zero size is still written', Spec.Write);
     AssertEquals('as the code for no size', 0, Sec.Data[4]);
+  finally
+    Img.Free;
+  end;
+end;
+
+// The fields Identify reads from a boot sector are each plausible on their own
+// - 204 tracks a side is the maximum the app accepts, 255 sectors a track and
+// a 32 KiB sector size are both values the format defines - but their product
+// overflows an integer. A wrapped negative capacity then divided into a block
+// count far past anything a directory entry could hold.
+procedure TDskImageTest.TestSpecificationCapacitySurvivesAnImpossibleXDpb;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+  Spec: TDSKSpecification;
+begin
+  Img := MakeFormatted(0);
+  try
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    FillChar(Sec.Data[0], 16, 0);
+    Sec.Data[0] := 0;    // PCW single-sided format id
+    Sec.Data[1] := 1;    // double sided
+    Sec.Data[2] := 204;  // tracks per side
+    Sec.Data[3] := 255;  // sectors per track
+    Sec.Data[4] := 8;    // 32 KiB sectors
+    Sec.Data[5] := 0;    // reserved tracks
+    Sec.Data[6] := 8;    // block shift
+    Sec.Data[7] := 2;    // directory blocks
+
+    Spec := Img.Disk.Specification;
+    Spec.Identify;
+    AssertTrue('the spec is still recognised', Spec.Format <> dsFormatInvalid);
+    AssertTrue('capacity is not negative', Spec.GetUsableCapacity >= 0);
+    AssertTrue('and is clamped to what an integer holds',
+      Spec.GetUsableCapacity = High(integer));
+    AssertEquals('block count fits the word a directory entry has for it',
+      High(word), Spec.GetBlockCount);
   finally
     Img.Free;
   end;

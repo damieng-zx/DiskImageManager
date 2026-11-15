@@ -3087,8 +3087,19 @@ begin
 end;
 
 function TDSKSpecification.GetBlockCount: word;
+var
+  Blocks: integer;
 begin
-  Result := GetUsableCapacity div GetBlockSize;
+  Blocks := GetUsableCapacity div GetBlockSize;
+  // A block count is a word in the directory entries and the spec's own block
+  // count, so anything past one clamps rather than wrapping
+  if Blocks > High(word) then
+    Result := High(word)
+  else
+  if Blocks < 0 then
+    Result := 0
+  else
+    Result := Blocks;
 end;
 
 function TDSKSpecification.GetUsableCapacity: integer;
@@ -3098,6 +3109,18 @@ begin
   UsableTracks := FTracksPerSide;
   if Side <> dsSideSingle then UsableTracks := UsableTracks + UsableTracks;
   UsableTracks := UsableTracks - ReservedTracks;
+  if UsableTracks < 0 then UsableTracks := 0;
+  // The fields this multiplies come from an untrusted boot sector, where each
+  // one can be individually plausible - 204 tracks of 255 sectors of 32 KiB is
+  // 1.7GB - and the product of all three overflows an integer. A capacity is
+  // held in an integer, so answer the most it can hold rather than a wrapped
+  // negative that then divides into a nonsense block count.
+  if (UsableTracks <> 0) and (SectorsPerTrack <> 0) and (SectorSize <> 0) and
+    (int64(UsableTracks) * SectorsPerTrack * SectorSize > High(integer)) then
+  begin
+    Result := High(integer);
+    exit;
+  end;
   Result := UsableTracks * SectorsPerTrack * SectorSize;
 end;
 
