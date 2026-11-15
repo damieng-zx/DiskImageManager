@@ -3412,7 +3412,15 @@ begin
 
       Data[2] := FTracksPerSide;
       Data[3] := FSectorsPerTrack;
-      Data[4] := Trunc(Log2(FSectorSize) - 7);
+      // The size code names a power of two, and the disk specification has no
+      // other way to say what a sector holds. Log2 rounded a size that is not
+      // one - the New dialog offers 6912 - down to the code below it, so the
+      // boot sector described a disk smaller than the one written, and a size
+      // of 0 divided by zero.
+      if FSectorSize = 0 then
+        Data[4] := 0
+      else
+        Data[4] := GetFDCSectorSize(FSectorSize);
       Data[5] := FReservedTracks;
       Data[6] := FBlockShift;
       Data[7] := FDirectoryBlocks;

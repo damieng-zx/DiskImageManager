@@ -9,6 +9,7 @@
 - Keep the sector IDs of a track whose interleave is as wide as the track or wider within the table, instead of indexing outside it and handing out duplicate and missing IDs
 - Restore the selected file, not just the tree node, when navigating back and forward: the detail list is rebuilt during the navigation and the remembered row is picked in it
 - Blank a sector's data on a Teledisk image instead of erasing the sector, and fall back to the sector's own size code when a track states no sector size
+- Write the disk specification's sector size code from the size itself, so a size between two codes (such as the 6912 bytes the New dialog offers) describes sectors at least that big instead of rounding down, and a size of zero no longer divides by zero
 
 ## 2.12.0 (14 July 2026)
 ### Changes

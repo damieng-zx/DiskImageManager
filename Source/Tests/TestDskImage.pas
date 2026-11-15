@@ -94,6 +94,7 @@ type
     procedure TestTrackUnformatMarksImageChanged;
     procedure TestStandardSaveWritesLengthedSectorsAtTheirSizeCode;
     procedure TestSaveKeepsTrackWhoseSectorsHoldNoData;
+    procedure TestSpecificationSizeCodeMatchesASectorSize;
   end;
 
 implementation
@@ -2013,6 +2014,50 @@ begin
     finally
       if FileExists(FileName) then DeleteFile(FileName);
     end;
+  end;
+end;
+
+// The disk specification names a sector's size only by the FDC size code, and
+// that stands for a power of two. The code was worked out with Log2, which
+// rounds down for a size between two codes: the New dialog offers 6912, and it
+// was written as the 4096-byte code, describing a disk smaller than the one
+// that had just been formatted. A size of 0 divided by zero instead.
+procedure TDskImageTest.TestSpecificationSizeCodeMatchesASectorSize;
+var
+  Img: TDSKImage;
+  Spec: TDSKSpecification;
+  Sec: TDSKSector;
+  Sizes: array[0..2] of word;
+  Idx: integer;
+begin
+  Sizes[0] := 512;
+  Sizes[1] := 6912;   // between codes 5 (4096) and 6 (8192)
+  Sizes[2] := 32768;  // the largest code there is
+  Img := MakeFormatted(0);
+  try
+    Spec := Img.Disk.Specification;
+    Sec := Img.Disk.Side[0].Track[0].Sector[0];
+    for Idx := 0 to High(Sizes) do
+    begin
+      Spec.Format := dsFormatPCW_SS;
+      Spec.TracksPerSide := 40;
+      Spec.SectorsPerTrack := 9;
+      Spec.SectorSize := Sizes[Idx];
+      AssertTrue('specification written', Spec.Write);
+      AssertEquals(Format('code for a %d byte sector names a size at least as big',
+        [Sizes[Idx]]), True,
+        GetFDCSizeBytes(Sec.Data[4]) >= Sizes[Idx]);
+      // 6912 is the one that used to round down; it has to round up to 8192
+      if Sizes[Idx] = 6912 then
+        AssertEquals('and rounds up to the next code, not down', 6, Sec.Data[4]);
+    end;
+
+    // A spec that names no size cannot divide by zero on the way out
+    Spec.SectorSize := 0;
+    AssertTrue('a zero size is still written', Spec.Write);
+    AssertEquals('as the code for no size', 0, Sec.Data[4]);
+  finally
+    Img.Free;
   end;
 end;
 

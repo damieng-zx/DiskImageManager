@@ -341,6 +341,16 @@ begin
     NewWarn.Caption := '6144 bytes per track limit on +3';
   end;
 
+  // A track header and the disk specification both name a sector size only by
+  // the FDC code, which stands for a power of two. A size between two codes is
+  // written as the code below it, so the disk describes sectors smaller than
+  // the ones it holds.
+  if (chkWriteDiskSpec.Checked) and (FDCSectorSizes[GetFDCSectorSize(CurrentFormat.SectorSize)] <> CurrentFormat.SectorSize) then
+  begin
+    NewWarn := lvwWarnings.Items.Add;
+    NewWarn.Caption := 'Disk specification needs a sector size that is a power of two';
+  end;
+
   if (lvwFormats.Selected <> nil) and (chkWriteDiskSpec.Checked) then
     with lvwFormats.Selected do
       if (ImageIndex = 2) or (ImageIndex = 3) or (ImageIndex = 7) then
