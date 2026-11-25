@@ -4,6 +4,7 @@
 ### New
 - Teledisk (.td0) image support: open normal and advanced-compressed images (including gzipped ones), showing the image's comment and keeping sector flags, FM tracks and data rate, and save any disk as a compressed .td0
 - DISCiPLE .img and SAM Coupe .sad image support: open them (including gzipped ones), save disks as either, and convert between them and the other formats
+- Open disk images from .zip files: every image in one is opened, including gzipped ones and those in folders, and any that will not open are listed together. Saving one asks for a new name and leaves the zip alone
 - Extract files from MGT disks, with or without their 9-byte header, by saving them or dragging them out
 - MGT file listings show each file's actual size and its start address, length, autorun line, execute address, array name or screen mode
 - Name MGT +D/DISCiPLE disks as such instead of calling them SAM Coupe SAMDOS
@@ -13,6 +14,8 @@
 - List the files of an MGT disk held in a DSK or Teledisk image from the right tracks
 - Format new MGT disks with a zero filler: the previous E5 left every directory slot looking occupied
 - Save an image opened from a name ending .GZ in capitals through Save As, as a lowercase .gz already was, instead of writing it uncompressed over the gzipped file
+- Refuse a .gz that unpacks to more than 64 MB instead of exhausting memory on it
+- Offer the name without .gz when saving a copy of a gzipped image, instead of the gzipped file's own name
 - Save a standard DSK image with sectors that hold fewer bytes than their size code: every sector after one was written short, so reloading read one sector's data as the tail of the one before it
 - Keep a formatted track whose sectors carry no data field when saving, instead of dropping it from an extended image or zeroing its sector entries in a standard one
 - Keep the sector IDs of a track whose interleave is as wide as the track or wider within the table, instead of indexing outside it and handing out duplicate and missing IDs

@@ -32,6 +32,9 @@ const
   // A SAD image is a header naming that geometry, then the raw sectors
   SADHeaderSize = 22;
   SADSignature: ansistring = 'Aley''s disk backup';
+  // Between the zip and the entry in the name of an image read from one.
+  // Windows allows it in no file name, so such a name is never a file to write.
+  ArchiveSeparator = '>';
 
 type
   // Physical disk structure
@@ -135,7 +138,9 @@ type
     FFileName: TFileName;
     FFileSize: int64;
     FIsChanged: boolean;
+    FArchiveName: TFileName;
     procedure SetIsChanged(NewValue: boolean);
+    function ArchivedBaseName: string;
     function LoadFileDSK(DiskFile: TStream): boolean;
     function LoadFileRaw(DiskFile: TStream): boolean;
     function LoadFileTD0(DiskFile: TStream): boolean;
@@ -152,7 +157,16 @@ type
     constructor Create;
     constructor CreateFromFile(FileName: TFileName);
     constructor CreateFromStream(Stream: TStream; FileName: TFileName);
+    // An image read from a zip: Contents is the entry unpacked
+    constructor CreateFromArchive(Contents: TStream; const ZipFileName: TFileName;
+      const EntryName: string);
     destructor Destroy; override;
+
+    // What to call the image: its file name, and the zip's if it is in one
+    function DisplayName: string;
+    // For an image read from a compressed file, which is never written back, the
+    // name to offer to save it as. Empty for any other.
+    function UnpackedName: string;
 
     // Whether the disk as it stands can be described by SaveFileFormat at all.
     // Answers False and says why in Messages when it cannot, so that the reason
@@ -169,6 +183,8 @@ type
     property Corrupt: boolean read FCorrupt write FCorrupt;
     property Disk: TDSKDisk read FDisk write FDisk;
     property FileName: TFileName read FFileName write FFileName;
+    // The zip the image was read from, until it is saved somewhere else
+    property ArchiveName: TFileName read FArchiveName;
     property FileSize: int64 read FFileSize write FFileSize;
     property IsChanged: boolean read FIsChanged write SetIsChanged;
   end;
@@ -546,7 +562,7 @@ function GetTrackFileDataSize(Track: TDSKTrack; SaveFileFormat: TDSKImageFormat)
 
 implementation
 
-uses FormatAnalysis, LZHuf, Windows;
+uses FormatAnalysis, LZHuf, DiskArchive, Windows;
 
 // The SAD header for the geometry this app reads and writes
 procedure BuildSADHeader(out Header: array of byte);
@@ -637,10 +653,7 @@ end;
 constructor TDSKImage.CreateFromFile(FileName: TFileName);
 var
   FileStream: TFileStream;
-  GZStream: TGZFileStream;
   MemStream: TMemoryStream;
-  Buffer: array[0..65535] of byte;
-  BytesRead: integer;
 const
   fmShareDenyNoneWrite = $0070; // Enables READ + WRITE + DELETE sharing
 begin
@@ -648,30 +661,18 @@ begin
 
   if SameText(ExtractFileExt(FileName), '.gz') then
   begin
-    GZStream := TGZFileStream.Create(FileName, gzopenread);
+    // Unpack before loading. A gz stream cannot say how long it is, which
+    // left FileSize unset and every truncation check below switched off, and
+    // the loader seeks back over the track it has just read.
+    MemStream := UnpackGzip(FileName);
     try
-      // Unpack before loading. A gz stream cannot say how long it is, which
-      // left FileSize unset and every truncation check below switched off, and
-      // the loader seeks back over the track it has just read.
-      MemStream := TMemoryStream.Create;
-      try
-        repeat
-          BytesRead := GZStream.Read(Buffer, SizeOf(Buffer));
-          if BytesRead > 0 then
-            MemStream.WriteBuffer(Buffer, BytesRead);
-        until BytesRead < SizeOf(Buffer);
-        MemStream.Position := 0;
-
-        self.FileName := FileName;
-        FileSize := MemStream.Size;
-        // Detect the decompressed payload using its actual image extension
-        // (.mgt/.dsk/.td0), while preserving the supplied .gz path on the image.
-        CreateFromStream(MemStream, ChangeFileExt(FileName, ''));
-      finally
-        MemStream.Free;
-      end;
+      self.FileName := FileName;
+      FileSize := MemStream.Size;
+      // Detect the decompressed payload using its actual image extension
+      // (.mgt/.dsk/.td0), while preserving the supplied .gz path on the image.
+      CreateFromStream(MemStream, ChangeFileExt(FileName, ''));
     finally
-      GZStream.Free;
+      MemStream.Free;
     end;
   end
   else
@@ -685,6 +686,56 @@ begin
       FileStream.Free;
     end;
   end;
+end;
+
+constructor TDSKImage.CreateFromArchive(Contents: TStream;
+  const ZipFileName: TFileName; const EntryName: string);
+var
+  TypedName: string;
+begin
+  Create;
+  FArchiveName := ZipFileName;
+  FileName := ZipFileName + ArchiveSeparator + EntryName;
+  FileSize := Contents.Size;
+  Contents.Position := 0;
+
+  // A gzipped entry arrives unpacked, and its type is in the name inside
+  TypedName := FileName;
+  if SameText(ExtractFileExt(TypedName), '.gz') then
+    TypedName := ChangeFileExt(TypedName, '');
+  CreateFromStream(Contents, TypedName);
+end;
+
+// The entry's own file name, without the folders it is in within the zip, made
+// into one Windows will accept
+function TDSKImage.ArchivedBaseName: string;
+var
+  Entry: string;
+begin
+  Entry := StringReplace(Copy(FileName, Length(FArchiveName) + 2, MaxInt), '\', '/',
+    [rfReplaceAll]);
+  Result := SafeFileName(Copy(Entry, LastDelimiter('/', Entry) + 1, MaxInt));
+end;
+
+function TDSKImage.DisplayName: string;
+begin
+  if FArchiveName = '' then
+    Result := ExtractFileName(FileName)
+  else
+    Result := SysUtils.Format('%s (%s)', [ArchivedBaseName, ExtractFileName(FArchiveName)]);
+end;
+
+function TDSKImage.UnpackedName: string;
+begin
+  if FArchiveName <> '' then
+    Result := ExtractFilePath(FArchiveName) + ArchivedBaseName
+  else if SameText(ExtractFileExt(FileName), '.gz') then
+    Result := FileName
+  else
+    exit('');
+
+  if SameText(ExtractFileExt(Result), '.gz') then
+    Result := ChangeFileExt(Result, '');
 end;
 
 constructor TDSKImage.CreateFromStream(Stream: TStream; FileName: TFileName);
@@ -769,7 +820,9 @@ begin
     end
     else
     begin
-      MessageDlg('Load failure', FileName + ' is unknown file type. Load aborted.', mtWarning, [mbOK], 0);
+      // The zip reader says which of its entries would not open, all together
+      if FArchiveName = '' then
+        MessageDlg('Load failure', FileName + ' is unknown file type. Load aborted.', mtWarning, [mbOK], 0);
       Corrupt := True;
     end;
   end;
@@ -1074,7 +1127,7 @@ begin
               ErrorMessage := SysUtils.Format('Side %d track %d not found at offset %d to %d. Load stopped.',
                 [SIdx, TIdx, TOff, DiskFile.Position]);
               Messages.Add(ErrorMessage);
-              MessageDlg(ExtractFileName(FileName) + ': ' + ErrorMessage, mtError, [mbOK], 0);
+              MessageDlg(DisplayName + ': ' + ErrorMessage, mtError, [mbOK], 0);
               Corrupt := True;
               exit;
             end;
@@ -1653,6 +1706,7 @@ begin
   begin
     FIsChanged := False;
     FileName := SaveFileName;
+    FArchiveName := '';
     Self.FileFormat := SaveFileFormat;
     Self.FileSize := FileSize;
   end;

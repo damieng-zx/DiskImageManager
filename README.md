@@ -13,6 +13,7 @@ These images are traditionally created with CPDRead under DOS but Simon Owen's m
 * Conversion between standard and extended image formats
 * Read and save MGT +D, DISCiPLE and SAM Coupe disk images in .mgt, .img and .sad form
 * Read and save Teledisk (.td0) images, including advanced compression
+* Open images packed in .gz files, and every image held in a .zip
 * Identification of tool that created the image
 * List all ASCII strings found on a disk image
 * Copy a disk image's full path to the clipboard

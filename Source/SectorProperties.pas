@@ -113,7 +113,7 @@ begin
   if FSector = nil then exit;
 
   // Identity
-  edtImage.Text := ExtractFileName(FSector.ParentTrack.ParentSide.ParentDisk.ParentImage.FileName);
+  edtImage.Text := FSector.ParentTrack.ParentSide.ParentDisk.ParentImage.DisplayName;
   edtPhysical.Text := 'Side ' + IntToStr(FSector.Side + 1) + ' > Track ' + IntToStr(FSector.Track) +
     ' > Sector ' + IntToStr(FSector.Sector);
   Caption := edtImage.Text + ' > ' + edtPhysical.Text;

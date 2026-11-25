@@ -494,7 +494,7 @@ object frmMain: TfrmMain
   end
   object dlgOpen: TOpenDialog
     DefaultExt = '.dsk'
-    Filter = 'All supported files (*.dsk, *.mgt, *.img, *.sad, *.td0, gzipped)|*.dsk;*.dsk.gz;*.mgt;*.mgt.gz;*.img;*.img.gz;*.sad;*.sad.gz;*.td0;*.td0.gz|Disk images (*.dsk)|*.dsk|Gzipped disk images (*.dsk.gz)|*.dsk.gz|MGT/SAM images (*.mgt, *.img, *.sad)|*.mgt;*.mgt.gz;*.img;*.img.gz;*.sad;*.sad.gz|Teledisk images (*.td0)|*.td0|All files|*.*'
+    Filter = 'All supported files (*.dsk, *.mgt, *.img, *.sad, *.td0, gzipped or zipped)|*.dsk;*.dsk.gz;*.mgt;*.mgt.gz;*.img;*.img.gz;*.sad;*.sad.gz;*.td0;*.td0.gz;*.zip|Disk images (*.dsk)|*.dsk|Gzipped disk images (*.dsk.gz)|*.dsk.gz|MGT/SAM images (*.mgt, *.img, *.sad)|*.mgt;*.mgt.gz;*.img;*.img.gz;*.sad;*.sad.gz|Teledisk images (*.td0)|*.td0;*.td0.gz|Zip archives (*.zip)|*.zip|All files|*.*'
     Options = [ofHideReadOnly, ofAllowMultiSelect, ofPathMustExist, ofFileMustExist, ofEnableSizing]
     Left = 440
     Top = 112

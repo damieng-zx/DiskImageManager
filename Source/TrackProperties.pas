@@ -115,7 +115,7 @@ begin
   cboSectorDataRate.Visible := isExtended;
 
   // Identity
-  edtImage.Text := ExtractFileName(FTrack.ParentSide.ParentDisk.ParentImage.FileName);
+  edtImage.Text := FTrack.ParentSide.ParentDisk.ParentImage.DisplayName;
   edtPhysical.Text := 'Side ' + IntToStr(FTrack.Side + 1) + ' > Track ' + IntToStr(FTrack.Logical);
   Caption := edtImage.Text + ' > ' + edtPhysical.Text;
 

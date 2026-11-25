@@ -17,7 +17,7 @@ uses
   DiskMap, DskImage, DIMUtils, Utils, NavigationHistory, About, Options, SectorProperties,
   TrackProperties, Settings, FileSystem, MGTFileSystem, ListViewPresenter,
   Comparers, FileViewer, SinclairBasic, ZXScreenViewer, SpectrumScreen,
-  CPCScreenViewer, AmstradScreen, ShellDragDrop,
+  CPCScreenViewer, AmstradScreen, ShellDragDrop, DiskArchive,
   Classes, Graphics, SysUtils, Forms, Dialogs, Menus,
   ComCtrls, ExtCtrls, Controls, Contnrs,
   Clipbrd, StdCtrls, FileUtil, StrUtils, LazFileUtils, LConvEncoding, CommCtrl;
@@ -282,6 +282,7 @@ type
     function CloseAll(AllowCancel: boolean): boolean;
     function ConfirmChange(Action: string; Upon: string): boolean;
     function LoadImage(FileName: TFileName; Expand: boolean = True): boolean;
+    function LoadZip(FileName: TFileName; Expand: boolean): boolean;
     function GetNextNewFile: integer;
   end;
 
@@ -1193,6 +1194,9 @@ function TfrmMain.LoadImage(FileName: TFileName; Expand: boolean = True): Boolea
 var
   NewImage: TDSKImage;
 begin
+  if IsZipFileName(FileName) then
+    exit(LoadZip(FileName, Expand));
+
   Result := False;
   NewImage := nil;
 
@@ -1216,6 +1220,54 @@ begin
   end;
 end;
 
+// Open every disk image in a zip, then say which of its entries would not open
+function TfrmMain.LoadZip(FileName: TFileName; Expand: boolean): boolean;
+const
+  MostListed = 10;
+var
+  Images: TDSKImageList;
+  Problems: TStringList;
+  Idx, Added, Unlisted: integer;
+begin
+  Added := 0;
+  Images := TDSKImageList.Create;
+  Problems := TStringList.Create;
+  try
+    try
+      LoadZipImages(FileName, Images, Problems);
+      while Added < Images.Count do
+      begin
+        AddWorkspaceImage(Images[Added], Expand);
+        Inc(Added);
+      end;
+
+      Unlisted := Problems.Count - MostListed;
+      if Unlisted > 0 then
+      begin
+        while Problems.Count > MostListed do
+          Problems.Delete(MostListed);
+        Problems.Add(SysUtils.Format('... and %d more', [Unlisted]));
+      end;
+      if Problems.Count > 0 then
+        MessageDlg('Some of ' + ExtractFileName(FileName) + ' did not open',
+          Problems.Text, mtWarning, [mbOK], 0)
+      else if Added = 0 then
+        MessageDlg('No disk images', FileName + ' holds no disk images.',
+          mtInformation, [mbOK], 0);
+    except
+      on E: Exception do
+        MessageDlg('Error loading ' + FileName, E.Message, mtError, [mbOK], 0);
+    end;
+  finally
+    // Those in the tree belong to it now
+    for Idx := Added to Images.Count - 1 do
+      Images[Idx].Free;
+    Images.Free;
+    Problems.Free;
+  end;
+  Result := Added > 0;
+end;
+
 // Expand says whether to open the image's node up. Restoring a workspace of
 // several images can leave the tree unusably long, which is what the option to
 // leave them shut is for; anything the user opens themselves is opened up.
@@ -1228,9 +1280,9 @@ begin
   tvwMain.Items.BeginUpdate;
   try
     if Image.Corrupt then
-      ImageNode := AddTree(nil, ExtractFileName(Image.FileName), Ord(itDiskCorrupt), Image)
+      ImageNode := AddTree(nil, Image.DisplayName, Ord(itDiskCorrupt), Image)
     else
-      ImageNode := AddTree(nil, ExtractFileName(Image.FileName), Ord(itDisk), Image);
+      ImageNode := AddTree(nil, Image.DisplayName, Ord(itDisk), Image);
 
     tvwMain.Selected := ImageNode;
 
@@ -1583,7 +1635,11 @@ var
   Image: TDSKImage;
 begin
   Image := GetCurrentImage;
-  if Image <> nil then
+  if Image = nil then exit;
+  // For an image in a zip, the path that exists is the zip's
+  if Image.ArchiveName <> '' then
+    Clipboard.AsText := Image.ArchiveName
+  else
     Clipboard.AsText := Image.FileName;
 end;
 
@@ -1836,6 +1892,8 @@ begin
   Result := False;
   if NewName <> '' then
     dlgSave.FileName := NewName
+  else if Image.UnpackedName <> '' then
+    dlgSave.FileName := Image.UnpackedName
   else
     dlgSave.FileName := Image.FileName;
 
@@ -1907,7 +1965,9 @@ begin
   // The map has no side once the image showing it was closed
   if (DiskMap.Side = nil) or (DiskMap.Side.ParentDisk = nil) then exit;
 
-  DefaultFileName := DiskMap.Side.ParentDisk.ParentImage.FileName;
+  DefaultFileName := DiskMap.Side.ParentDisk.ParentImage.UnpackedName;
+  if DefaultFileName = '' then
+    DefaultFileName := DiskMap.Side.ParentDisk.ParentImage.FileName;
   if DiskMap.Side.Side > 0 then
     DefaultFileName := DefaultFileName + ' Side ' + StrInt(DiskMap.Side.Side);
   dlgSaveMap.FileName := ExtractFileNameOnly(DefaultFileName);
@@ -1971,19 +2031,16 @@ begin
   begin
     selectedImage := GetCurrentImage;
     SaveImage(selectedImage);
-    Node.Text := ExtractFileName(selectedImage.FileName);
+    Node.Text := selectedImage.DisplayName;
   end;
 end;
 
 function TfrmMain.SaveImage(Image: TDSKImage): boolean;
 begin
-  if Image.FileFormat = diNotYetSaved then
+  // Nothing here writes gzip or zip, so an image read from one needs saving
+  // under another name, as a new one needs its first
+  if (Image.FileFormat = diNotYetSaved) or (Image.UnpackedName <> '') then
     Result := SaveImageAs(Image, False, '')
-  else
-  // Any case, as the loader unpacks any case: nothing here writes gzip, so
-  // saving to the same name would leave a .gz that is not one
-  if SameText(ExtractFileExt(Image.FileName), '.gz') then
-    Result := SaveImageAs(Image, False, ExtractFileNameWithoutExt(Image.FileName))
   else
     Result := Image.SaveFile(Image.FileName, Image.FileFormat, False,
       (Settings.RemoveEmptyTracks and (Image.FileFormat = diExtendedDSK)));
@@ -2392,7 +2449,7 @@ begin
   // Get the disk image for the title
   DiskImage := GetCurrentImage;
   if DiskImage <> nil then
-    DiskName := ExtractFileName(DiskImage.FileName)
+    DiskName := DiskImage.DisplayName
   else
     DiskName := '';
 

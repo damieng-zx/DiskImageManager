@@ -28,7 +28,8 @@ uses
   TestTeleDisk,
   TestUIUtils,
   TestNavigationHistory,
-  TestMGTFileSystem;
+  TestMGTFileSystem,
+  TestDiskArchive;
 
 type
   TDIMTestRunner = class(TTestRunner)
