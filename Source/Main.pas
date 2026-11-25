@@ -511,8 +511,8 @@ begin
     // Info rows carry no file object, and reading a class off one is reading it
     // off nothing. The list popup checks this; this one did not.
     if (ListItem.Data <> nil) and
-      (TObject(ListItem.Data).ClassType = TCPMFile) and
-      (TCPMFile(ListItem.Data).HeaderType <> 'None') then
+      (TObject(ListItem.Data) is TDiskFile) and
+      TDiskFile(ListItem.Data).HasHeader then
     begin
       AllHeaderlessFilesSelected := False;
       Break;
@@ -533,7 +533,7 @@ var
   ListItem: TListItem;
   Folder, Target: string;
   Stream: TStream;
-  DiskFile: TCPMFile;
+  DiskFile: TDiskFile;
   Data: TDiskByteArray;
   // Whether to overwrite without asking again, and whether to stop asking at all
   OverwriteAll, SkipAll, Cancelled: boolean;
@@ -554,9 +554,9 @@ begin
     if Cancelled then Break;
     // Info rows carry no Data, so there is nothing to take a file from
     if (AllFiles or ListItem.Selected) and (ListItem.Data <> nil) and
-      (TObject(ListItem.Data).ClassType = TCPMFile) then
+      (TObject(ListItem.Data) is TDiskFile) then
     begin
-      DiskFile := TCPMFile(ListItem.Data);
+      DiskFile := TDiskFile(ListItem.Data);
       // A name off the disk is eleven bytes of anything printable, so it can
       // hold path separators and climb out of the folder the user picked
       Target := Folder + SafeFileName(DiskFile.FileName);
@@ -623,15 +623,15 @@ end;
 
 procedure TfrmMain.SaveExtractedFile(WithHeader: boolean);
 var
-  DiskFile: TCPMFile;
+  DiskFile: TDiskFile;
   Data: TDiskByteArray;
   Stream: TStream;
 begin
   if (lvwMain.Selected = nil) or (lvwMain.Selected.Data = nil) or
-    (TObject(lvwMain.Selected.Data).ClassType <> TCPMFile) then
+    not (TObject(lvwMain.Selected.Data) is TDiskFile) then
     exit;
 
-  DiskFile := TCPMFile(lvwMain.Selected.Data);
+  DiskFile := TDiskFile(lvwMain.Selected.Data);
 
   // The dialog will not take a name with a path separator or a wildcard in it,
   // and a disk can hold one
@@ -656,7 +656,7 @@ end;
 
 procedure TfrmMain.popListItemPopup(Sender: TObject);
 var
-  DiskFile: TCPMFile;
+  DiskFile: TDiskFile;
   AllHeaderlessFilesSelected: boolean;
   ListItem: TListItem;
   DataSelect: TObject;
@@ -666,14 +666,15 @@ begin
   itmRenameFile.Visible := False;
 
   if (lvwMain.SelCount = 1) and (lvwMain.Selected.Data <> nil) and
-    (TObject(lvwMain.Selected.Data).ClassType = TCPMFile) then
+    (TObject(lvwMain.Selected.Data) is TDiskFile) then
   begin
-    DiskFile := TCPMFile((lvwMain.Selected).Data);
-    itmRenameFile.Visible := True;
-    itmSaveFile.Visible := DiskFile.HeaderType <> 'None';
+    DiskFile := TDiskFile((lvwMain.Selected).Data);
+    // Only the CP/M file system can rename
+    itmRenameFile.Visible := TObject(lvwMain.Selected.Data) is TCPMFile;
+    itmSaveFile.Visible := DiskFile.HasHeader;
     itmSaveFile.Caption := Format('Save %s', [DiskFile.FileName]);
 
-    itmSaveHeaderlessFile.Visible := DiskFile.HeaderType = 'None';
+    itmSaveHeaderlessFile.Visible := not DiskFile.HasHeader;
     itmSaveHeaderlessFile.Caption := Format('Save %s as...', [DiskFile.FileName]);
   end;
 
@@ -683,8 +684,8 @@ begin
     if (ListItem.Selected) and (ListItem.Data <> nil) then
     begin
       DataSelect := TObject(ListItem.Data);
-      if (DataSelect.ClassType = TCPMFile) and
-        (TCPMFile(ListItem.Data).HeaderType <> 'None') then
+      if (DataSelect is TDiskFile) and
+        TDiskFile(ListItem.Data).HasHeader then
       begin
         AllHeaderlessFilesSelected := False;
         Break;
@@ -1178,10 +1179,8 @@ begin
   if (lvwMain.Selected = nil) or (lvwMain.Selected.Data = nil) then exit;
 
   // Jump to the first sector for this file
-  if TObject(lvwMain.Selected.Data).ClassType = TCPMFile then
-    FirstSector := TCPMFile((lvwMain.Selected).Data).FirstSector
-  else if TObject(lvwMain.Selected.Data).ClassType = TMGTFile then
-    FirstSector := TMGTFile((lvwMain.Selected).Data).FirstSector;
+  if TObject(lvwMain.Selected.Data) is TDiskFile then
+    FirstSector := TDiskFile((lvwMain.Selected).Data).FirstSector;
 
   if FirstSector = nil then exit;
 
@@ -1844,6 +1843,8 @@ begin
     diStandardDSK: dlgSave.FilterIndex := 1;
     diRawMGT: dlgSave.FilterIndex := 3;
     diTeleDisk: dlgSave.FilterIndex := 4;
+    diRawIMG: dlgSave.FilterIndex := 5;
+    diRawSAD: dlgSave.FilterIndex := 6;
     else
       dlgSave.FilterIndex := 2;
   end;
@@ -1866,6 +1867,8 @@ begin
           Result := Image.SaveFile(dlgSave.FileName, diTeleDisk, Copy, False);
       end;
       3: Result := Image.SaveFile(dlgSave.FileName, diRawMGT, Copy, False);
+      5: Result := Image.SaveFile(dlgSave.FileName, diRawIMG, Copy, False);
+      6: Result := Image.SaveFile(dlgSave.FileName, diRawSAD, Copy, False);
       2: Result := Image.SaveFile(dlgSave.FileName, diExtendedDSK, Copy,
           Settings.RemoveEmptyTracks);
       1:
@@ -2293,7 +2296,7 @@ begin
   if Button <> mbLeft then exit;
   Item := lvwMain.GetItemAt(X, Y);
   FDragArmedList := (Item <> nil) and (Item.Data <> nil) and
-    (TObject(Item.Data).ClassType = TCPMFile);
+    (TObject(Item.Data) is TDiskFile);
   FDragStart := Point(X, Y);
 end;
 
@@ -2316,11 +2319,11 @@ end;
 
 // Extract every selected file to a fresh temporary folder and drag those out.
 // A file inside an image is not a file on disk, so it has to be written before
-// another application can be handed it. Only CP/M files can be extracted.
+// another application can be handed it.
 procedure TfrmMain.StartListFileDrag;
 var
   ListItem: TListItem;
-  DiskFile: TCPMFile;
+  DiskFile: TDiskFile;
   Data: TDiskByteArray;
   Stream: TFileStream;
   TempRoot, Path: string;
@@ -2333,9 +2336,9 @@ begin
 
   for ListItem in lvwMain.Items do
     if ListItem.Selected and (ListItem.Data <> nil) and
-      (TObject(ListItem.Data).ClassType = TCPMFile) then
+      (TObject(ListItem.Data) is TDiskFile) then
     begin
-      DiskFile := TCPMFile(ListItem.Data);
+      DiskFile := TDiskFile(ListItem.Data);
       // The same name off the same disk as the extract paths use, and it needs
       // the same treatment: a name holding a separator would put the file
       // outside the folder about to be dragged, and one holding a character

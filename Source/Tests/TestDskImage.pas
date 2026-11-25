@@ -458,6 +458,7 @@ begin
     Sec.Data[12] := 2; // two sectors allocated, big-endian
     Sec.Data[13] := 0; // first logical track
     Sec.Data[14] := 1; // first sector ID
+    Sec.Data[219] := $FF; // no autostart line
 
     FSys := TMGTFileSystem.Create(Img.Disk);
     try

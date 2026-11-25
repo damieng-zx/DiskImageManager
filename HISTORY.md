@@ -3,7 +3,15 @@
 ## Unreleased
 ### New
 - Teledisk (.td0) image support: open normal and advanced-compressed images (including gzipped ones), showing the image's comment and keeping sector flags, FM tracks and data rate, and save any disk as a compressed .td0
+- DISCiPLE .img and SAM Coupe .sad image support: open them (including gzipped ones), save disks as either, and convert between them and the other formats
+- Extract files from MGT disks, with or without their 9-byte header, by saving them or dragging them out
+- MGT file listings show each file's actual size and its start address, length, autorun line, execute address, array name or screen mode
+- Name MGT +D/DISCiPLE disks as such instead of calling them SAM Coupe SAMDOS
 ### Fixes
+- Read and save .mgt images in their real layout, the two sides of each cylinder in turn. Everything past the first directory track was previously read from, and written to, the wrong place. Files saved as .mgt by earlier versions are really .img layout and are opened as such when they hold a file to tell by
+- List MasterDOS directories longer than four tracks in full, and MasterDOS subdirectory entries
+- List the files of an MGT disk held in a DSK or Teledisk image from the right tracks
+- Format new MGT disks with a zero filler: the previous E5 left every directory slot looking occupied
 - Save a standard DSK image with sectors that hold fewer bytes than their size code: every sector after one was written short, so reloading read one sector's data as the tail of the one before it
 - Keep a formatted track whose sectors carry no data field when saving, instead of dropping it from an extended image or zeroing its sector entries in a standard one
 - Keep the sector IDs of a track whose interleave is as wide as the track or wider within the table, instead of indexing outside it and handing out duplicate and missing IDs

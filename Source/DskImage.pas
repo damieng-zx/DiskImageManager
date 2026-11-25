@@ -23,7 +23,15 @@ const
   MaxImageSectors = 4096;
   Alt8KSize = 6144;
   FDCSectorSizes: array[0..8] of word = (128, 256, 512, 1024, 2048, 4096, 8192, 16384, MaxSectorSize);
-  MGTRawSize = 819200;  // Raw MGT/SAM image: 2 sides x 80 tracks x 10 sectors x 512 bytes
+  // The one geometry of MGT +D, DISCiPLE and SAM Coupe disks
+  MGTSides = 2;
+  MGTTracks = 80;
+  MGTSectorsPerTrack = 10;
+  MGTSectorSize = 512;
+  MGTRawSize = 819200;  // Raw image: 2 sides x 80 tracks x 10 sectors x 512 bytes
+  // A SAD image is a header naming that geometry, then the raw sectors
+  SADHeaderSize = 22;
+  SADSignature: ansistring = 'Aley''s disk backup';
 
 type
   // Physical disk structure
@@ -36,6 +44,17 @@ type
   // Logical intepretations
   TDSKFormatSpecification = class;
   TDSKSpecification = class;
+
+  // A file one of the file systems found on a disk, as far as listing, finding
+  // and extracting it goes
+  TDiskFile = class(TObject)
+  public
+    FileName: string;
+    FirstSector: TDSKSector;
+    // Whether there is a header GetData can include or leave off
+    function HasHeader: boolean; virtual; abstract;
+    function GetData(WithHeader: boolean): TDiskByteArray; virtual; abstract;
+  end;
 
   // Directory entry cursor: walks fixed-size entries packed across the logical
   // sectors of a disk, crossing sector boundaries as it goes. Shared by the
@@ -105,7 +124,8 @@ type
   end;
 
   // Image
-  TDSKImageFormat = (diStandardDSK, diExtendedDSK, diRawMGT, diTeleDisk, diNotYetSaved, diInvalid);
+  TDSKImageFormat = (diStandardDSK, diExtendedDSK, diRawMGT, diRawIMG, diRawSAD,
+    diTeleDisk, diNotYetSaved, diInvalid);
 
   TDSKImage = class(TObject)
   private
@@ -117,11 +137,11 @@ type
     FIsChanged: boolean;
     procedure SetIsChanged(NewValue: boolean);
     function LoadFileDSK(DiskFile: TStream): boolean;
-    function LoadFileMGT(DiskFile: TStream): boolean;
+    function LoadFileRaw(DiskFile: TStream): boolean;
     function LoadFileTD0(DiskFile: TStream): boolean;
     function RecoverExtTrackSize(DiskFile: TStream; ExpTrack, ExpSide: integer): integer;
     function SaveFileDSK(DiskFile: TFileStream; SaveFileFormat: TDSKImageFormat; Compress: boolean): boolean;
-    function SaveFileMGT(DiskFile: TFileStream): boolean;
+    function SaveFileRaw(DiskFile: TFileStream; SaveFileFormat: TDSKImageFormat): boolean;
     function SaveFileTD0(DiskFile: TFileStream): boolean;
   public
     FileFormat: TDSKImageFormat;
@@ -423,6 +443,8 @@ const
     'Standard DSK',
     'Extended DSK',
     'MGT image',
+    'DISCiPLE IMG image',
+    'SAM Coupe SAD image',
     'Teledisk TD0',
     'Not yet saved',
     'Invalid'
@@ -495,6 +517,14 @@ function ToRecordingMode(Value: integer): TDSKRecordingMode;
 
 function GetFDCSectorSize(SectorSize: word): byte;
 
+// Whether a header is one a SAD image of an MGT disk can start with: the
+// signature and that geometry, or the nothing at all that some tools write
+function IsMGTSADHeader(const Header: array of byte): boolean;
+
+// Whether an MGTRawSize dump holds all of one side and then all of the other,
+// going by where its first file turns up rather than by what it is called
+function IsSideSequentialDump(Stream: TStream): boolean;
+
 // Bytes a sector of FDC size code FDCSize holds, or 0 when the code is not one
 // the controller defines. The code is a raw byte off the disk and the sector
 // properties window will set any of the 256 of them, so indexing the table with
@@ -517,6 +547,82 @@ function GetTrackFileDataSize(Track: TDSKTrack; SaveFileFormat: TDSKImageFormat)
 implementation
 
 uses FormatAnalysis, LZHuf, Windows;
+
+// The SAD header for the geometry this app reads and writes
+procedure BuildSADHeader(out Header: array of byte);
+begin
+  FillChar(Header[0], SADHeaderSize, 0);
+  Move(SADSignature[1], Header[0], Length(SADSignature));
+  Header[18] := MGTSides;
+  Header[19] := MGTTracks;
+  Header[20] := MGTSectorsPerTrack;
+  Header[21] := MGTSectorSize div 64;
+end;
+
+function IsMGTSADHeader(const Header: array of byte): boolean;
+var
+  Wanted: array[0..SADHeaderSize - 1] of byte;
+  Idx: integer;
+begin
+  Result := False;
+  if Length(Header) < SADHeaderSize then exit;
+  BuildSADHeader(Wanted);
+  if CompareMem(@Header[0], @Wanted[0], SADHeaderSize) then exit(True);
+  for Idx := 0 to SADHeaderSize - 1 do
+    if Header[Idx] <> 0 then exit;
+  Result := True;
+end;
+
+// The same test as mgtdisklib's. Side by side, the data area opens at track 4
+// sector 1, 40 sectors in; interleaved, that offset is still in the directory.
+function IsSideSequentialDump(Stream: TStream): boolean;
+const
+  FirstDataOffset = 4 * MGTSectorsPerTrack * MGTSectorSize;
+  FileHeaderInEntry = $D3;  // the entry's copy of the file's 9-byte header
+  FileHeaderSize = 9;
+var
+  Entry, Data: array[0..MGTSectorSize - 1] of byte;
+  Idx: integer;
+  Uniform: boolean;
+begin
+  Result := False;
+  if Stream.Size <> MGTRawSize then exit;
+  Stream.Position := 0;
+  Stream.ReadBuffer(Entry, SizeOf(Entry));
+  Stream.Position := FirstDataOffset;
+  Stream.ReadBuffer(Data, SizeOf(Data));
+
+  // Nothing to go on without a first file
+  if (Entry[0] = 0) and (Entry[1] = 0) then exit;
+
+  // The first sector of data links on to the second
+  if (Data[510] = 4) and (Data[511] = 2) then exit(True);
+
+  // The first sector of data starts with the header the first entry repeats.
+  // One byte repeated is not a header: a disk of nothing but filler would match.
+  Uniform := True;
+  for Idx := 1 to FileHeaderSize - 1 do
+    if Entry[FileHeaderInEntry + Idx] <> Entry[FileHeaderInEntry] then Uniform := False;
+  Result := not Uniform and
+    CompareMem(@Entry[FileHeaderInEntry], @Data[0], FileHeaderSize);
+end;
+
+// Where the Index'th track of a raw image belongs. An .mgt file takes the two
+// sides of each cylinder in turn; .img and .sad take all of side 0 first.
+procedure GetRawTrackPosition(ImageFormat: TDSKImageFormat; Index: integer;
+  out SideIdx, TrackIdx: integer);
+begin
+  if ImageFormat = diRawMGT then
+  begin
+    SideIdx := Index mod MGTSides;
+    TrackIdx := Index div MGTSides;
+  end
+  else
+  begin
+    SideIdx := Index div MGTTracks;
+    TrackIdx := Index mod MGTTracks;
+  end;
+end;
 
 // Image
 constructor TDSKImage.Create;
@@ -585,6 +691,8 @@ constructor TDSKImage.CreateFromStream(Stream: TStream; FileName: TFileName);
 var
   DSKInfoBlock: TDSKInfoBlock;
   TD0Header: TTD0Header;
+  SADHeader: array[0..SADHeaderSize - 1] of byte;
+  Extension: string;
 begin
   FileFormat := diInvalid;
   // Read as much of a DSK header as there is. A Teledisk image can be shorter
@@ -623,18 +731,47 @@ begin
     LoadFileTD0(Stream);
     FIsChanged := False;
   end
-  else if SameText(ExtractFileExt(FileName), '.mgt') and (Stream.Size = MGTRawSize) then
-  begin
-    // Raw MGT/SAM image: a headerless sector dump.
-    Stream.Seek(0, soFromBeginning);
-    FileFormat := diRawMGT;
-    LoadFileMGT(Stream);
-    FIsChanged := False;
-  end
   else
   begin
-    MessageDlg('Load failure', FileName + ' is unknown file type. Load aborted.', mtWarning, [mbOK], 0);
-    Corrupt := True;
+    // The raw MGT/SAM images carry no signature to speak of, so they are known
+    // by their name and exact size
+    Extension := LowerCase(ExtractFileExt(FileName));
+    if (Extension = '.img') and (Stream.Size = MGTRawSize) then
+      FileFormat := diRawIMG
+    else if (Extension = '.mgt') and (Stream.Size = MGTRawSize) then
+    begin
+      // Plenty of .mgt files are really laid out as .img, including those saved
+      // by earlier versions of this app
+      if IsSideSequentialDump(Stream) then
+      begin
+        FileFormat := diRawIMG;
+        Messages.Add('Named .mgt but holds one side after the other, so it was read as an .img image.');
+      end
+      else
+        FileFormat := diRawMGT;
+    end
+    else if (Extension = '.sad') and (Stream.Size = SADHeaderSize + MGTRawSize) then
+    begin
+      Stream.Seek(0, soFromBeginning);
+      Stream.ReadBuffer(SADHeader, SizeOf(SADHeader));
+      if IsMGTSADHeader(SADHeader) then
+        FileFormat := diRawSAD;
+    end;
+
+    if FileFormat <> diInvalid then
+    begin
+      if FileFormat = diRawSAD then
+        Stream.Seek(SADHeaderSize, soFromBeginning)
+      else
+        Stream.Seek(0, soFromBeginning);
+      LoadFileRaw(Stream);
+      FIsChanged := False;
+    end
+    else
+    begin
+      MessageDlg('Load failure', FileName + ' is unknown file type. Load aborted.', mtWarning, [mbOK], 0);
+      Corrupt := True;
+    end;
   end;
 end;
 
@@ -1104,20 +1241,16 @@ begin
   Result := True;
 end;
 
-// Load a raw MGT/SAM image: a headerless dump of 2 sides x 80 tracks x 10
-// sectors x 512 bytes. Sides are stored successively (all of side 0, then all
-// of side 1); each track holds sectors 1..10 in order, 512 bytes each.
-function TDSKImage.LoadFileMGT(DiskFile: TStream): boolean;
+// Load the sectors of a raw MGT/SAM image: 2 sides x 80 tracks x 10 sectors x
+// 512 bytes, each track holding sectors 1..10 in order. FileFormat says what
+// order the tracks come in, and the stream is at the first of them.
+function TDSKImage.LoadFileRaw(DiskFile: TStream): boolean;
 const
-  MGTSides = 2;
-  MGTTracks = 80;
-  MGTSectorsPerTrack = 10;
-  MGTSectorSize = 512;
   MGTFirstSectorID = 1;
   MGTFDCSize = 2;     // FDC size code for 512-byte sectors
   MGTGapLength = $17; // standard MGT/+3 format gap
 var
-  SIdx, TIdx, EIdx: integer;
+  Index, SIdx, TIdx, EIdx: integer;
 begin
   Result := False;
 
@@ -1128,36 +1261,37 @@ begin
     Disk.Side[SIdx].Tracks := MGTTracks;
   end;
 
-  for SIdx := 0 to MGTSides - 1 do
-    for TIdx := 0 to MGTTracks - 1 do
-      with Disk.Side[SIdx].Track[TIdx] do
-      begin
-        Track := TIdx;
-        Side := SIdx;
-        // SAM/+D number side-1 tracks as physical track + 128, which is how the
-        // directory's start-track byte is encoded; mirror it so GetLogicalTrack
-        // resolves files on either side.
-        Logical := (SIdx * 128) + TIdx;
-        Sectors := MGTSectorsPerTrack;
-        SectorSize := MGTSectorSize;
-        Filler := 0;
-        GapLength := MGTGapLength;
+  for Index := 0 to MGTSides * MGTTracks - 1 do
+  begin
+    GetRawTrackPosition(FileFormat, Index, SIdx, TIdx);
+    with Disk.Side[SIdx].Track[TIdx] do
+    begin
+      Track := TIdx;
+      Side := SIdx;
+      // SAM/+D number side-1 tracks as physical track + 128, which is how the
+      // disk's own track bytes are encoded
+      Logical := (SIdx * 128) + TIdx;
+      Sectors := MGTSectorsPerTrack;
+      SectorSize := MGTSectorSize;
+      Filler := 0;
+      GapLength := MGTGapLength;
 
-        for EIdx := 0 to MGTSectorsPerTrack - 1 do
-          with Sector[EIdx] do
-          begin
-            Sector := EIdx;
-            Track := TIdx;
-            Side := SIdx;
-            ID := MGTFirstSectorID + EIdx;
-            FDCSize := MGTFDCSize;
-            FDCStatus[1] := 0;
-            FDCStatus[2] := 0;
-            DataSize := MGTSectorSize;
-            AdvertisedSize := MGTSectorSize;
-            DiskFile.ReadBuffer(Data, MGTSectorSize);
-          end;
-      end;
+      for EIdx := 0 to MGTSectorsPerTrack - 1 do
+        with Sector[EIdx] do
+        begin
+          Sector := EIdx;
+          Track := TIdx;
+          Side := SIdx;
+          ID := MGTFirstSectorID + EIdx;
+          FDCSize := MGTFDCSize;
+          FDCStatus[1] := 0;
+          FDCStatus[2] := 0;
+          DataSize := MGTSectorSize;
+          AdvertisedSize := MGTSectorSize;
+          DiskFile.ReadBuffer(Data, MGTSectorSize);
+        end;
+    end;
+  end;
 
   Result := True;
 end;
@@ -1486,7 +1620,7 @@ begin
       case SaveFileFormat of
         diStandardDSK: Result := SaveFileDSK(DiskFile, diStandardDSK, False);
         diExtendedDSK: Result := SaveFileDSK(DiskFile, diExtendedDSK, Compress);
-        diRawMGT: Result := SaveFileMGT(DiskFile);
+        diRawMGT, diRawIMG, diRawSAD: Result := SaveFileRaw(DiskFile, SaveFileFormat);
         diTeleDisk: Result := SaveFileTD0(DiskFile);
         else
           MessageDlg(SysUtils.Format('Unknown file format %i', [SaveFileFormat]), mtError, [mbOK], 0);
@@ -1830,51 +1964,54 @@ begin
   Result := True;
 end;
 
-// Save a raw MGT/SAM image: a headerless dump of 2 sides x 80 tracks x 10
-// sectors x 512 bytes, sides stored successively (all of side 0, then all of
-// side 1). Sectors are written in ID order 1..10; anything missing is written
-// as 512 filler bytes so the file is always exactly MGTRawSize.
-function TDSKImage.SaveFileMGT(DiskFile: TFileStream): boolean;
+// Save a raw MGT/SAM image: 2 sides x 80 tracks x 10 sectors x 512 bytes, in
+// the track order the format keeps them in, behind a header for SAD. Sectors
+// are written in ID order 1..10; anything missing is written as 512 filler
+// bytes so the sectors always come to exactly MGTRawSize.
+function TDSKImage.SaveFileRaw(DiskFile: TFileStream; SaveFileFormat: TDSKImageFormat): boolean;
 const
-  MGTSides = 2;
-  MGTTracks = 80;
-  MGTSectorsPerTrack = 10;
-  MGTSectorSize = 512;
   MGTFirstSectorID = 1;
 var
-  SIdx, TIdx, SectorID, ByteIdx: integer;
+  Index, SIdx, TIdx, SectorID, ByteIdx: integer;
   Blank: array[0..MGTSectorSize - 1] of byte;
+  SADHeader: array[0..SADHeaderSize - 1] of byte;
   Sector: TDSKSector;
   Track: TDSKTrack;
 begin
   FillChar(Blank, SizeOf(Blank), 0);
 
-  for SIdx := 0 to MGTSides - 1 do
-    for TIdx := 0 to MGTTracks - 1 do
+  if SaveFileFormat = diRawSAD then
+  begin
+    BuildSADHeader(SADHeader);
+    DiskFile.WriteBuffer(SADHeader, SizeOf(SADHeader));
+  end;
+
+  for Index := 0 to MGTSides * MGTTracks - 1 do
+  begin
+    GetRawTrackPosition(SaveFileFormat, Index, SIdx, TIdx);
+    Track := nil;
+    if (SIdx < Disk.Sides) and (TIdx < Disk.Side[SIdx].Tracks) then
+      Track := Disk.Side[SIdx].Track[TIdx];
+
+    for SectorID := MGTFirstSectorID to MGTFirstSectorID + MGTSectorsPerTrack - 1 do
     begin
-      Track := nil;
-      if (SIdx < Disk.Sides) and (TIdx < Disk.Side[SIdx].Tracks) then
-        Track := Disk.Side[SIdx].Track[TIdx];
+      Sector := nil;
+      if Track <> nil then
+        Sector := Track.GetLogicalSectorByID(SectorID);
 
-      for SectorID := MGTFirstSectorID to MGTFirstSectorID + MGTSectorsPerTrack - 1 do
+      if (Sector <> nil) and (Sector.DataSize >= MGTSectorSize) then
+        DiskFile.WriteBuffer(Sector.Data, MGTSectorSize)
+      else if Sector <> nil then
       begin
-        Sector := nil;
-        if Track <> nil then
-          Sector := Track.GetLogicalSectorByID(SectorID);
-
-        if (Sector <> nil) and (Sector.DataSize >= MGTSectorSize) then
-          DiskFile.WriteBuffer(Sector.Data, MGTSectorSize)
-        else if Sector <> nil then
-        begin
-          // Short sector: write what we have, then pad to 512.
-          DiskFile.WriteBuffer(Sector.Data, Sector.DataSize);
-          for ByteIdx := Sector.DataSize to MGTSectorSize - 1 do
-            DiskFile.WriteByte(0);
-        end
-        else
-          DiskFile.WriteBuffer(Blank, MGTSectorSize);
-      end;
+        // Short sector: write what we have, then pad to 512.
+        DiskFile.WriteBuffer(Sector.Data, Sector.DataSize);
+        for ByteIdx := Sector.DataSize to MGTSectorSize - 1 do
+          DiskFile.WriteByte(0);
+      end
+      else
+        DiskFile.WriteBuffer(Blank, MGTSectorSize);
     end;
+  end;
 
   Result := True;
 end;
@@ -2245,9 +2382,10 @@ begin
 
     // Find the next logical track
     NextSectorID := 0;
-    // Raw MGT numbers side 1 from 128, leaving 80..127 unused after the
+    // Raw MGT images number side 1 from 128, leaving 80..127 unused after the
     // 80 tracks on side 0. Continue across that gap rather than stopping.
-    if (FParentImage.FileFormat = diRawMGT) and (CheckTrack.Logical = 79) then
+    if (FParentImage.FileFormat in [diRawMGT, diRawIMG, diRawSAD]) and
+      (CheckTrack.Logical = 79) then
       CheckTrack := GetLogicalTrack(128)
     else
       CheckTrack := GetLogicalTrack(CheckTrack.Logical + 1);
@@ -3696,6 +3834,9 @@ begin
       Sides := dsSideDoubleAlternate;
       TracksPerSide := 80;
       SectorsPerTrack := 10;
+      // A directory slot is free when it starts with zero. Any other filler
+      // leaves a new disk looking full of files on the real machine.
+      FillerByte := 0;
     end;
   end;
   self.FDCSectorSize := GetFDCSectorSize(self.SectorSize);

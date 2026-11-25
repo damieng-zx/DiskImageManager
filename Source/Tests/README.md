@@ -18,6 +18,7 @@ configuration helpers. Forms and viewers are out of scope.
 | `TestDskImage.pas` | `DskImage.pas` | format / save / reload round-trips |
 | `TestCPMFileSystem.pas` | `filesystem.pas` | directory parsing, header size clamping |
 | `TestFormatAnalysis.pas` | `FormatAnalysis.pas` | disk format and protection identification |
+| `TestMGTFileSystem.pas` | `mgtfilesystem.pas`, `DskImage.pas` | MGT/SAM layouts, directories and file contents against sample disks |
 | `TestLZHuf.pas` | `LZHuf.pas` | Teledisk LZHUF compression and decompression |
 | `TestTeleDisk.pas` | `TeleDisk.pas` | CRC, header validation, sector encoding |
 | `TestNavigationHistory.pas` | `NavigationHistory.pas` | location serialization and malformed input |
@@ -25,8 +26,13 @@ configuration helpers. Forms and viewers are out of scope.
 The BASIC tests feed hand-built tokenised byte streams straight into the
 decoders. The `DskImage` tests generate their fixtures **synthetically in
 code**: a blank image is formatted with a known `TDSKFormatSpecification`, then
-saved and reloaded to prove the load/save round-trip preserves geometry. No
-binary disk images are committed to the repo.
+saved and reloaded to prove the load/save round-trip preserves geometry.
+
+The MGT tests are the exception and use real disk images, in `data/mgtdisklib`.
+They come from the test suite of Simon Owen's
+[mgtdisklib](https://github.com/simonowen/mgtdisklib) under the MIT licence
+beside them, and the expected values are the ones that suite asserts. The runner
+looks for them next to its own executable.
 
 ## Running
 

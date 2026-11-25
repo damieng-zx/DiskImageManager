@@ -557,6 +557,7 @@ begin
   AddColumn('File name', taLeftJustify);
   AddColumn('Sectors');
   AddColumn('Allocated');
+  AddColumn('Actual');
   AddColumn('Meta', taLeftJustify);
 
   with FListView do
@@ -571,6 +572,7 @@ begin
           Caption := DiskFile.FileName;
           SubItems.Add(StrInt(DiskFile.SectorsAllocated));
           SubItems.Add(StrFileSize(DiskFile.AllocatedSize));
+          SubItems.Add(StrFileSize(DiskFile.Size));
           SubItems.Add(DiskFile.Meta);
         end;
     finally

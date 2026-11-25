@@ -17,7 +17,7 @@ function DetectInterleave(Track: TDskTrack): string;
 
 implementation
 
-uses DIMUtils;
+uses DIMUtils, MGTFileSystem;
 
 function AnalyseFormat(Disk: TDSKDisk): string;
 var
@@ -72,6 +72,26 @@ begin
   if UsableTracks < 0 then UsableTracks := 0;
   Bytes := int64(UsableTracks) * Sector.Data[3] * (128 shl Sector.Data[4]);
   Result := Bytes div 1024;
+end;
+
+// Name the system an MGT-geometry disk belongs to, going by its directory. The
+// name starts 'MGT ', which is how the rest of the app knows these disks.
+function DescribeMGT(Disk: TDSKDisk): string;
+var
+  FileSystem: TMGTFileSystem;
+begin
+  FileSystem := TMGTFileSystem.Create(Disk);
+  try
+    case FileSystem.DosType of
+      mdPlusD: Result := 'MGT +D/DISCiPLE';
+      mdMasterDOS: Result := 'MGT SAM Coupe MasterDOS';
+      mdBDOS: Result := 'MGT SAM Coupe BDOS';
+      else
+        Result := 'MGT SAM Coupe SAMDOS';
+    end;
+  finally
+    FileSystem.Free;
+  end;
 end;
 
 function DetectUniformFormat(Disk: TDSKDisk): string;
@@ -178,20 +198,10 @@ begin
     end;
   end;
 
-  // Sam Coupe formats
+  // MGT formats: +D and DISCiPLE on the Spectrum, and the Sam Coupe
   if (Disk.Sides = 2) and (FirstTrack.Sectors = 10) and (Disk.Side[0].HighTrackCount = 80) and
     (FirstSector.ID = 1) and (FirstSector.DataSize = 512) then
-  begin
-    Result := 'MGT SAM Coupe';
-    if StrInByteArray(FirstSector.Data, 'BDOS', 232) then
-      Result := Result + ' BDOS'
-    else
-      case FirstSector.Data[210] of
-        0, 255: Result := Result + ' SAMDOS';
-        else
-          Result := Result + ' MasterDOS';
-      end;
-  end;
+    Result := DescribeMGT(Disk);
 
   // Einstein format
   if FirstSector.DataSize > 10 then

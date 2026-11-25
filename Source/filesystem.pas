@@ -41,18 +41,16 @@ type
     destructor Destroy; override;
   end;
 
-  TCPMFile = class(TObject)
+  TCPMFile = class(TDiskFile)
   private
     FParentFileSystem: TCPMFileSystem;
   public
     Blocks: TFPGList<integer>;
-    FileName: string;
     SizeOnDisk: integer;
     User: byte;
     ReadOnly: boolean;
     System: boolean;
     Archived: boolean;
-    FirstSector: TDSKSector;
     EntryIndex: integer;
     Extent: integer;
 
@@ -62,7 +60,8 @@ type
     HeaderSize: integer;
     Meta: string;
 
-    function GetData(WithHeader: boolean): TDiskByteArray;
+    function HasHeader: boolean; override;
+    function GetData(WithHeader: boolean): TDiskByteArray; override;
 
     constructor Create(ParentFileSystem: TCPMFileSystem);
     destructor Destroy; override;
@@ -472,6 +471,11 @@ begin
   FParentFileSystem := nil;
   Blocks.Free;
   inherited Destroy;
+end;
+
+function TCPMFile.HasHeader: boolean;
+begin
+  Result := HeaderType <> 'None';
 end;
 
 function TCPMFile.GetData(WithHeader: boolean): TDiskByteArray;

@@ -27,7 +27,8 @@ uses
   TestLZHuf,
   TestTeleDisk,
   TestUIUtils,
-  TestNavigationHistory;
+  TestNavigationHistory,
+  TestMGTFileSystem;
 
 type
   TDIMTestRunner = class(TTestRunner)

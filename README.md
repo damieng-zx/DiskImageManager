@@ -1,6 +1,6 @@
 # Disk Image Manager
 
-Disk Image Manager is an application for examining and manipulating disk images in the Standard and Extended DSK format used by many Spectrum, Amstrad PCW and CPC emulators, as well as MGT and Teledisk (.td0) images.
+Disk Image Manager is an application for examining and manipulating disk images in the Standard and Extended DSK format used by many Spectrum, Amstrad PCW and CPC emulators, as well as MGT +D, DISCiPLE and SAM Coupe (.mgt, .img, .sad) and Teledisk (.td0) images.
 
 Many of this tool's features and functions were driven by the Spectrum Disk Preservation team which used this format and tool to help manage the selection and testing of disk images archived to The World of Spectrum and The TZX Vault.
 
@@ -11,7 +11,7 @@ These images are traditionally created with CPDRead under DOS but Simon Owen's m
 ### Images
 
 * Conversion between standard and extended image formats
-* Read and save MGT/SAM Coupe disk images
+* Read and save MGT +D, DISCiPLE and SAM Coupe disk images in .mgt, .img and .sad form
 * Read and save Teledisk (.td0) images, including advanced compression
 * Identification of tool that created the image
 * List all ASCII strings found on a disk image
@@ -52,9 +52,10 @@ Capable of identifying the following original disk formats even when de-skewed b
 * Ultra 208 (Chris Pile)
 * HiForm 208/203 (Ian Collier)
 * Supermat 192/XCF2
+* MGT +D/DISCiPLE
 * MGT SAM Coupe BDOS
-* SAMDOS
-* MasterDOS
+* MGT SAM Coupe SAMDOS
+* MGT SAM Coupe MasterDOS
 * Timex TS2068
 
 ### Copy protection identification
@@ -84,7 +85,8 @@ Identification of copy-protection schemes both signed and somtimes unsigned:
 * Can list a CP/M file system such as used on +3, PCW and CPC & Tatung Einstein
 * Understands +3 DOS and AMSDOS (CPC) file headers, decoding load/exec addresses and file type
 * Binary export/saving available for individual or all files with & without headers
-* Rename files in place
+* Rename files in place (CP/M)
+* Can list and extract files from MGT +D, DISCiPLE, SAMDOS, MasterDOS and BDOS disks, recovering what it can from damaged sector chains
 
 ### Modification
 
