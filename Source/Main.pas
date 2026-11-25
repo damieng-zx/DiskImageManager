@@ -1980,7 +1980,9 @@ begin
   if Image.FileFormat = diNotYetSaved then
     Result := SaveImageAs(Image, False, '')
   else
-  if ExtractFileExt(Image.FileName) = '.gz' then
+  // Any case, as the loader unpacks any case: nothing here writes gzip, so
+  // saving to the same name would leave a .gz that is not one
+  if SameText(ExtractFileExt(Image.FileName), '.gz') then
     Result := SaveImageAs(Image, False, ExtractFileNameWithoutExt(Image.FileName))
   else
     Result := Image.SaveFile(Image.FileName, Image.FileFormat, False,

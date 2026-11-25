@@ -12,6 +12,7 @@
 - List MasterDOS directories longer than four tracks in full, and MasterDOS subdirectory entries
 - List the files of an MGT disk held in a DSK or Teledisk image from the right tracks
 - Format new MGT disks with a zero filler: the previous E5 left every directory slot looking occupied
+- Save an image opened from a name ending .GZ in capitals through Save As, as a lowercase .gz already was, instead of writing it uncompressed over the gzipped file
 - Save a standard DSK image with sectors that hold fewer bytes than their size code: every sector after one was written short, so reloading read one sector's data as the tail of the one before it
 - Keep a formatted track whose sectors carry no data field when saving, instead of dropping it from an extended image or zeroing its sector entries in a standard one
 - Keep the sector IDs of a track whose interleave is as wide as the track or wider within the table, instead of indexing outside it and handing out duplicate and missing IDs
