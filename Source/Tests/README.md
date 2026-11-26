@@ -20,6 +20,7 @@ configuration helpers. Forms and viewers are out of scope.
 | `TestFormatAnalysis.pas` | `FormatAnalysis.pas` | disk format and protection identification |
 | `TestMGTFileSystem.pas` | `mgtfilesystem.pas`, `DskImage.pas` | MGT/SAM layouts, directories and file contents against sample disks |
 | `TestDiskArchive.pas` | `DiskArchive.pas`, `DskImage.pas` | images read from .gz and .zip files |
+| `TestOpusFileSystem.pas` | `opusfilesystem.pas`, `DskImage.pas` | Opus Discovery images, catalogues, file headers and formatting |
 | `TestLZHuf.pas` | `LZHuf.pas` | Teledisk LZHUF compression and decompression |
 | `TestTeleDisk.pas` | `TeleDisk.pas` | CRC, header validation, sector encoding |
 | `TestNavigationHistory.pas` | `NavigationHistory.pas` | location serialization and malformed input |

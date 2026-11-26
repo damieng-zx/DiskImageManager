@@ -14,7 +14,7 @@ unit New;
 interface
 
 uses
-  DskImage, Main, DIMUtils,
+  DskImage, Main, DIMUtils, OpusFileSystem,
   SysUtils, Classes, Forms, StdCtrls, ComCtrls, ExtCtrls, Dialogs, Buttons, Math, Controls, Graphics, DSKFormat;
 
 type
@@ -213,6 +213,9 @@ var
 begin
   if IsLoading then exit;
 
+  // An Opus disk has a boot sector of its own
+  chkWriteDiskSpec.Enabled := not CurrentFormat.OpusDiscovery;
+
   // Set summary details
   if lvwSummary.Items.Count >= 4 then
   begin
@@ -259,6 +262,18 @@ begin
   begin
     NewWarn := lvwWarnings.Items.Add;
     NewWarn.Caption := LimitMessage;
+  end;
+
+  // The warnings below are about CP/M disks
+  if CurrentFormat.OpusDiscovery then
+  begin
+    memDPBHex.Text := '';
+    if (BootSectorSize > 0) or chkWriteDiskSpec.Checked then
+    begin
+      NewWarn := lvwWarnings.Items.Add;
+      NewWarn.Caption := 'Opus Discovery writes its own boot sector, not these';
+    end;
+    exit;
   end;
 
   // Boot warnings
@@ -371,7 +386,9 @@ begin
   else if TrackCount > MaxTracks then
     Result := Format('Extended DSK headers hold at most %d tracks in total.', [MaxTracks])
   else if TrackCount * CurrentFormat.SectorsPerTrack > MaxImageSectors then
-    Result := Format('A disk can hold at most %d sectors in memory.', [MaxImageSectors]);
+    Result := Format('A disk can hold at most %d sectors in memory.', [MaxImageSectors])
+  else if CurrentFormat.OpusDiscovery and not IsOpusFormattable(CurrentFormat) then
+    Result := 'Opus Discovery needs 40 or 80 tracks of 18 256-byte sectors from ID 0.';
 end;
 
 function TfrmNew.GetFormat: TDSKSpecFormat;
@@ -393,7 +410,7 @@ procedure TfrmNew.btnFormatClick(Sender: TObject);
 var
   NewImage: TDSKImage;
   CopySize: integer;
-  LimitMessage: string;
+  LimitMessage, Extension: string;
 begin
   // Check again at the point of allocation, not just when the controls change.
   LimitMessage := FormatLimitMessage;
@@ -403,12 +420,24 @@ begin
     exit;
   end;
 
+  if CurrentFormat.OpusDiscovery then
+    Extension := 'opd'
+  else
+    Extension := 'dsk';
+
   NewImage := TDSKImage.Create;
   with NewImage do
   begin
-    FileName := Format('Untitled %d.dsk', [frmMain.GetNextNewFile]);
+    FileName := Format('Untitled %d.%s', [frmMain.GetNextNewFile, Extension]);
     FileFormat := diNotYetSaved;
     Disk.Format(CurrentFormat);
+  end;
+
+  if CurrentFormat.OpusDiscovery then
+  begin
+    WriteOpusFileSystem(NewImage.Disk, CurrentFormat.DirBlocks);
+    frmMain.AddWorkspaceImage(NewImage);
+    exit;
   end;
 
   if chkWriteDiskSpec.Checked then
@@ -465,7 +494,7 @@ var
 begin
   lvwFormats.BeginUpdate;
   try
-    for Idx := 0 to 8 do
+    for Idx := 0 to 9 do
       with lvwFormats.Items.Add do
       begin
         Format := TDSKFormatSpecification.Create(Idx);

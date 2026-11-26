@@ -15,7 +15,7 @@ interface
 
 uses
   DiskMap, DskImage, DIMUtils, Utils, NavigationHistory, About, Options, SectorProperties,
-  TrackProperties, Settings, FileSystem, MGTFileSystem, ListViewPresenter,
+  TrackProperties, Settings, FileSystem, MGTFileSystem, OpusFileSystem, ListViewPresenter,
   Comparers, FileViewer, SinclairBasic, ZXScreenViewer, SpectrumScreen,
   CPCScreenViewer, AmstradScreen, ShellDragDrop, DiskArchive,
   Classes, Graphics, SysUtils, Forms, Dialogs, Menus,
@@ -168,6 +168,7 @@ type
     procedure itmTrackPropertiesClick(Sender: TObject);
     procedure itmTrackUnformatClick(Sender: TObject);
     procedure ShowFile(Sender: TObject);
+    procedure ShowOpusFile(DiskFile: TOpusFile; const DiskName: string);
     procedure lvwMainCompare(Sender: TObject; Item1, Item2: TListItem;
       Data: integer; var Compare: integer);
     procedure MenuItem1Click(Sender: TObject);
@@ -1335,6 +1336,10 @@ begin
 
       if (Image.Disk.DetectFormat().StartsWith('MGT')) then
         AddTree(ImageNode, 'Files', Ord(itFiles), TMGTFileSystem.Create(Image.Disk))
+      // An .opd image is an Opus disk even if its contents do not show it
+      else if (Image.FileFormat = diRawOPD) or
+        (Image.Disk.DetectFormat() = OpusFormatName) then
+        AddTree(ImageNode, 'Files', Ord(itFiles), TOpusFileSystem.Create(Image.Disk))
       else
         AddTree(ImageNode, 'Files', Ord(itFiles), TCPMFileSystem.Create(Image.Disk));
       AddTree(ImageNode, 'Strings', Ord(itStrings), Image.Disk);
@@ -1442,7 +1447,8 @@ begin
       tvwMain.PopupMenu := popSector;
     if ObjectData.ClassType = TDSKTrack then
       tvwMain.PopupMenu := popTrack;
-    if ObjectData.ClassType = TCPMFileSystem then
+    if (ObjectData.ClassType = TCPMFileSystem) or
+      (ObjectData.ClassType = TOpusFileSystem) then
       tvwMain.PopupMenu := popFileSystem;
     if ItemType(tvwMain.Selected.ImageIndex) = itAnalyse then
       tvwMain.PopupMenu := popDiskMap;
@@ -1545,6 +1551,8 @@ begin
                     FPresenter.RefreshFiles(TCPMFileSystem(Data));
                   if (TObject(Data).ClassType = TMGTFileSystem) then
                     FPresenter.RefreshFilesMGT(TMGTFileSystem(Data));
+                  if (TObject(Data).ClassType = TOpusFileSystem) then
+                    FPresenter.RefreshFilesOpus(TOpusFileSystem(Data));
               end;
             end;
           end
@@ -1718,7 +1726,8 @@ begin
   begin
     if (Child.Data <> nil) and
       ((TObject(Child.Data).ClassType = TCPMFileSystem) or
-      (TObject(Child.Data).ClassType = TMGTFileSystem)) then
+      (TObject(Child.Data).ClassType = TMGTFileSystem) or
+      (TObject(Child.Data).ClassType = TOpusFileSystem)) then
     begin
       TObject(Child.Data).Free;
       Child.Data := nil;
@@ -1903,9 +1912,14 @@ begin
     diTeleDisk: dlgSave.FilterIndex := 4;
     diRawIMG: dlgSave.FilterIndex := 5;
     diRawSAD: dlgSave.FilterIndex := 6;
+    diRawOPD: dlgSave.FilterIndex := 7;
     else
       dlgSave.FilterIndex := 2;
   end;
+  // A disk made new as an Opus one is named for it
+  if (Image.FileFormat = diNotYetSaved) and
+    SameText(ExtractFileExt(Image.FileName), '.opd') then
+    dlgSave.FilterIndex := 7;
 
   if Settings.LastSaveFolder <> '' then
     dlgSave.InitialDir := Settings.LastSaveFolder;
@@ -1927,6 +1941,13 @@ begin
       3: Result := Image.SaveFile(dlgSave.FileName, diRawMGT, Copy, False);
       5: Result := Image.SaveFile(dlgSave.FileName, diRawIMG, Copy, False);
       6: Result := Image.SaveFile(dlgSave.FileName, diRawSAD, Copy, False);
+      7:
+        // Few disks fit an Opus image, so say why this one does not
+        if Image.CanSave(diRawOPD) then
+          Result := Image.SaveFile(dlgSave.FileName, diRawOPD, Copy, False)
+        else
+          MessageDlg('Cannot save as an Opus Discovery image',
+            Image.Messages[Image.Messages.Count - 1], mtWarning, [mbOK], 0);
       2: Result := Image.SaveFile(dlgSave.FileName, diExtendedDSK, Copy,
           Settings.RemoveEmptyTracks);
       1:
@@ -2437,9 +2458,17 @@ var
   DiskImage: TDSKImage;
   DiskName: string;
 begin
-  // Check if a file is selected and it's a TCPMFile
+  // Check if a file is selected and it's one there is a viewer for
   if (lvwMain.Selected = nil) or (lvwMain.Selected.Data = nil) then
     Exit;
+
+  if TObject(lvwMain.Selected.Data) is TOpusFile then
+  begin
+    DiskImage := GetCurrentImage;
+    if DiskImage <> nil then
+      ShowOpusFile(TOpusFile(lvwMain.Selected.Data), DiskImage.DisplayName);
+    Exit;
+  end;
 
   if TObject(lvwMain.Selected.Data).ClassType <> TCPMFile then
     Exit;
@@ -2503,6 +2532,22 @@ begin
   begin
     ShowTextViewer(DiskImage.Disk, DiskFile, DiskName);
     Exit;
+  end;
+end;
+
+// The Opus files that have a viewer: SCREEN$ dumps saved as CODE, BASIC
+// programs and character arrays
+procedure TfrmMain.ShowOpusFile(DiskFile: TOpusFile; const DiskName: string);
+var
+  Disk: TDSKDisk;
+begin
+  Disk := GetCurrentImage.Disk;
+  case DiskFile.FileType of
+    oftCode:
+      if TSpectrumScreen.IsValidScreenSize(DiskFile.Size) then
+        ShowZXScreenViewer(Disk, DiskFile, DiskName);
+    oftBasic: ShowBasicViewer(Disk, DiskFile, DiskName);
+    oftStringArray: ShowStringArrayViewer(Disk, DiskFile, DiskName);
   end;
 end;
 

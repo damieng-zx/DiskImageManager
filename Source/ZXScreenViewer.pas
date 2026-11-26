@@ -52,12 +52,12 @@ type
     procedure SetZoom(NewZoom: integer);
   public
     destructor Destroy; override;
-    procedure LoadScreenFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+    procedure LoadScreenFile(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
     property DiskName: string read FDiskName write FDiskName;
     property FileName: string read FFileName write FFileName;
   end;
 
-procedure ShowZXScreenViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+procedure ShowZXScreenViewer(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
 
 implementation
 
@@ -65,7 +65,7 @@ implementation
 // resource unless this unit also recompiles, so keep them changing together.
 {$R *.lfm}
 
-procedure ShowZXScreenViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+procedure ShowZXScreenViewer(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
 var
   Viewer: TfrmZXScreenViewer;
 begin
@@ -234,7 +234,7 @@ begin
 end;
 
 procedure TfrmZXScreenViewer.LoadScreenFile(DiskImage: TDSKDisk;
-  DiskFile: TCPMFile; const DiskName: string);
+  DiskFile: TDiskFile; const DiskName: string);
 var
   FileData: TDiskByteArray;
   DataSize: integer;

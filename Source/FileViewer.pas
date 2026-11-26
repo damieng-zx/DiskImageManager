@@ -15,7 +15,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls,
-  DskImage, FileSystem, SinclairBasic, AmstradBasic, RTFView;
+  DskImage, FileSystem, OpusFileSystem, SinclairBasic, AmstradBasic, RTFView;
 
 type
   TfrmFileViewer = class(TForm)
@@ -34,15 +34,16 @@ type
     procedure ShowRTF(const RTFContent: string);
     procedure UpdateCaption;
   public
-    procedure LoadBasicFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
-    procedure LoadStringArrayFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+    // For a CP/M file or an Opus Discovery one
+    procedure LoadBasicFile(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
+    procedure LoadStringArrayFile(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
     procedure LoadTextFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
     property DiskName: string read FDiskName write FDiskName;
     property FileName: string read FFileName write FFileName;
   end;
 
-procedure ShowBasicViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
-procedure ShowStringArrayViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+procedure ShowBasicViewer(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
+procedure ShowStringArrayViewer(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
 procedure ShowTextViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
 
 implementation
@@ -52,7 +53,7 @@ uses
 
 {$R *.lfm}
 
-procedure ShowBasicViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+procedure ShowBasicViewer(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
 var
   Viewer: TfrmFileViewer;
 begin
@@ -69,7 +70,7 @@ begin
   Viewer.Show;
 end;
 
-procedure ShowStringArrayViewer(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+procedure ShowStringArrayViewer(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
 var
   Viewer: TfrmFileViewer;
 begin
@@ -163,7 +164,7 @@ begin
     Caption := 'File Viewer';
 end;
 
-procedure TfrmFileViewer.LoadBasicFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+procedure TfrmFileViewer.LoadBasicFile(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
 var
   SinclairParser: TSinclairBasicParser;
   AmstradParser: TAmstradBasicParser;
@@ -175,11 +176,11 @@ begin
 
   EnsureViewer;
 
-  if DiskFile.HeaderType = 'AMSDOS' then
+  if (DiskFile is TCPMFile) and (TCPMFile(DiskFile).HeaderType = 'AMSDOS') then
   begin
     AmstradParser := TAmstradBasicParser.Create;
     try
-      RTFText := AmstradParser.DecodeFileRTF(DiskImage, DiskFile);
+      RTFText := AmstradParser.DecodeFileRTF(DiskImage, TCPMFile(DiskFile));
     finally
       AmstradParser.Free;
     end;
@@ -188,7 +189,10 @@ begin
   begin
     SinclairParser := TSinclairBasicParser.Create(sbMode128K);
     try
-      RTFText := SinclairParser.DecodeFileRTF(DiskImage, DiskFile);
+      if DiskFile is TOpusFile then
+        RTFText := SinclairParser.DecodeRTF(TOpusFile(DiskFile).BasicProgram)
+      else
+        RTFText := SinclairParser.DecodeFileRTF(DiskImage, TCPMFile(DiskFile));
     finally
       SinclairParser.Free;
     end;
@@ -199,7 +203,7 @@ begin
   ShowRTF(RTFText);
 end;
 
-procedure TfrmFileViewer.LoadStringArrayFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
+procedure TfrmFileViewer.LoadStringArrayFile(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
 var
   Parser: TSinclairBasicParser;
   RTFText: string;
@@ -212,7 +216,10 @@ begin
 
   Parser := TSinclairBasicParser.Create(sbMode128K);
   try
-    RTFText := Parser.DecodeStringArrayFileRTF(DiskImage, DiskFile);
+    if DiskFile is TOpusFile then
+      RTFText := Parser.DecodeStringArrayRTF(DiskFile.GetData(False))
+    else
+      RTFText := Parser.DecodeStringArrayFileRTF(DiskImage, TCPMFile(DiskFile));
   finally
     Parser.Free;
   end;

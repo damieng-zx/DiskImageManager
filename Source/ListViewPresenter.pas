@@ -14,7 +14,7 @@ unit ListViewPresenter;
 interface
 
 uses
-  DskImage, FileSystem, MGTFileSystem, DIMUtils, Settings,
+  DskImage, FileSystem, MGTFileSystem, OpusFileSystem, DIMUtils, Settings,
   Classes, SysUtils, ComCtrls, Contnrs, Graphics, LConvEncoding, FGL;
 
 type
@@ -56,6 +56,7 @@ type
     procedure RefreshSectorData(Sector: TDSKSector);
     procedure RefreshFiles(FileSystem: TCPMFileSystem);
     procedure RefreshFilesMGT(FileSystem: TMGTFileSystem);
+    procedure RefreshFilesOpus(FileSystem: TOpusFileSystem);
     procedure RefreshMessages(Messages: TStringList);
   end;
 
@@ -571,6 +572,48 @@ begin
           Data := DiskFile;
           Caption := DiskFile.FileName;
           SubItems.Add(StrInt(DiskFile.SectorsAllocated));
+          SubItems.Add(StrFileSize(DiskFile.AllocatedSize));
+          SubItems.Add(StrFileSize(DiskFile.Size));
+          SubItems.Add(DiskFile.Meta);
+        end;
+    finally
+      EndUpdate;
+    end;
+  end;
+
+  // The list container only: the entries themselves belong to FOwnedFiles now
+  Files.Free;
+end;
+
+procedure TListViewPresenter.RefreshFilesOpus(FileSystem: TOpusFileSystem);
+var
+  DiskFile: TOpusFile;
+  Files: TFPGList<TOpusFile>;
+begin
+  Files := FileSystem.Directory;
+
+  for DiskFile in Files do
+    FOwnedFiles.Add(DiskFile);
+
+  AddColumn('File name', taLeftJustify);
+  AddColumn('Index');
+  AddColumn('Blocks');
+  AddColumn('Allocated');
+  AddColumn('Actual');
+  AddColumn('Meta', taLeftJustify);
+
+  with FListView do
+  begin
+    BeginUpdate;
+    try
+      Items.Clear;
+      for DiskFile in Files do
+        with Items.Add do
+        begin
+          Data := DiskFile;
+          Caption := DiskFile.FileName;
+          SubItems.Add(StrInt(DiskFile.EntryIndex));
+          SubItems.Add(StrInt(DiskFile.BlockCount));
           SubItems.Add(StrFileSize(DiskFile.AllocatedSize));
           SubItems.Add(StrFileSize(DiskFile.Size));
           SubItems.Add(DiskFile.Meta);

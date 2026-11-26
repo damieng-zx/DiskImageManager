@@ -3,6 +3,7 @@
 ## Unreleased
 ### New
 - Teledisk (.td0) image support: open normal and advanced-compressed images (including gzipped ones), showing the image's comment and keeping sector flags, FM tracks and data rate, and save any disk as a compressed .td0
+- Opus Discovery support: open .opd and .opu images (including gzipped and zipped ones) and save disks as them, recognise Opus disks held in DSK or Teledisk images, list and extract their files with or without the 7-byte header, view their BASIC programs, string arrays and SCREEN$ files, and format new Opus disks
 - DISCiPLE .img and SAM Coupe .sad image support: open them (including gzipped ones), save disks as either, and convert between them and the other formats
 - Open disk images from .zip files: every image in one is opened, including gzipped ones and those in folders, and any that will not open are listed together. Saving one asks for a new name and leaves the zip alone
 - Extract files from MGT disks, with or without their 9-byte header, by saving them or dragging them out

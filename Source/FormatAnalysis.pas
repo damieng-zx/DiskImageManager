@@ -17,7 +17,7 @@ function DetectInterleave(Track: TDskTrack): string;
 
 implementation
 
-uses DIMUtils, MGTFileSystem;
+uses DIMUtils, MGTFileSystem, OpusFileSystem;
 
 function AnalyseFormat(Disk: TDSKDisk): string;
 var
@@ -118,6 +118,10 @@ begin
     Result := 'Unformatted';
     exit;
   end;
+
+  // Known by its boot sector and catalogue, so asked first
+  if IsOpusDisk(Disk) then
+    exit(OpusFormatName);
 
   // Amstrad formats (9 sectors, 512 size, SS or DS)
   if (FirstTrack.Sectors = 9) and (FirstSector.DataSize = 512) then

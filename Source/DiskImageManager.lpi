@@ -30,9 +30,12 @@
       <AutoIncrementBuild Value="True"/>
       <MajorVersionNr Value="2"/>
       <MinorVersionNr Value="12"/>
-      <BuildNr Value="134"/>
+      <BuildNr Value="135"/>
       <StringTable CompanyName="Envy Technologies" InternalName="Disk Image Manager" LegalCopyright="Copyright 2002-2026 Damien Guard." OriginalFilename="DiskImageManager.exe" ProductName="Disk Image Manager"/>
     </VersionInfo>
+    <MacroValues Count="1">
+      <Macro1 Name="LCLWidgetType" Value="win32"/>
+    </MacroValues>
     <BuildModes Count="2">
       <Item1 Name="Debug" Default="True"/>
       <Item2 Name="Debug Win32">
@@ -93,7 +96,7 @@
         <PackageName Value="LCL"/>
       </Item2>
     </RequiredPackages>
-    <Units Count="29">
+    <Units Count="30">
       <Unit0>
         <Filename Value="DiskImageManager.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -240,6 +243,11 @@
         <Filename Value="DiskArchive.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit28>
+      <Unit29>
+        <Filename Value="opusfilesystem.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="OpusFileSystem"/>
+      </Unit29>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

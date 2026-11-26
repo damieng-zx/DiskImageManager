@@ -494,7 +494,7 @@ object frmMain: TfrmMain
   end
   object dlgOpen: TOpenDialog
     DefaultExt = '.dsk'
-    Filter = 'All supported files (*.dsk, *.mgt, *.img, *.sad, *.td0, gzipped or zipped)|*.dsk;*.dsk.gz;*.mgt;*.mgt.gz;*.img;*.img.gz;*.sad;*.sad.gz;*.td0;*.td0.gz;*.zip|Disk images (*.dsk)|*.dsk|Gzipped disk images (*.dsk.gz)|*.dsk.gz|MGT/SAM images (*.mgt, *.img, *.sad)|*.mgt;*.mgt.gz;*.img;*.img.gz;*.sad;*.sad.gz|Teledisk images (*.td0)|*.td0;*.td0.gz|Zip archives (*.zip)|*.zip|All files|*.*'
+    Filter = 'All supported files (*.dsk, *.mgt, *.img, *.sad, *.opd, *.opu, *.td0, gzipped or zipped)|*.dsk;*.dsk.gz;*.mgt;*.mgt.gz;*.img;*.img.gz;*.sad;*.sad.gz;*.opd;*.opd.gz;*.opu;*.opu.gz;*.td0;*.td0.gz;*.zip|Disk images (*.dsk)|*.dsk|Gzipped disk images (*.dsk.gz)|*.dsk.gz|MGT/SAM images (*.mgt, *.img, *.sad)|*.mgt;*.mgt.gz;*.img;*.img.gz;*.sad;*.sad.gz|Opus Discovery images (*.opd, *.opu)|*.opd;*.opd.gz;*.opu;*.opu.gz|Teledisk images (*.td0)|*.td0;*.td0.gz|Zip archives (*.zip)|*.zip|All files|*.*'
     Options = [ofHideReadOnly, ofAllowMultiSelect, ofPathMustExist, ofFileMustExist, ofEnableSizing]
     Left = 440
     Top = 112
@@ -781,7 +781,7 @@ object frmMain: TfrmMain
   end
   object dlgSave: TSaveDialog
     DefaultExt = '.dsk'
-    Filter = 'Standard disk image|*.DSK|Extended disk image|*.DSK|MGT/SAM image|*.MGT|Teledisk image|*.TD0|DISCiPLE IMG image|*.IMG|SAM Coupe SAD image|*.SAD'
+    Filter = 'Standard disk image|*.DSK|Extended disk image|*.DSK|MGT/SAM image|*.MGT|Teledisk image|*.TD0|DISCiPLE IMG image|*.IMG|SAM Coupe SAD image|*.SAD|Opus Discovery image|*.OPD;*.OPU'
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     Left = 328
     Top = 112

@@ -62,7 +62,8 @@ type
   end;
 
 const
-  ImageExtensions: array[0..4] of string = ('.dsk', '.mgt', '.img', '.sad', '.td0');
+  ImageExtensions: array[0..6] of string = ('.dsk', '.mgt', '.img', '.sad', '.opd',
+    '.opu', '.td0');
 
 procedure RefuseOversize(Size: int64);
 begin

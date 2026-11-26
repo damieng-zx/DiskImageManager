@@ -128,7 +128,7 @@ type
 
   // Image
   TDSKImageFormat = (diStandardDSK, diExtendedDSK, diRawMGT, diRawIMG, diRawSAD,
-    diTeleDisk, diNotYetSaved, diInvalid);
+    diRawOPD, diTeleDisk, diNotYetSaved, diInvalid);
 
   TDSKImage = class(TObject)
   private
@@ -143,10 +143,13 @@ type
     function ArchivedBaseName: string;
     function LoadFileDSK(DiskFile: TStream): boolean;
     function LoadFileRaw(DiskFile: TStream): boolean;
+    function LoadFileOPD(DiskFile: TStream): boolean;
     function LoadFileTD0(DiskFile: TStream): boolean;
     function RecoverExtTrackSize(DiskFile: TStream; ExpTrack, ExpSide: integer): integer;
     function SaveFileDSK(DiskFile: TFileStream; SaveFileFormat: TDSKImageFormat; Compress: boolean): boolean;
     function SaveFileRaw(DiskFile: TFileStream; SaveFileFormat: TDSKImageFormat): boolean;
+    function SaveFileOPD(DiskFile: TFileStream): boolean;
+    function GetOPDLayout(out Sides, Tracks: integer): boolean;
     function SaveFileTD0(DiskFile: TFileStream): boolean;
   public
     FileFormat: TDSKImageFormat;
@@ -351,7 +354,8 @@ type
 
   // Specification (Optional PCW/CPC+3 disk specification)
   TDSKSpecFormat = (dsFormatPCW_SS, dsFormatCPC_System, dsFormatCPC_Data, dsFormatPCW_DS,
-    dsFormatAssumedPCW_SS, dsFormatEinstein, dsFormatMGT, dsFormatTS2068, dsFormatInvalid);
+    dsFormatAssumedPCW_SS, dsFormatEinstein, dsFormatMGT, dsFormatTS2068, dsFormatOpus,
+    dsFormatInvalid);
   TDSKSpecSide = (dsSideSingle, dsSideDoubleAlternate, dsSideDoubleSuccessive, dsSideDoubleReverse, dsSideInvalid);
   TDSKSpecTrack = (dsTrackSingle, dsTrackDouble, dsTrackInvalid);
   TDSKAllocationSize = (asByte, asWord);
@@ -444,6 +448,9 @@ type
     TracksPerSide: word;
     RecordingMode: TDSKRecordingMode;
     DataRate: TDSKDataRate;
+    // Formatted with an Opus Discovery boot sector and catalogue, whose
+    // directory blocks and entries are not the CP/M ones
+    OpusDiscovery: boolean;
 
     constructor Create(Format: integer);
     function GetCapacityBytes: integer;
@@ -461,6 +468,7 @@ const
     'MGT image',
     'DISCiPLE IMG image',
     'SAM Coupe SAD image',
+    'Opus Discovery image',
     'Teledisk TD0',
     'Not yet saved',
     'Invalid'
@@ -475,6 +483,7 @@ const
     'Tatung Einstein',
     'MGT',
     'Timex/Sinclair TS2068',
+    'Opus Discovery',
     'Invalid'
     );
 
@@ -562,7 +571,7 @@ function GetTrackFileDataSize(Track: TDSKTrack; SaveFileFormat: TDSKImageFormat)
 
 implementation
 
-uses FormatAnalysis, LZHuf, DiskArchive, Windows;
+uses FormatAnalysis, LZHuf, DiskArchive, OpusFileSystem, Windows;
 
 // The SAD header for the geometry this app reads and writes
 procedure BuildSADHeader(out Header: array of byte);
@@ -807,9 +816,14 @@ begin
       Stream.ReadBuffer(SADHeader, SizeOf(SADHeader));
       if IsMGTSADHeader(SADHeader) then
         FileFormat := diRawSAD;
-    end;
+    end
+    else if ((Extension = '.opd') or (Extension = '.opu')) and LoadFileOPD(Stream) then
+      FileFormat := diRawOPD;
 
-    if FileFormat <> diInvalid then
+    // An Opus image is loaded by the test that recognises it
+    if FileFormat = diRawOPD then
+      FIsChanged := False
+    else if FileFormat <> diInvalid then
     begin
       if FileFormat = diRawSAD then
         Stream.Seek(SADHeaderSize, soFromBeginning)
@@ -1349,6 +1363,67 @@ begin
   Result := True;
 end;
 
+// Load a raw Opus Discovery image: no header, the sides of each cylinder in turn
+// and each track's sectors in ID order from 0. The geometry comes from the boot
+// sector, or from the size if that does not fit. Answers False, having loaded
+// nothing, when neither gives a disk of the file's size.
+function TDSKImage.LoadFileOPD(DiskFile: TStream): boolean;
+const
+  OPDGapLength = $17;
+  OPDFiller = $E5;
+var
+  Boot: array[0..4] of byte;
+  Geometry: TOpusGeometry;
+  FromBoot: boolean;
+  Cylinder, SIdx, EIdx: integer;
+begin
+  Result := False;
+  FillChar(Boot, SizeOf(Boot), 0);
+  DiskFile.Position := 0;
+  DiskFile.Read(Boot, SizeOf(Boot));
+  if not OpusImageGeometry(Boot, DiskFile.Size, Geometry, FromBoot) or
+    (Geometry.TotalSectors > MaxImageSectors) then
+    exit;
+  if not FromBoot then
+    Messages.Add('The boot sector does not describe this disk, so its geometry was taken from the file size.');
+
+  Disk.Sides := Geometry.Sides;
+  for SIdx := 0 to Geometry.Sides - 1 do
+    Disk.Side[SIdx].Tracks := Geometry.Tracks;
+
+  DiskFile.Position := 0;
+  for Cylinder := 0 to Geometry.Tracks - 1 do
+    for SIdx := 0 to Geometry.Sides - 1 do
+      with Disk.Side[SIdx].Track[Cylinder] do
+      begin
+        Track := Cylinder;
+        Side := SIdx;
+        // The file system runs through side 0 and then side 1
+        Logical := (SIdx * Geometry.Tracks) + Cylinder;
+        Sectors := Geometry.SectorsPerTrack;
+        SectorSize := Geometry.SectorSize;
+        Filler := OPDFiller;
+        GapLength := OPDGapLength;
+
+        for EIdx := 0 to Geometry.SectorsPerTrack - 1 do
+          with Sector[EIdx] do
+          begin
+            Sector := EIdx;
+            Track := Cylinder;
+            Side := SIdx;
+            ID := EIdx;
+            FDCSize := GetFDCSectorSize(Geometry.SectorSize);
+            FDCStatus[1] := 0;
+            FDCStatus[2] := 0;
+            DataSize := Geometry.SectorSize;
+            AdvertisedSize := Geometry.SectorSize;
+            DiskFile.ReadBuffer(Data, Geometry.SectorSize);
+          end;
+      end;
+
+  Result := True;
+end;
+
 // Load a Teledisk image. The header is always plain, and everything after it
 // is LZHUF-compressed when the signature is 'td'. Tracks come as records in
 // whatever order they were read, so the disk grows to take each one and the
@@ -1674,6 +1749,7 @@ begin
         diStandardDSK: Result := SaveFileDSK(DiskFile, diStandardDSK, False);
         diExtendedDSK: Result := SaveFileDSK(DiskFile, diExtendedDSK, Compress);
         diRawMGT, diRawIMG, diRawSAD: Result := SaveFileRaw(DiskFile, SaveFileFormat);
+        diRawOPD: Result := SaveFileOPD(DiskFile);
         diTeleDisk: Result := SaveFileTD0(DiskFile);
         else
           MessageDlg(SysUtils.Format('Unknown file format %i', [SaveFileFormat]), mtError, [mbOK], 0);
@@ -1718,12 +1794,21 @@ var
   Track: TDSKTrack;
   Sector: TDSKSector;
   NormalizedComment: ansistring;
+  SideCount, TrackCount: integer;
 begin
   Result := False;
 
   if Disk.Sides = 0 then
   begin
     Messages.Add('Disk has no sides to write.');
+    exit;
+  end;
+
+  // Unformatted tracks past the end are no part of an Opus image, so it is not
+  // held to the track counts the formats below are
+  if SaveFileFormat = diRawOPD then
+  begin
+    Result := GetOPDLayout(SideCount, TrackCount);
     exit;
   end;
 
@@ -2066,6 +2151,107 @@ begin
         DiskFile.WriteBuffer(Blank, MGTSectorSize);
     end;
   end;
+
+  Result := True;
+end;
+
+// The sides and tracks an Opus image of this disk would hold. A raw image has
+// nowhere to describe a track, so every one must hold the same run of sectors,
+// and opening the file again must find the same geometry. Answers False and says
+// why in Messages when that is not so.
+function TDSKImage.GetOPDLayout(out Sides, Tracks: integer): boolean;
+var
+  SIdx, TIdx, EIdx, Used, PerTrack, Size: integer;
+  Boot, Sector: TDSKSector;
+  Track: TDSKTrack;
+  BootBytes: array[0..4] of byte;
+  Geometry: TOpusGeometry;
+  FromBoot: boolean;
+begin
+  Result := False;
+  Sides := 0;
+  Tracks := 0;
+
+  for SIdx := 0 to Disk.Sides - 1 do
+  begin
+    Used := 0;
+    for TIdx := 0 to Disk.Side[SIdx].Tracks - 1 do
+      if Disk.Side[SIdx].Track[TIdx].Sectors > 0 then Used := TIdx + 1;
+    if Used = 0 then continue;
+
+    // Every side up to the last one in use holds as many tracks as the first
+    if (SIdx > 1) or (SIdx <> Sides) or ((SIdx > 0) and (Used <> Tracks)) then
+    begin
+      Messages.Add('An Opus Discovery image holds one or two sides with the same number of tracks.');
+      exit;
+    end;
+    Sides := SIdx + 1;
+    Tracks := Used;
+  end;
+
+  if (Sides = 0) or (Disk.Side[0].Track[0].Sectors = 0) then
+  begin
+    Messages.Add('An Opus Discovery image starts at the first track, which is not formatted.');
+    exit;
+  end;
+
+  Track := Disk.Side[0].Track[0];
+  PerTrack := Track.Sectors;
+  Boot := Track.GetLogicalSectorByID(Track.LowSectorID);
+  Size := GetFDCSizeBytes(Boot.FDCSize);
+
+  for TIdx := 0 to Tracks - 1 do
+    for SIdx := 0 to Sides - 1 do
+    begin
+      Track := Disk.Side[SIdx].Track[TIdx];
+      for EIdx := 0 to PerTrack - 1 do
+      begin
+        Sector := nil;
+        if (Track.Sectors = PerTrack) and (Boot.ID + EIdx <= High(byte)) then
+          Sector := Track.GetLogicalSectorByID(Boot.ID + EIdx);
+        if (Sector = nil) or (GetFDCSizeBytes(Sector.FDCSize) <> Size) or
+          (Sector.DataSize <> Size) then
+        begin
+          Messages.Add(SysUtils.Format(
+            'An Opus Discovery image needs %d sectors of %d bytes on every track, numbered from %d. Side %d track %d differs.',
+            [PerTrack, Size, Boot.ID, SIdx, TIdx]));
+          exit;
+        end;
+      end;
+    end;
+
+  FillChar(BootBytes, SizeOf(BootBytes), 0);
+  Move(Boot.Data, BootBytes, Min(SizeOf(BootBytes), Boot.DataSize));
+  if not OpusImageGeometry(BootBytes, int64(Sides) * Tracks * PerTrack * Size,
+    Geometry, FromBoot) or (Geometry.Sides <> Sides) or (Geometry.Tracks <> Tracks) or
+    (Geometry.SectorsPerTrack <> PerTrack) or (Geometry.SectorSize <> Size) then
+  begin
+    Messages.Add('The boot sector does not describe this disk and it is not a standard Opus size, so it could not be read back.');
+    exit;
+  end;
+
+  Result := True;
+end;
+
+// Save a raw Opus Discovery image
+function TDSKImage.SaveFileOPD(DiskFile: TFileStream): boolean;
+var
+  Sides, Tracks, SIdx, TIdx, EIdx: integer;
+  FirstTrack: TDSKTrack;
+  Sector: TDSKSector;
+begin
+  Result := False;
+  if not GetOPDLayout(Sides, Tracks) then exit;
+
+  FirstTrack := Disk.Side[0].Track[0];
+  for TIdx := 0 to Tracks - 1 do
+    for SIdx := 0 to Sides - 1 do
+      for EIdx := 0 to FirstTrack.Sectors - 1 do
+      begin
+        Sector := Disk.Side[SIdx].Track[TIdx].GetLogicalSectorByID(
+          FirstTrack.LowSectorID + EIdx);
+        DiskFile.WriteBuffer(Sector.Data, Sector.DataSize);
+      end;
 
   Result := True;
 end;
@@ -2578,6 +2764,8 @@ var
 begin
   Result := '';
   if Sides = 0 then exit;
+  // The checksums below are other machines' and mean nothing on an Opus disk
+  if IsOpusDisk(Self) then exit;
   if (Side[0].Tracks > 0) and (Side[0].Track[0].Sectors > 0) then
   begin
     if Side[0].Track[0].Sector[0].Status = ssFormattedInUse then
@@ -3459,8 +3647,43 @@ var
   FirstSector: TDSKSector;
   CheckByte: byte;
   Idx: integer;
+  Opus: TOpusFileSystem;
 begin
   FFormat := dsFormatInvalid;
+
+  if FParentDisk.DetectFormat = OpusFormatName then
+  begin
+    Opus := TOpusFileSystem.Create(FParentDisk);
+    try
+      FFormat := dsFormatOpus;
+      Source := 'Boot sector geometry and catalogue';
+      SectorSize := Opus.Geometry.SectorSize;
+      FFDCSectorSize := GetFDCSectorSize(SectorSize);
+      SectorsPerTrack := Opus.Geometry.SectorsPerTrack;
+      TracksPerSide := Opus.Geometry.Tracks;
+      if Opus.Geometry.Sides = 2 then
+        FSide := dsSideDoubleSuccessive
+      else
+        FSide := dsSideSingle;
+      if Opus.Geometry.Tracks > 43 then
+        FTrack := dsTrackDouble
+      else
+        FTrack := dsTrackSingle;
+      // A block is one sector, and the catalogue follows the boot sector
+      FBlockShift := FFDCSectorSize;
+      FReservedTracks := 0;
+      FDirectoryBlocks := Min(Opus.CatalogueBlocks, High(byte));
+      FGapFormat := $17;
+      FGapReadWrite := $0C;
+      if GetBlockCount > 255 then
+        FAllocationSize := asWord
+      else
+        FAllocationSize := asByte;
+    finally
+      Opus.Free;
+    end;
+    exit;
+  end;
 
   if FParentDisk.DetectFormat = 'Einstein' then
   begin
@@ -3610,6 +3833,8 @@ end;
 function TDSKSpecification.Write: boolean;
 begin
   Result := False;
+  // An Opus boot sector holds code and a geometry of its own, not this
+  if FFormat = dsFormatOpus then exit;
   if FParentDisk.GetFirstSector = nil then exit;
   if FParentDisk.GetFirstSector.DataSize < 16 then exit;
   with FParentDisk.Side[0].Track[0].Sector[0] do
@@ -3668,13 +3893,22 @@ end;
 
 function TDSKFormatSpecification.GetDirectoryEntries: integer;
 begin
-  Result := (DirBlocks * GetBlockSize) div 32;
+  if OpusDiscovery then
+    // 16-byte entries, two of them the disk's own and the end marker
+    Result := Max((DirBlocks * SectorSize) div OpusDirEntrySize - 2, 0)
+  else
+    Result := (DirBlocks * GetBlockSize) div 32;
 end;
 
 function TDSKFormatSpecification.GetUsableBytes: integer;
 var
   UsableTracks, UsableSectors, UsableBytes, WastedBytes: integer;
 begin
+  // Everything but the boot sector and the catalogue
+  if OpusDiscovery then
+    exit(Max(TracksPerSide * GetSidesCount * SectorsPerTrack - 1 - DirBlocks, 0) *
+      SectorSize);
+
   UsableTracks := (TracksPerSide * GetSidesCount) - ResTracks;
   UsableSectors := (UsableTracks * SectorsPerTrack);
   UsableBytes := (UsableSectors * SectorSize) - (DirBlocks * GetBlockSize);
@@ -3891,6 +4125,19 @@ begin
       // A directory slot is free when it starts with zero. Any other filler
       // leaves a new disk looking full of files on the real machine.
       FillerByte := 0;
+    end;
+    9:
+    begin
+      Name := 'Spectrum Opus Discovery';
+      OpusDiscovery := True;
+      SectorsPerTrack := OpusSectorsPerTrack;
+      SectorSize := OpusSectorSize;
+      FirstSector := 0;
+      ResTracks := 0;
+      DirBlocks := OpusCatalogueBlocks;
+      BlockShift := 1;
+      GapFormat := 23;
+      GapRW := 12;
     end;
   end;
   self.FDCSectorSize := GetFDCSectorSize(self.SectorSize);

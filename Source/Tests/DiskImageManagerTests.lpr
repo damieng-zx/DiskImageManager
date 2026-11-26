@@ -29,7 +29,8 @@ uses
   TestUIUtils,
   TestNavigationHistory,
   TestMGTFileSystem,
-  TestDiskArchive;
+  TestDiskArchive,
+  TestOpusFileSystem;
 
 type
   TDIMTestRunner = class(TTestRunner)
