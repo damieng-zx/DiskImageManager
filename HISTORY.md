@@ -1,6 +1,10 @@
 # Disk Image Manager
 
-## Unreleased
+## 2.13.0 (26 November 2026)
+### Changes
+- Name the Supermat 192 2/82 format, and report any other unrecognised disk with a valid disk specification as an unknown XDPB format of its capacity
+- Ask before overwriting existing files when extracting, one at a time or for all of them
+- Refuse to save an image flagged as corrupt because of its signature or first track, which was previously saved anyway
 ### New
 - Teledisk (.td0) image support: open normal and advanced-compressed images (including gzipped ones), showing the image's comment and keeping sector flags, FM tracks and data rate, and save any disk as a compressed .td0
 - Opus Discovery support: open .opd and .opu images (including gzipped and zipped ones) and save disks as them, recognise Opus disks held in DSK or Teledisk images, list and extract their files with or without the 7-byte header, view their BASIC programs, string arrays and SCREEN$ files, and format new Opus disks
@@ -9,11 +13,18 @@
 - Extract files from MGT disks, with or without their 9-byte header, by saving them or dragging them out
 - MGT file listings show each file's actual size and its start address, length, autorun line, execute address, array name or screen mode
 - Name MGT +D/DISCiPLE disks as such instead of calling them SAM Coupe SAMDOS
+- Drag saved disk images from the tree, and files inside disks from the list, to Explorer and other applications
+- Rename files on CP/M disks from the file list's right-click menu
+- View protected Amstrad BASIC programs
+- Sort the list by clicking a column header, clicking again to reverse it; numeric columns sort by value rather than as text
 ### Fixes
 - Read and save .mgt images in their real layout, the two sides of each cylinder in turn. Everything past the first directory track was previously read from, and written to, the wrong place. Files saved as .mgt by earlier versions are really .img layout and are opened as such when they hold a file to tell by
 - List MasterDOS directories longer than four tracks in full, and MasterDOS subdirectory entries
 - List the files of an MGT disk held in a DSK or Teledisk image from the right tracks
 - Format new MGT disks with a zero filler: the previous E5 left every directory slot looking occupied
+- List each MGT file with its own type, size and location, instead of every second file taking those of the entry before it, and leave erased entries out
+- Keep a newly formatted MGT disk identified as MGT instead of PCW
+- Open gzipped .mgt images, which were refused as an unknown file type
 - Save an image opened from a name ending .GZ in capitals through Save As, as a lowercase .gz already was, instead of writing it uncompressed over the gzipped file
 - Refuse a .gz that unpacks to more than 64 MB instead of exhausting memory on it
 - Offer the name without .gz when saving a copy of a gzipped image, instead of the gzipped file's own name
@@ -21,10 +32,42 @@
 - Keep a formatted track whose sectors carry no data field when saving, instead of dropping it from an extended image or zeroing its sector entries in a standard one
 - Keep the sector IDs of a track whose interleave is as wide as the track or wider within the table, instead of indexing outside it and handing out duplicate and missing IDs
 - Restore the selected file, not just the tree node, when navigating back and forward: the detail list is rebuilt during the navigation and the remembered row is picked in it
-- Blank a sector's data on a Teledisk image instead of erasing the sector, and fall back to the sector's own size code when a track states no sector size
 - Write the disk specification's sector size code from the size itself, so a size between two codes (such as the 6912 bytes the New dialog offers) describes sectors at least that big instead of rounding down, and a size of zero no longer divides by zero
 - Hold the usable capacity and block count a boot sector describes to what they can represent, instead of letting individually plausible fields overflow into a negative capacity and a nonsense block count
 - Stop saving a copy as Standard DSK from stripping the data rate and recording mode from the image that stays open
+- Ask to save a modified image, including one changed in the track or sector windows, before closing it, and keep it open if the save is cancelled
+- Leave the existing file intact when saving over it fails
+- Save DSK images whose tracks differ in size, or do not fill their last 256-byte block, with every track where the header says it is
+- Keep each track's sector size when saving an extended DSK, instead of recording 128-byte sectors, which also broke blanking a sector's data
+- Reopen a Standard DSK saved from a disk with no formatted tracks, and open truncated images as far as they go
+- Refuse to save a disk with more tracks or sectors than a DSK can describe, or sides with differing track counts, instead of writing a damaged file
+- Show a sector's real fill byte in Sector Properties, so that OK no longer overwrites a filled sector with the track's filler
+- Offer the right default sector size in Sector Properties
+- Apply Track Properties without an error, keeping a typed bit length and updating the tree when the sector count changes
+- Unformat only the track chosen in the list instead of every track on the side
+- Reset the FDC flags of the sector clicked instead of writing into its track
+- Give a new disk's sector headers the sector size chosen in the New dialog, keep the CPC format type on double-sided disks, and refuse formats too large to create
+- Keep CP/M files of the same name under different user numbers apart
+- Extract CP/M files of more than 32 extents in the right order, stop at their final partial sector, and report the right size for headered files spanning several extents
+- List empty CP/M files, and ignore +3DOS headers with a bad checksum
+- Read disk specifications with sectors larger than 512 bytes
+- Detect sector interleaves above 1, and load Standard DSK sector size codes 7 and 8
+- Name the FM and MFM recording modes the right way round
+- Keep tildes in Spectrum BASIC listings, stop colour and position codes showing as text, and label block and user-defined graphics correctly
+- Fix the Strings view: identical strings listed once per copy found, the last string on the disk never shown, and a memory leak each time it was viewed
+- Find text that begins within a run of the same character, and include the starting sector in a new search
+- Stop reporting worn disks as unknown copy protection, and match protection signatures only within a sector's own data
+- Fix crashes on empty, truncated and malformed images
+- Fix crashes after closing an image whose disk map or properties windows were open, and from Close All Except, which now offers to save changes first
+- Fix errors from double-clicking the tree and from menu items used on rows with nothing behind them
+- Keep extracted files inside the chosen folder, whatever characters their names hold
+- Make Close All Except work for Modified Images and Extended DSK (v5) Images
+- Keep the string, restored-file and dark blank sector choices made in Options, and discard changes, including a reset, when Options is cancelled
+- Save the disk map as a real PNG when named .png, adding a missing extension and asking before replacing a file
+- Open recent files whose paths use characters outside the system code page
+- Survive invalid values in the settings file, and saved navigation places that no longer exist
+- Stop hidden viewer windows being left behind when a file cannot be displayed
+- Fix memory leaks when closing images, listing files and closing windows
 
 ## 2.12.0 (14 July 2026)
 ### Changes
@@ -39,7 +82,6 @@
 - List the contents of +3DOS character (string) arrays in the file viewer, one string per line
 - View +3DOS custom type 0x04 files as plain text in the file viewer
 - Remember the last folders used for opening and saving files between sessions
-- Sort the list by clicking a column header, clicking again to reverse it; numeric columns sort by value rather than as text
 ### Fixes
 - Fix the New disk dialog: working filler byte, DPB preview, memory leaks and options
 - Fix mode-0 CPC screens being misdetected as mode 1
@@ -49,7 +91,6 @@
 - Fix +3DOS files including 128 bytes of header data when viewed or extracted, which also stopped +3DOS SCREEN$ files from displaying
 - Fix attribute-less 6144-byte SCREEN$ files rendering as white on black instead of black on white
 - Open unformatted 256-byte Extended DSK images without crashing
-- Fix the Strings view: identical strings listed once per copy found, the last string on the disk never shown, and a memory leak each time it was viewed
 
 ## 2.11.0 (05 June 2026)
 ### Changes
