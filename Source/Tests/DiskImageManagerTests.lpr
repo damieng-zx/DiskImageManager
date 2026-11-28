@@ -32,7 +32,8 @@ uses
   TestDiskArchive,
   TestOpusFileSystem,
   TestZ80Disasm,
-  TestByteViews;
+  TestByteViews,
+  TestTapeImage;
 
 type
   TDIMTestRunner = class(TTestRunner)

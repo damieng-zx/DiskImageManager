@@ -18,6 +18,7 @@
 - MGT file listings show each file's actual size and its start address, length, autorun line, execute address, array name or screen mode
 - View Spectrum BASIC programs, string arrays and SCREEN$ files on MGT disks
 - View any other file as hex, text or Z80 code, listed from its load address, with a button to go to its execute address. Right-click to disassemble from a byte, and choose View as Hex to open any file this way
+- Export selected Spectrum files from +3, +D, DISCiPLE and Opus Discovery disks to a .tap tape image, keeping each file's type, length, autorun line, load address or array name
 - Name MGT +D/DISCiPLE disks as such instead of calling them SAM Coupe SAMDOS
 - Drag saved disk images from the tree, and files inside disks from the list, to Explorer and other applications
 - Rename files on CP/M, MGT and Opus Discovery disks from the file list's right-click menu

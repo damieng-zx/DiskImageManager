@@ -15,7 +15,7 @@ interface
 
 uses
   DSKImage, DIMUtils,
-  Classes, SysUtils, FGL;
+  Classes, SysUtils, Math, FGL;
 
 type
   TCPMFile = class;
@@ -67,6 +67,8 @@ type
     function GetData(WithHeader: boolean): TDiskByteArray; override;
     // As the header says, or &100 for a CP/M program, which has none
     procedure GetAddresses(out Load, Exec: integer); override;
+    // For the Spectrum's files, those with a +3DOS header naming a BASIC type
+    function GetTapeFile(out Tape: TTapeFile): boolean; override;
 
     constructor Create(ParentFileSystem: TCPMFileSystem);
     destructor Destroy; override;
@@ -514,6 +516,41 @@ begin
     Load := $100;
     Exec := $100;
   end;
+end;
+
+function TCPMFile.GetTapeFile(out Tape: TTapeFile): boolean;
+const
+  // Where a +3DOS header keeps what a tape header holds
+  phType = 15;
+  phLength = 16;
+  phParam1 = 18;
+  phParam2 = 20;
+var
+  Stored: TDiskByteArray;
+  Name: string;
+begin
+  Result := inherited GetTapeFile(Tape);
+  if HeaderType <> 'PLUS3DOS' then exit;
+  Stored := GetData(True);
+  if (Length(Stored) < HeaderSize) or (Stored[phType] > Ord(High(TTapeFileType))) then
+    exit;
+
+  // +3DOS numbers the types as a tape does
+  Tape.FileType := TTapeFileType(Stored[phType]);
+  Tape.Param1 := ReadWordLE(Stored, phParam1);
+  if Tape.FileType = tfProgram then
+    Tape.Param2 := ReadWordLE(Stored, phParam2);
+  // The length of the data as BASIC knows it, as far as the file goes
+  Tape.Data := Copy(Stored, HeaderSize,
+    Min(ReadWordLE(Stored, phLength), Length(Stored) - HeaderSize));
+
+  // A tape name has ten characters, so a longer one does without its extension
+  Name := FileName;
+  if Length(Name) > Length(Tape.Name) then
+    Name := ChangeFileExt(Name, '');
+  if Name <> '' then
+    Move(Name[1], Tape.Name, Min(Length(Name), Length(Tape.Name)));
+  Result := True;
 end;
 
 destructor TCPMFile.Destroy;

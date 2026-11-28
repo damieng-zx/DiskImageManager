@@ -928,6 +928,11 @@ object frmMain: TfrmMain
       ImageIndex = 24
       OnClick = itmSaveSelectedFilesWithHeadersToClick
     end
+    object itmExportTape: TMenuItem
+      Caption = 'Export to TAP...'
+      Hint = 'Save the selected files as a Spectrum tape image'
+      OnClick = itmExportTapeClick
+    end
   end
   object popDiskImage: TPopupMenu
     Images = imlSmall
@@ -958,6 +963,14 @@ object frmMain: TfrmMain
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     Left = 264
     Top = 112
+  end
+  object dlgSaveTape: TSaveDialog
+    Title = 'Export to TAP'
+    DefaultExt = '.tap'
+    Filter = 'Spectrum tape image (*.tap)|*.tap|All files|*.*'
+    Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
+    Left = 264
+    Top = 240
   end
   object dlgSelectDirectory: TSelectDirectoryDialog
     Title = 'Select directory to save files to'

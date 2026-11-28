@@ -85,6 +85,7 @@ type
     procedure TestOnlyOpusGeometryCanBeFormatted;
     procedure TestCompressedImages;
     procedure TestRenameChangesOnlyTheName;
+    procedure TestFilesCarryOverToTape;
     procedure TestRenameRefusesNamesTheCatalogueCannotTake;
   end;
 
@@ -490,6 +491,44 @@ begin
   // A file with no header comes back whole either way
   AssertBytes('stream', TextBytes('written with PRINT #'), FFiles[4].GetData(False));
   AssertBytes('stream', TextBytes('written with PRINT #'), FFiles[4].GetData(True));
+end;
+
+procedure TOpusFileSystemTest.TestFilesCarryOverToTape;
+var
+  Builder: TOpusBuilder;
+  Tape: TTapeFile;
+
+  procedure Check(Index: integer; const Name: string; FileType: TTapeFileType;
+    Param1, Param2, Size: integer);
+  var
+    Stored: string;
+  begin
+    AssertTrue(Name + ' goes to tape', FFiles[Index].GetTapeFile(Tape));
+    SetString(Stored, PAnsiChar(@Tape.Name[0]), SizeOf(Tape.Name));
+    AssertEquals(Name, Stored.TrimRight);
+    AssertEquals(Name + ' type', Ord(FileType), Ord(Tape.FileType));
+    AssertEquals(Name + ' first parameter', Param1, Tape.Param1);
+    AssertEquals(Name + ' second parameter', Param2, Tape.Param2);
+    AssertBytes(Name + ' data', Pattern(Size), Tape.Data);
+  end;
+
+begin
+  Builder := SingleSided;
+  try
+    Open(Builder.Bytes);
+  finally
+    Builder.Free;
+  end;
+  ReadDirectory;
+
+  Check(0, 'program', tfProgram, 10, 100, 100);
+  Check(1, 'Code File', tfCode, 32768, $8000, 1000);
+  Check(2, 'array', tfNumberArray, $8100, $8000, 20);
+  Check(3, 'letters', tfCharacterArray, $C200, $8000, 20);
+  AssertFalse('a file with no header', FFiles[4].GetTapeFile(Tape));
+
+  AssertTrue(FFileSystem.RenameFile(FFiles[0], 'renamed'));
+  Check(0, 'renamed', tfProgram, 10, 100, 100);
 end;
 
 procedure TOpusFileSystemTest.TestBasicProgramStopsBeforeItsVariables;

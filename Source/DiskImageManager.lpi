@@ -96,7 +96,7 @@
         <PackageName Value="LCL"/>
       </Item2>
     </RequiredPackages>
-    <Units Count="33">
+    <Units Count="34">
       <Unit0>
         <Filename Value="DiskImageManager.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -263,6 +263,10 @@
         <Filename Value="Z80Disasm.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit32>
+      <Unit33>
+        <Filename Value="TapeImage.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit33>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

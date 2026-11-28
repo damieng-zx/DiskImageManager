@@ -29,6 +29,8 @@ type
     procedure PlantAMSDOSHeader(Sec: TDSKSector; PayloadSize: longword);
     procedure FreeDirectory(Files: TDirectory);
   published
+    procedure TestPlus3DOSHeaderCarriesOverToTape;
+    procedure TestOnlySpectrumFilesGoToTape;
     procedure TestPlus3DOSHeaderSizeClampedToCapacity;
     procedure TestPlus3DOSBadChecksumDoesNotClaimHeader;
     procedure TestPlus3DOSGetDataClampedToBlocks;
@@ -155,6 +157,86 @@ begin
   for DiskFile in Files do
     DiskFile.Free;
   Files.Free;
+end;
+
+// A BASIC program of ten bytes, eight before its variables, run from line 20
+procedure TCPMFileSystemTest.TestPlus3DOSHeaderCarriesOverToTape;
+var
+  Img: TDSKImage;
+  Sec: TDSKSector;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+  Tape: TTapeFile;
+  Name: string;
+  Idx: integer;
+  Checksum: byte;
+
+  function TapeName: string;
+  begin
+    SetString(Result, PAnsiChar(@Tape.Name[0]), SizeOf(Tape.Name));
+  end;
+
+begin
+  Img := MakePCWDisk;
+  try
+    PlantDirEntry(Img, 2, 0, 2);
+    Sec := DataSector(Img);
+    PlantPlus3DOSHeader(Sec, 138);
+    Sec.Data[15] := 0;   // program
+    Sec.Data[16] := 10;  // length
+    Sec.Data[18] := 20;  // autorun line
+    Sec.Data[20] := 8;   // where the variables start
+    Checksum := 0;
+    for Idx := 0 to 126 do
+      Checksum := Checksum + Sec.Data[Idx];
+    Sec.Data[127] := Checksum;
+    for Idx := 0 to 9 do
+      Sec.Data[128 + Idx] := 100 + Idx;
+
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertTrue('a tape can hold it', Files[0].GetTapeFile(Tape));
+        AssertEquals('type', Ord(tfProgram), Ord(Tape.FileType));
+        AssertEquals('autorun', 20, Tape.Param1);
+        AssertEquals('program length', 8, Tape.Param2);
+        AssertEquals('data length', 10, Length(Tape.Data));
+        AssertEquals('first byte', 100, Tape.Data[0]);
+        AssertEquals('last byte', 109, Tape.Data[9]);
+        // TESTFILE.BAS is too long for a tape, so it does without its extension
+        Name := TapeName;
+        AssertEquals('long name', 'TESTFILE  ', Name);
+        Files[0].FileName := 'GAME.BAS';
+        AssertTrue(Files[0].GetTapeFile(Tape));
+        Name := TapeName;
+        AssertEquals('short name kept whole', 'GAME.BAS  ', Name);
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+// Headerless files and Amstrad ones stay behind
+procedure TCPMFileSystemTest.TestOnlySpectrumFilesGoToTape;
+var
+  DiskFile: TCPMFile;
+  Tape: TTapeFile;
+begin
+  DiskFile := TCPMFile.Create(nil);
+  try
+    DiskFile.HeaderType := 'None';
+    AssertFalse('no header', DiskFile.GetTapeFile(Tape));
+    DiskFile.HeaderType := 'AMSDOS';
+    AssertFalse('Amstrad', DiskFile.GetTapeFile(Tape));
+  finally
+    DiskFile.Free;
+  end;
 end;
 
 // The length field is four untrusted bytes; stored in an integer a value

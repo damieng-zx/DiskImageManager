@@ -53,6 +53,9 @@ type
     procedure TestPlusDNamesShowKeywordsAndGraphics;
     procedure TestSAMNamesLoseTheTopBit;
     procedure TestRenameKeepsTheKeywordsStillShown;
+    procedure TestSpectrumFilesCarryOverToTape;
+    procedure TestOtherFilesStayOffTape;
+    procedure TestTapeKeepsTheNameAsStored;
     procedure TestDosTypeAndLabel;
     procedure TestMasterDOSExtendedDirectory;
     procedure TestFileDataMatchesTheSectorChain;
@@ -839,6 +842,101 @@ begin
     Renamed('plain', '706C61696E2020202020');
     Renamed('old DATA', '6F6C6420444154412020');
     Renamed(#$C2#$A3'1', '60312020202020202020');
+  finally
+    FreeFiles(Files);
+    FileSystem.Free;
+    Image.Free;
+  end;
+end;
+
+procedure TMGTFileSystemTest.TestSpectrumFilesCarryOverToTape;
+
+  procedure Check(const Sample, Name: string; FileType: TTapeFileType;
+    Param1, Param2, Size: integer);
+  var
+    Image: TDSKImage;
+    FileSystem: TMGTFileSystem;
+    Files: TMGTFiles;
+    Tape: TTapeFile;
+    Stored: string;
+  begin
+    Image := LoadSample(Sample);
+    FileSystem := TMGTFileSystem.Create(Image.Disk);
+    Files := FileSystem.Directory;
+    try
+      AssertTrue(Sample + ' goes to tape', Files[0].GetTapeFile(Tape));
+      SetString(Stored, PAnsiChar(@Tape.Name[0]), SizeOf(Tape.Name));
+      AssertEquals(Sample + ' name', Name, Stored);
+      AssertEquals(Sample + ' type', Ord(FileType), Ord(Tape.FileType));
+      AssertEquals(Sample + ' first parameter', Param1, Tape.Param1);
+      AssertEquals(Sample + ' second parameter', Param2, Tape.Param2);
+      AssertEquals(Sample + ' length', Size, Length(Tape.Data));
+      AssertBytes(Sample + ' data', Files[0].GetData(False), Tape.Data);
+    finally
+      FreeFiles(Files);
+      FileSystem.Free;
+      Image.Free;
+    end;
+  end;
+
+begin
+  Check('zx_basic_vars', 'basic_vars', tfProgram, $8000, 26, 78);
+  Check('zx_basic_auto', 'basic_auto', tfProgram, 1234, 189, 189);
+  Check('zx_data', 'data_x_10 ', tfNumberArray, $9800, $8000, 53);
+  Check('zx_data_str1', 'x$_5      ', tfCharacterArray, $D800, $8000, 8);
+  Check('zx_data_str2', 'x$_5,10   ', tfCharacterArray, $D800, $8000, 55);
+  Check('zx_code', 'code      ', tfCode, 32768, $8000, 23456);
+  // A tape has nowhere to keep the address code runs from
+  Check('zx_code_auto', 'code_auto ', tfCode, 32768, $8000, 5);
+  Check('zx_screen', 'Snap A    ', tfCode, 16384, $8000, 6912);
+end;
+
+// Snapshots and the other types a tape lacks, and SAM Coupe files
+procedure TMGTFileSystemTest.TestOtherFilesStayOffTape;
+const
+  Samples: array[0..9] of string = ('zx_snap_48k', 'zx_snap_128k', 'mdrv',
+    'zx_opentype', 'zx_execute', 'emptycpm', 'basic_vars', 'data_str', 'code',
+    'screen_1');
+var
+  Image: TDSKImage;
+  FileSystem: TMGTFileSystem;
+  Files: TMGTFiles;
+  Tape: TTapeFile;
+  Idx: integer;
+begin
+  for Idx := 0 to High(Samples) do
+  begin
+    Image := LoadSample(Samples[Idx]);
+    FileSystem := TMGTFileSystem.Create(Image.Disk);
+    Files := FileSystem.Directory;
+    try
+      AssertFalse(Samples[Idx], Files[0].GetTapeFile(Tape));
+    finally
+      FreeFiles(Files);
+      FileSystem.Free;
+      Image.Free;
+    end;
+  end;
+end;
+
+procedure TMGTFileSystemTest.TestTapeKeepsTheNameAsStored;
+var
+  Image: TDSKImage;
+  FileSystem: TMGTFileSystem;
+  Files: TMGTFiles;
+  Tape: TTapeFile;
+  Stored: TDiskByteArray;
+begin
+  Image := LoadSample('zx_code');
+  StoreName(Image, 'editorial', [$AF], '');
+  FileSystem := TMGTFileSystem.Create(Image.Disk);
+  Files := FileSystem.Directory;
+  try
+    AssertTrue(Files[0].GetTapeFile(Tape));
+    Stored := nil;
+    SetLength(Stored, SizeOf(Tape.Name));
+    Move(Tape.Name, Stored[0], SizeOf(Tape.Name));
+    AssertBytes('keyword byte kept', HexBytes('656469746F7269616CAF'), Stored);
   finally
     FreeFiles(Files);
     FileSystem.Free;

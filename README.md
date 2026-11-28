@@ -89,6 +89,7 @@ Identification of copy-protection schemes both signed and somtimes unsigned:
 * Can list a CP/M file system such as used on +3, PCW and CPC & Tatung Einstein
 * Understands +3 DOS and AMSDOS (CPC) file headers, decoding load/exec addresses and file type
 * Binary export/saving available for individual or all files with & without headers
+* Export Spectrum files to .tap tape images, keeping their type, autorun line, load address and array name
 * Rename files in place (CP/M)
 * Can list and extract files from MGT +D, DISCiPLE, SAMDOS, MasterDOS and BDOS disks, recovering what it can from damaged sector chains
 * Can list and extract files from Opus Discovery disks, decoding their headers, and view their BASIC, string array and SCREEN$ files

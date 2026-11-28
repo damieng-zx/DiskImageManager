@@ -17,7 +17,7 @@ uses
   DiskMap, DskImage, DIMUtils, Utils, NavigationHistory, About, Options, SectorProperties,
   TrackProperties, Settings, FileSystem, MGTFileSystem, OpusFileSystem, ListViewPresenter,
   Comparers, FileViewer, SinclairBasic, ZXScreenViewer, SpectrumScreen,
-  CPCScreenViewer, AmstradScreen, ShellDragDrop, DiskArchive, DataViewer,
+  CPCScreenViewer, AmstradScreen, ShellDragDrop, DiskArchive, DataViewer, TapeImage,
   Classes, Graphics, SysUtils, Forms, Dialogs, Menus,
   ComCtrls, ExtCtrls, Controls, Contnrs,
   Clipbrd, StdCtrls, FileUtil, StrUtils, LazFileUtils, LConvEncoding, CommCtrl;
@@ -48,6 +48,8 @@ type
     itmRenameFile: TMenuItem;
     itmSaveHeaderlessFile: TMenuItem;
     itmSaveSelectedHeaderlessFiles: TMenuItem;
+    itmExportTape: TMenuItem;
+    dlgSaveTape: TSaveDialog;
     itmCollapseAll: TMenuItem;
     itmExpandAll: TMenuItem;
     itmCollapseChildren: TMenuItem;
@@ -170,6 +172,9 @@ type
     procedure itmTrackUnformatClick(Sender: TObject);
     procedure ShowFile(Sender: TObject);
     procedure itmViewHexClick(Sender: TObject);
+    procedure itmExportTapeClick(Sender: TObject);
+    // The selected files, in the order listed, that a Spectrum tape can hold
+    function SelectedTapeFiles: TList;
     // Each shows a file in the viewer made for what it holds, if there is one
     function ShowCPMFile(DiskFile: TCPMFile; const DiskName: string): boolean;
     function ShowMGTFile(DiskFile: TMGTFile; const DiskName: string): boolean;
@@ -700,6 +705,7 @@ var
   AllHeaderlessFilesSelected: boolean;
   ListItem: TListItem;
   DataSelect: TObject;
+  TapeFiles: TList;
 begin
   itmSaveFile.Visible := False;
   itmSaveHeaderlessFile.Visible := False;
@@ -740,6 +746,92 @@ begin
   itmSaveSelectedHeaderlessFiles.Visible := AllHeaderlessFilesSelected;
   itmSaveSelectedHeaderlessFiles.Caption :=
     Format('Save %d selected files to...', [lvwMain.SelCount]);
+
+  TapeFiles := SelectedTapeFiles;
+  try
+    itmExportTape.Visible := TapeFiles.Count > 0;
+    if TapeFiles.Count = 1 then
+      itmExportTape.Caption :=
+        Format('Export %s to TAP...', [TDiskFile(TapeFiles[0]).FileName])
+    else
+      itmExportTape.Caption := Format('Export %d files to TAP...', [TapeFiles.Count]);
+  finally
+    TapeFiles.Free;
+  end;
+end;
+
+function TfrmMain.SelectedTapeFiles: TList;
+var
+  ListItem: TListItem;
+  Tape: TTapeFile;
+begin
+  Result := TList.Create;
+  for ListItem in lvwMain.Items do
+    if ListItem.Selected and (ListItem.Data <> nil) and
+      (TObject(ListItem.Data) is TDiskFile) and
+      CanSaveToTape(TDiskFile(ListItem.Data), Tape) then
+      Result.Add(ListItem.Data);
+end;
+
+procedure TfrmMain.itmExportTapeClick(Sender: TObject);
+var
+  Files: TList;
+  Tape: TTapeFile;
+  Stream: TMemoryStream;
+  Image: TDSKImage;
+  Suggested, Exported: string;
+  Idx, LeftOut: integer;
+begin
+  Image := GetCurrentImage;
+  Files := SelectedTapeFiles;
+  try
+    if (Files.Count = 0) or (Image = nil) then exit;
+    LeftOut := lvwMain.SelCount - Files.Count;
+
+    // One file names the tape after itself, several after their disk
+    if Files.Count = 1 then
+    begin
+      Suggested := TDiskFile(Files[0]).FileName;
+      if TObject(Files[0]) is TCPMFile then
+        Suggested := ChangeFileExt(Suggested, '');
+      Suggested := SafeFileName(Suggested);
+    end
+    else
+    begin
+      Suggested := Image.UnpackedName;
+      if Suggested = '' then
+        Suggested := Image.FileName;
+      Suggested := ChangeFileExt(ExtractFileName(Suggested), '');
+    end;
+    dlgSaveTape.FileName := Suggested + '.tap';
+    if Settings.LastSaveFolder <> '' then
+      dlgSaveTape.InitialDir := Settings.LastSaveFolder;
+    if not dlgSaveTape.Execute then exit;
+    Settings.LastSaveFolder := ExtractFilePath(dlgSaveTape.FileName);
+
+    // Read every file before writing, so a failure leaves no half-made tape
+    Stream := TMemoryStream.Create;
+    try
+      for Idx := 0 to Files.Count - 1 do
+        if CanSaveToTape(TDiskFile(Files[Idx]), Tape) then
+          WriteTapeFile(Stream, Tape);
+      Stream.SaveToFile(dlgSaveTape.FileName);
+    finally
+      Stream.Free;
+    end;
+
+    if Files.Count = 1 then
+      Exported := TDiskFile(Files[0]).FileName
+    else
+      Exported := Format('%d files', [Files.Count]);
+    Exported := Format('%s exported to %s', [Exported, dlgSaveTape.FileName]);
+    if LeftOut > 0 then
+      Exported := Exported +
+        Format(', %d skipped that a Spectrum tape cannot hold', [LeftOut]);
+    statusBar.SimpleText := Exported;
+  finally
+    Files.Free;
+  end;
 end;
 
 function TfrmMain.FindTreeNodeFromData(Node: TTreeNode; Data: TObject): TTreeNode;

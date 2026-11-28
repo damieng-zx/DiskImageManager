@@ -34,7 +34,7 @@ interface
 
 uses
   DskImage, DIMUtils,
-  Classes, SysUtils, FGL;
+  Classes, SysUtils, Math, FGL;
 
 const
   // What format detection calls these disks
@@ -125,6 +125,8 @@ type
     Param1, Param2: word;
     // The length of the file's data, not counting any header
     Size: integer;
+    // The name's bytes as the catalogue has them
+    StoredName: array[0..OpusNameLength - 1] of byte;
 
     function BlockCount: integer;
     function AllocatedSize: integer;
@@ -134,6 +136,8 @@ type
     function GetData(WithHeader: boolean): TDiskByteArray; override;
     // Code files say where they load
     procedure GetAddresses(out Load, Exec: integer); override;
+    // For every file with a header
+    function GetTapeFile(out Tape: TTapeFile): boolean; override;
     // A BASIC program without its variables, or nothing for any other file
     function BasicProgram: TDiskByteArray;
 
@@ -568,6 +572,7 @@ begin
 
       DiskFile := TOpusFile.Create(Self);
       DiskFile.FileName := DecodeName(Sector.Data, Offset + deName);
+      Move(Sector.Data[Offset + deName], DiskFile.StoredName, OpusNameLength);
       DiskFile.EntryIndex := Block * PerBlock + Slot;
       DiskFile.FirstBlock := First;
       DiskFile.LastBlock := Last;
@@ -639,6 +644,7 @@ begin
   Move(Stored, Sector.Data[Offset + deName], OpusNameLength);
   Sector.IsChanged := True;
   DiskFile.FileName := NewName;
+  Move(Stored, DiskFile.StoredName, OpusNameLength);
   Result := True;
 end;
 
@@ -764,6 +770,28 @@ begin
   inherited GetAddresses(Load, Exec);
   if FileType = oftCode then
     Load := Param1;
+end;
+
+// The header on the disk is a tape's, so its parameters carry straight over
+function TOpusFile.GetTapeFile(out Tape: TTapeFile): boolean;
+var
+  Idx: integer;
+begin
+  Result := inherited GetTapeFile(Tape);
+  if FileType = oftData then exit;
+
+  // The two number the types alike
+  Tape.FileType := TTapeFileType(Ord(FileType));
+  Tape.Param1 := Param1;
+  Tape.Data := GetData(False);
+  if FileType = oftBasic then
+    Tape.Param2 := Min(Param2, Length(Tape.Data));
+
+  // A tape pads a name with spaces where a catalogue may use NULs
+  for Idx := 0 to OpusNameLength - 1 do
+    if StoredName[Idx] <> 0 then
+      Tape.Name[Idx] := StoredName[Idx];
+  Result := True;
 end;
 
 function TOpusFile.HasHeader: boolean;

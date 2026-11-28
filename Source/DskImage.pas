@@ -35,6 +35,8 @@ const
   // Between the zip and the entry in the name of an image read from one.
   // Windows allows it in no file name, so such a name is never a file to write.
   ArchiveSeparator = '>';
+  // A tape header parameter that says nothing, such as no autorun line
+  TapeNoValue = $8000;
 
 type
   // Physical disk structure
@@ -48,6 +50,21 @@ type
   TDSKFormatSpecification = class;
   TDSKSpecification = class;
 
+  // What a Spectrum tape header says a file is, in the order it numbers them
+  TTapeFileType = (tfProgram, tfNumberArray, tfCharacterArray, tfCode);
+
+  // A file as a Spectrum tape holds one: what its header says, and its data
+  TTapeFile = record
+    FileType: TTapeFileType;
+    Name: array[0..9] of byte;
+    // A program's autorun line, code's load address, or an array's variable in
+    // the high byte
+    Param1: word;
+    // A program's length without its variables
+    Param2: word;
+    Data: TDiskByteArray;
+  end;
+
   // A file one of the file systems found on a disk, as far as listing, finding
   // and extracting it goes
   TDiskFile = class(TObject)
@@ -60,6 +77,8 @@ type
     // The address the file's data is loaded at and the address it is run from,
     // as the disk records them, or -1 for either it does not
     procedure GetAddresses(out Load, Exec: integer); virtual;
+    // The file as a tape holds it, or False for one a Spectrum tape cannot
+    function GetTapeFile(out Tape: TTapeFile): boolean; virtual;
   end;
 
   // Directory entry cursor: walks fixed-size entries packed across the logical
@@ -2470,6 +2489,16 @@ procedure TDiskFile.GetAddresses(out Load, Exec: integer);
 begin
   Load := -1;
   Exec := -1;
+end;
+
+function TDiskFile.GetTapeFile(out Tape: TTapeFile): boolean;
+begin
+  Tape := Default(TTapeFile);
+  FillChar(Tape.Name, SizeOf(Tape.Name), Ord(' '));
+  // What a header holds where it has nothing to say, a program's autorun too
+  Tape.Param1 := TapeNoValue;
+  Tape.Param2 := TapeNoValue;
+  Result := False;
 end;
 
 constructor TDSKDirEntryEnumerator.Create(ADisk: TDSKDisk; AStart: TDSKSector;

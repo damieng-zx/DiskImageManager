@@ -107,6 +107,8 @@ type
     function GetData(WithHeader: boolean): TDiskByteArray; override;
     // For code, screens and 48K snapshots
     procedure GetAddresses(out Load, Exec: integer); override;
+    // For Spectrum BASIC, arrays, code and screens
+    function GetTapeFile(out Tape: TTapeFile): boolean; override;
     // SAM Coupe BASIC, arrays and screens differ from the Spectrum's and have
     // no viewer
     function ViewKind: TMGTViewKind;
@@ -807,6 +809,55 @@ begin
           Load := Start;
       end;
   end;
+end;
+
+// A tape header has nowhere to keep the address a code file runs from
+function TMGTFile.GetTapeFile(out Tape: TTapeFile): boolean;
+const
+  ScreenStart = 16384;
+var
+  Line: word;
+begin
+  Result := inherited GetTapeFile(Tape);
+  case FileType of
+    ftBasic:
+      begin
+        Tape.FileType := tfProgram;
+        Line := ReadWordLE(Entry, deZXParameter);
+        if Line <= 9999 then
+          Tape.Param1 := Line;
+        // Where an array keeps its name, a program keeps its length without
+        // variables
+        Tape.Param2 := ReadWordLE(Entry, deZXVariable);
+      end;
+    ftNumberArray, ftStringArray:
+      begin
+        if FileType = ftNumberArray then
+          Tape.FileType := tfNumberArray
+        else
+          Tape.FileType := tfCharacterArray;
+        Tape.Param1 := Entry[deZXVariable] shl 8;
+      end;
+    ftCode:
+      begin
+        Tape.FileType := tfCode;
+        Tape.Param1 := ReadWordLE(Entry, deStart);
+      end;
+    ftScreen:
+      begin
+        Tape.FileType := tfCode;
+        Tape.Param1 := ScreenStart;
+      end;
+  else
+    exit;
+  end;
+
+  // The name's bytes as they are, so that keywords and graphics in it survive
+  Move(Entry[deName], Tape.Name, deNameLength);
+  Tape.Data := GetData(False);
+  if (Tape.FileType = tfProgram) and (Tape.Param2 > Length(Tape.Data)) then
+    Tape.Param2 := Length(Tape.Data);
+  Result := True;
 end;
 
 function TMGTFile.ViewKind: TMGTViewKind;
