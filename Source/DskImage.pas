@@ -57,6 +57,9 @@ type
     // Whether there is a header GetData can include or leave off
     function HasHeader: boolean; virtual; abstract;
     function GetData(WithHeader: boolean): TDiskByteArray; virtual; abstract;
+    // The address the file's data is loaded at and the address it is run from,
+    // as the disk records them, or -1 for either it does not
+    procedure GetAddresses(out Load, Exec: integer); virtual;
   end;
 
   // Directory entry cursor: walks fixed-size entries packed across the logical
@@ -2461,6 +2464,12 @@ begin
   end;
 
   Result := Sector;
+end;
+
+procedure TDiskFile.GetAddresses(out Load, Exec: integer);
+begin
+  Load := -1;
+  Exec := -1;
 end;
 
 constructor TDSKDirEntryEnumerator.Create(ADisk: TDSKDisk; AStart: TDSKSector;

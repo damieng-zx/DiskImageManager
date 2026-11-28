@@ -30,7 +30,9 @@ uses
   TestNavigationHistory,
   TestMGTFileSystem,
   TestDiskArchive,
-  TestOpusFileSystem;
+  TestOpusFileSystem,
+  TestZ80Disasm,
+  TestByteViews;
 
 type
   TDIMTestRunner = class(TTestRunner)

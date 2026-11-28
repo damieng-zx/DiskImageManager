@@ -39,6 +39,7 @@ These images are traditionally created with CPDRead under DOS but Simon Owen's m
 * Plain text viewer for +3DOS custom file types
 * Spectrum SCREEN$ viewer with FLASH animation and zoom
 * Amstrad CPC screen viewer for modes 0, 1 and 2 with automatic mode detection and zoom
+* Hex, text and Z80 disassembly viewer for any file, starting at its load address, with a jump to its execute address
 * Advanced OCP Art Studio compressed screens (MJH run-length encoding) and window (.WIN) clips
 * Save any displayed Spectrum or CPC image to PNG or BMP at native resolution
 

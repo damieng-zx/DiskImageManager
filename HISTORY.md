@@ -17,6 +17,7 @@
 - Extract files from MGT disks, with or without their 9-byte header, by saving them or dragging them out
 - MGT file listings show each file's actual size and its start address, length, autorun line, execute address, array name or screen mode
 - View Spectrum BASIC programs, string arrays and SCREEN$ files on MGT disks
+- View any other file as hex, text or Z80 code, listed from its load address, with a button to go to its execute address. Right-click to disassemble from a byte, and choose View as Hex to open any file this way
 - Name MGT +D/DISCiPLE disks as such instead of calling them SAM Coupe SAMDOS
 - Drag saved disk images from the tree, and files inside disks from the list, to Explorer and other applications
 - Rename files on CP/M, MGT and Opus Discovery disks from the file list's right-click menu
@@ -60,6 +61,7 @@
 - Name the FM and MFM recording modes the right way round
 - Keep tildes in Spectrum BASIC listings and stop colour and position codes showing as text
 - Show keywords held inside strings in the BASIC viewer instead of leaving them out
+- Show BASIC listings, string arrays and text files longer than 32,000 characters in full instead of cutting them off
 - Show the pound and copyright signs in Spectrum listings, string arrays and text files, instead of a backtick and a stray accented letter before the sign
 - Fix the Strings view: identical strings listed once per copy found, the last string on the disk never shown, and a memory leak each time it was viewed
 - Find text that begins within a run of the same character, and include the starting sector in a new search

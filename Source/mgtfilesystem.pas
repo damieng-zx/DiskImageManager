@@ -100,6 +100,8 @@ type
     function MapBit(Index: integer): boolean;
     function MappedSectorCount: integer;
     function GetData(WithHeader: boolean): TDiskByteArray; override;
+    // For code, screens and 48K snapshots
+    procedure GetAddresses(out Load, Exec: integer); override;
     // SAM Coupe BASIC, arrays and screens differ from the Spectrum's and have
     // no viewer
     function ViewKind: TMGTViewKind;
@@ -737,6 +739,33 @@ begin
     First := Min(HeaderLength, Last);
 
   Result := Copy(Data, First, Last - First);
+end;
+
+procedure TMGTFile.GetAddresses(out Load, Exec: integer);
+const
+  // Where the Spectrum's memory begins, with its screen
+  RAMStart = 16384;
+var
+  Parameter, Start: integer;
+begin
+  inherited GetAddresses(Load, Exec);
+  case FileType of
+    ftCode:
+      begin
+        Load := ReadWordLE(Entry, deStart);
+        Parameter := ReadWordLE(Entry, deZXParameter);
+        if (Parameter <> 0) and (Parameter <> $FFFF) then
+          Exec := Parameter;
+      end;
+    ftScreen, ftSnapshot48: Load := RAMStart;
+    ftSAMCode:
+      begin
+        // SAM code above 64K is paged in, so has no one address for the Z80
+        Start := SAMTriple(Entry, deSAMStart) + PageSize;
+        if Start <= $FFFF then
+          Load := Start;
+      end;
+  end;
 end;
 
 function TMGTFile.ViewKind: TMGTViewKind;

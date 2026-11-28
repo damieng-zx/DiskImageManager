@@ -23,6 +23,8 @@ type
   private
     FMode: TSinclairBasicMode;
     FFontName: string;
+    // Set while decoding text too long to underline its graphics
+    FPlainEscapes: boolean;
     function RTFStart(const Colours: string = ''): string;
     function IsKeyword(B: byte; InString: boolean): boolean;
     function GetTokenText(Token: byte): string;
@@ -56,6 +58,11 @@ implementation
 
 const
   TokenREM = $EA;
+
+  // The most bytes of text whose user defined graphics are underlined. The text
+  // control takes many seconds to load a document with tens of thousands of
+  // them, so longer text shows each as it is written.
+  UnderlinedTextLimit = 128 * 1024;
 
   Tokens: array[$A5..$FF] of string = (
     'RND', 'INKEY$', 'PI', 'FN', 'POINT', 'SCREEN$', 'ATTR', 'AT', 'TAB',
@@ -394,7 +401,14 @@ begin
         if I < Length(Wide) then
         begin
           Inc(I);
-          if Wide[I] = '\' then
+          if FPlainEscapes then
+          begin
+            if Wide[I] = '\' then
+              Result := Result + '\\\\'
+            else
+              Result := Result + '\\' + AnsiChar(Ord(Wide[I]));
+          end
+          else if Wide[I] = '\' then
             Result := Result + '{\v \\}\\'
           else
             Result := Result + '{\v \\}{\ul ' + AnsiChar(Ord(Wide[I])) + '}';
@@ -754,6 +768,7 @@ var
   I: integer;
   Line: string;
 begin
+  FPlainEscapes := System.Length(Data) > UnderlinedTextLimit;
   Result := RTFStart;
   Line := '';
   I := 0;
@@ -785,6 +800,7 @@ begin
   if Line <> '' then
     Result := Result + EscapeRTF(Line);
   Result := Result + '}';
+  FPlainEscapes := False;
 end;
 
 // Decode a file's payload (with any AMSDOS/PLUS3DOS header stripped) as plain

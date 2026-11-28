@@ -27,6 +27,7 @@ type
     procedure TestUserDefinedGraphics;
     procedure TestSpectrumAndPlayDependOnStrings;
     procedure TestBackslashIsEscaped;
+    procedure TestLongTextShowsEscapesAsWritten;
     procedure TestSignsAboveASCII;
     procedure TestGraphicsAndUdgRanges;
     procedure TestEveryBlockGraphic;
@@ -486,6 +487,32 @@ begin
     RTF := P.DecodeTextRTF([$41, $5C, $42]);
     AssertTrue('text file', Pos('A\\B', RTF) > 0);
     AssertEquals('nothing hidden in a text file', 0, Pos('\v ', RTF));
+  finally
+    P.Free;
+  end;
+end;
+
+// Underlining tens of thousands of graphics takes the text control seconds, so
+// very long text shows them as they are written
+procedure TSinclairBasicTest.TestLongTextShowsEscapesAsWritten;
+var
+  P: TSinclairBasicParser;
+  Data: array of byte;
+  RTF: string;
+begin
+  P := TSinclairBasicParser.Create(sbMode128K);
+  try
+    // A graphic and a backslash, then enough text to pass the limit
+    SetLength(Data, 200 * 1024);
+    FillChar(Data[0], Length(Data), Ord('x'));
+    Data[0] := $90;
+    RTF := P.DecodeTextRTF(Data);
+    AssertTrue('written out', Pos('\\Axxx', RTF) > 0);
+    AssertEquals('nothing hidden', 0, Pos('\v ', RTF));
+    AssertEquals('nothing underlined', 0, Pos('\ul ', RTF));
+
+    // The next document is underlined again
+    AssertTrue(Pos('{\v \\}{\ul A}', P.DecodeTextRTF([$90])) > 0);
   finally
     P.Free;
   end;

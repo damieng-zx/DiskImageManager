@@ -17,7 +17,7 @@ uses
   DiskMap, DskImage, DIMUtils, Utils, NavigationHistory, About, Options, SectorProperties,
   TrackProperties, Settings, FileSystem, MGTFileSystem, OpusFileSystem, ListViewPresenter,
   Comparers, FileViewer, SinclairBasic, ZXScreenViewer, SpectrumScreen,
-  CPCScreenViewer, AmstradScreen, ShellDragDrop, DiskArchive,
+  CPCScreenViewer, AmstradScreen, ShellDragDrop, DiskArchive, DataViewer,
   Classes, Graphics, SysUtils, Forms, Dialogs, Menus,
   ComCtrls, ExtCtrls, Controls, Contnrs,
   Clipbrd, StdCtrls, FileUtil, StrUtils, LazFileUtils, LConvEncoding, CommCtrl;
@@ -62,6 +62,7 @@ type
     itmCloseAllExceptDoubleSided: TMenuItem;
     itmCloseAllExceptFDCError: TMenuItem;
     itmViewFile: TMenuItem;
+    itmViewHex: TMenuItem;
     mnuMain: TMainMenu;
     itmDisk: TMenuItem;
     itmOpen: TMenuItem;
@@ -168,8 +169,11 @@ type
     procedure itmTrackPropertiesClick(Sender: TObject);
     procedure itmTrackUnformatClick(Sender: TObject);
     procedure ShowFile(Sender: TObject);
-    procedure ShowMGTFile(DiskFile: TMGTFile; const DiskName: string);
-    procedure ShowOpusFile(DiskFile: TOpusFile; const DiskName: string);
+    procedure itmViewHexClick(Sender: TObject);
+    // Each shows a file in the viewer made for what it holds, if there is one
+    function ShowCPMFile(DiskFile: TCPMFile; const DiskName: string): boolean;
+    function ShowMGTFile(DiskFile: TMGTFile; const DiskName: string): boolean;
+    function ShowOpusFile(DiskFile: TOpusFile; const DiskName: string): boolean;
     procedure lvwMainCompare(Sender: TObject; Item1, Item2: TListItem;
       Data: integer; var Compare: integer);
     procedure MenuItem1Click(Sender: TObject);
@@ -700,6 +704,7 @@ begin
   itmSaveFile.Visible := False;
   itmSaveHeaderlessFile.Visible := False;
   itmRenameFile.Visible := False;
+  itmViewHex.Visible := False;
 
   if (lvwMain.SelCount = 1) and (lvwMain.Selected.Data <> nil) and
     (TObject(lvwMain.Selected.Data) is TDiskFile) then
@@ -707,6 +712,7 @@ begin
     DiskFile := TDiskFile((lvwMain.Selected).Data);
     // Every file system can rename
     itmRenameFile.Visible := True;
+    itmViewHex.Visible := True;
     itmSaveFile.Visible := DiskFile.HasHeader;
     itmSaveFile.Caption := Format('Save %s', [DiskFile.FileName]);
 
@@ -2486,122 +2492,119 @@ begin
   end;
 end;
 
+// Show the selected file in the viewer made for what it holds, or else show
+// its bytes
 procedure TfrmMain.ShowFile(Sender: TObject);
 var
-  DiskFile: TCPMFile;
+  DiskFile: TObject;
   DiskImage: TDSKImage;
-  DiskName: string;
+  Shown: boolean;
 begin
-  // Check if a file is selected and it's one there is a viewer for
   if (lvwMain.Selected = nil) or (lvwMain.Selected.Data = nil) then
     Exit;
-
-  if TObject(lvwMain.Selected.Data) is TOpusFile then
-  begin
-    DiskImage := GetCurrentImage;
-    if DiskImage <> nil then
-      ShowOpusFile(TOpusFile(lvwMain.Selected.Data), DiskImage.DisplayName);
-    Exit;
-  end;
-
-  if TObject(lvwMain.Selected.Data) is TMGTFile then
-  begin
-    DiskImage := GetCurrentImage;
-    if DiskImage <> nil then
-      ShowMGTFile(TMGTFile(lvwMain.Selected.Data), DiskImage.DisplayName);
-    Exit;
-  end;
-
-  if TObject(lvwMain.Selected.Data).ClassType <> TCPMFile then
-    Exit;
-
-  DiskFile := TCPMFile(lvwMain.Selected.Data);
-
-  // Get the disk image for the title
+  DiskFile := TObject(lvwMain.Selected.Data);
+  // The disk image gives the viewer its title
   DiskImage := GetCurrentImage;
-  if DiskImage <> nil then
-    DiskName := DiskImage.DisplayName
-  else
-    DiskName := '';
+  if not (DiskFile is TDiskFile) or (DiskImage = nil) then
+    Exit;
+
+  Shown := False;
+  if DiskFile is TOpusFile then
+    Shown := ShowOpusFile(TOpusFile(DiskFile), DiskImage.DisplayName)
+  else if DiskFile is TMGTFile then
+    Shown := ShowMGTFile(TMGTFile(DiskFile), DiskImage.DisplayName)
+  else if DiskFile is TCPMFile then
+    Shown := ShowCPMFile(TCPMFile(DiskFile), DiskImage.DisplayName);
+
+  if not Shown then
+    ShowDataViewer(TDiskFile(DiskFile), DiskImage.DisplayName);
+end;
+
+procedure TfrmMain.itmViewHexClick(Sender: TObject);
+var
+  DiskImage: TDSKImage;
+begin
+  if (lvwMain.Selected = nil) or (lvwMain.Selected.Data = nil) then
+    Exit;
+  DiskImage := GetCurrentImage;
+  if (TObject(lvwMain.Selected.Data) is TDiskFile) and (DiskImage <> nil) then
+    ShowDataViewer(TDiskFile(lvwMain.Selected.Data), DiskImage.DisplayName);
+end;
+
+function TfrmMain.ShowCPMFile(DiskFile: TCPMFile; const DiskName: string): boolean;
+var
+  Disk: TDSKDisk;
+begin
+  Disk := GetCurrentImage.Disk;
+  Result := True;
 
   // Amstrad (AMSDOS) tokenized BASIC files
   if (DiskFile.HeaderType = 'AMSDOS') and DiskFile.Meta.StartsWith('BASIC') then
-  begin
-    ShowBasicViewer(DiskImage.Disk, DiskFile, DiskName);
-    Exit;
-  end;
+    ShowBasicViewer(Disk, DiskFile, DiskName)
 
   // Amstrad CPC screen dumps: roughly 16K files (raw screen RAM carries no
   // header, and some carry a few extra bytes spilling into a 17th block), plus
   // Advanced OCP Art Studio screens and .WIN window clips (both optionally
   // MJH-compressed). Compressed files fail the size check, so confirm the data
   // decodes to a screen or window. PLUS3DOS files go to the Spectrum viewers.
-  if (DiskFile.HeaderType <> 'PLUS3DOS') and
-     (TAmstradScreen.IsValidScreenSize(DiskFile.Size) or
-      TAmstradScreen.CanDisplay(DiskFile.GetData(False))) then
-  begin
-    ShowCPCScreenViewer(DiskImage.Disk, DiskFile, DiskName);
-    Exit;
-  end;
+  else if (DiskFile.HeaderType <> 'PLUS3DOS') and
+    (TAmstradScreen.IsValidScreenSize(DiskFile.Size) or
+    TAmstradScreen.CanDisplay(DiskFile.GetData(False))) then
+    ShowCPCScreenViewer(Disk, DiskFile, DiskName)
 
-  // Check for PLUS3DOS files
-  if DiskFile.HeaderType <> 'PLUS3DOS' then
-    Exit;
+  else if DiskFile.HeaderType <> 'PLUS3DOS' then
+    Result := False
 
-  // Check if this is a SCREEN$ file (6912 bytes with color, 6144 bytes without)
-  if TSpectrumScreen.IsValidScreenSize(DiskFile.Size - DiskFile.HeaderSize) then
-  begin
-    ShowZXScreenViewer(DiskImage.Disk, DiskFile, DiskName);
-    Exit;
-  end;
+  // A SCREEN$ file (6912 bytes with color, 6144 bytes without)
+  else if TSpectrumScreen.IsValidScreenSize(DiskFile.Size - DiskFile.HeaderSize) then
+    ShowZXScreenViewer(Disk, DiskFile, DiskName)
 
-  // Check if this is a BASIC file
-  if DiskFile.Meta.StartsWith('BASIC') then
-  begin
-    ShowBasicViewer(DiskImage.Disk, DiskFile, DiskName);
-    Exit;
-  end;
+  else if DiskFile.Meta.StartsWith('BASIC') then
+    ShowBasicViewer(Disk, DiskFile, DiskName)
 
   // Character (string) array, e.g. DATA a$(10) - list one string per line
-  if DiskFile.Meta.StartsWith('DATA ') and (Pos('$(', DiskFile.Meta) > 0) then
-  begin
-    ShowStringArrayViewer(DiskImage.Disk, DiskFile, DiskName);
-    Exit;
-  end;
+  else if DiskFile.Meta.StartsWith('DATA ') and (Pos('$(', DiskFile.Meta) > 0) then
+    ShowStringArrayViewer(Disk, DiskFile, DiskName)
 
   // Custom PLUS3DOS type 0x04 - show the payload in the plain text viewer
-  if DiskFile.Meta = 'Custom 0x4' then
-  begin
-    ShowTextViewer(DiskImage.Disk, DiskFile, DiskName);
-    Exit;
-  end;
+  else if DiskFile.Meta = 'Custom 0x4' then
+    ShowTextViewer(Disk, DiskFile, DiskName)
+
+  else
+    Result := False;
 end;
 
-procedure TfrmMain.ShowMGTFile(DiskFile: TMGTFile; const DiskName: string);
+function TfrmMain.ShowMGTFile(DiskFile: TMGTFile; const DiskName: string): boolean;
 var
   Disk: TDSKDisk;
 begin
   Disk := GetCurrentImage.Disk;
+  Result := True;
   case DiskFile.ViewKind of
     mvScreen: ShowZXScreenViewer(Disk, DiskFile, DiskName);
     mvBasic: ShowBasicViewer(Disk, DiskFile, DiskName);
     mvStringArray: ShowStringArrayViewer(Disk, DiskFile, DiskName);
+    else Result := False;
   end;
 end;
 
-// The Opus files that have a viewer: SCREEN$ dumps saved as CODE, BASIC
-// programs and character arrays
-procedure TfrmMain.ShowOpusFile(DiskFile: TOpusFile; const DiskName: string);
+// The Opus files that have a viewer of their own: SCREEN$ dumps saved as CODE,
+// BASIC programs and character arrays
+function TfrmMain.ShowOpusFile(DiskFile: TOpusFile; const DiskName: string): boolean;
 var
   Disk: TDSKDisk;
 begin
   Disk := GetCurrentImage.Disk;
+  Result := True;
   case DiskFile.FileType of
     oftCode:
       if TSpectrumScreen.IsValidScreenSize(DiskFile.Size) then
-        ShowZXScreenViewer(Disk, DiskFile, DiskName);
+        ShowZXScreenViewer(Disk, DiskFile, DiskName)
+      else
+        Result := False;
     oftBasic: ShowBasicViewer(Disk, DiskFile, DiskName);
     oftStringArray: ShowStringArrayViewer(Disk, DiskFile, DiskName);
+    else Result := False;
   end;
 end;
 

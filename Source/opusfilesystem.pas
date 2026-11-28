@@ -132,6 +132,8 @@ type
     function StoredSize: integer;
     function HasHeader: boolean; override;
     function GetData(WithHeader: boolean): TDiskByteArray; override;
+    // Code files say where they load
+    procedure GetAddresses(out Load, Exec: integer); override;
     // A BASIC program without its variables, or nothing for any other file
     function BasicProgram: TDiskByteArray;
 
@@ -755,6 +757,13 @@ begin
   end;
   if not Complete then
     Meta := Meta + ' (incomplete)';
+end;
+
+procedure TOpusFile.GetAddresses(out Load, Exec: integer);
+begin
+  inherited GetAddresses(Load, Exec);
+  if FileType = oftCode then
+    Load := Param1;
 end;
 
 function TOpusFile.HasHeader: boolean;

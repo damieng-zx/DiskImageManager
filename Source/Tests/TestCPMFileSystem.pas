@@ -35,6 +35,7 @@ type
     procedure TestPlus3DOSExactSizeKept;
     procedure TestExtractionStopsAfterPartialSector;
     procedure TestAMSDOSHeaderSizeClampedToCapacity;
+    procedure TestHeadersGiveAddresses;
     procedure TestExtentSizeFlooredAtZero;
     procedure TestEmptyFileWithoutBlocksIsListed;
     procedure TestRenameUpdatesCPMDirectoryEntry;
@@ -361,6 +362,72 @@ begin
   finally
     Img.Free;
   end;
+end;
+
+// A +3DOS CODE header says where the file loads; an AMSDOS binary one says
+// that and where it runs from
+procedure TCPMFileSystemTest.TestHeadersGiveAddresses;
+
+  procedure Expect(Plus3: boolean; WantedLoad, WantedExec: integer);
+  var
+    Img: TDSKImage;
+    FSys: TCPMFileSystem;
+    Files: TDirectory;
+    Sec: TDSKSector;
+    Idx, Sum, Load, Exec: integer;
+  begin
+    Img := MakePCWDisk;
+    try
+      PlantDirEntry(Img, 2, 0, 2);
+      Sec := DataSector(Img);
+      if Plus3 then
+      begin
+        PlantPlus3DOSHeader(Sec, 256);
+        // Load address &8000
+        Sec.Data[18] := $00;
+        Sec.Data[19] := $80;
+        Sum := 0;
+        for Idx := 0 to 126 do
+          Inc(Sum, Sec.Data[Idx]);
+        Sec.Data[127] := Sum and $FF;
+      end
+      else
+      begin
+        PlantAMSDOSHeader(Sec, 128);
+        // Load at &4000, run from &4005
+        Sec.Data[21] := $00;
+        Sec.Data[22] := $40;
+        Sec.Data[26] := $05;
+        Sec.Data[27] := $40;
+        Sum := 0;
+        for Idx := 0 to 66 do
+          Inc(Sum, Sec.Data[Idx]);
+        Sec.Data[67] := Sum and $FF;
+        Sec.Data[68] := (Sum shr 8) and $FF;
+      end;
+
+      FSys := TCPMFileSystem.Create(Img.Disk);
+      try
+        Files := FSys.Directory;
+        try
+          AssertEquals('one file found', 1, Files.Count);
+          Files[0].GetAddresses(Load, Exec);
+          AssertEquals('load', WantedLoad, Load);
+          AssertEquals('execute', WantedExec, Exec);
+        finally
+          FreeDirectory(Files);
+        end;
+      finally
+        FSys.Free;
+      end;
+    finally
+      Img.Free;
+    end;
+  end;
+
+begin
+  Expect(True, $8000, -1);
+  Expect(False, $4000, $4005);
 end;
 
 // RC=0 with BYTES_IN_LAST_RECORD=100 used to compute 0*128 - 128 + 100 = -28

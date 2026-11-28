@@ -59,9 +59,14 @@ type
     Size: integer;
     HeaderSize: integer;
     Meta: string;
+    // Where a +3DOS or AMSDOS header says the data loads and runs from, or -1
+    LoadAddress: integer;
+    ExecAddress: integer;
 
     function HasHeader: boolean; override;
     function GetData(WithHeader: boolean): TDiskByteArray; override;
+    // As the header says, or &100 for a CP/M program, which has none
+    procedure GetAddresses(out Load, Exec: integer); override;
 
     constructor Create(ParentFileSystem: TCPMFileSystem);
     destructor Destroy; override;
@@ -425,6 +430,14 @@ begin
       DiskFile.Meta := Format('Custom 0x%x', [Data[18]]);
   end;
 
+  // Binaries and screens say where they load, and may say where to run from
+  if Data[18] in [2..5] then
+  begin
+    DiskFile.LoadAddress := LoadAddr;
+    if ExecAddr <> 0 then
+      DiskFile.ExecAddress := ExecAddr;
+  end;
+
   // Screens are normally saved as a plain binary loading at &C000, not as the
   // (rarely used) SCREEN type, so flag the likely ones for the file list.
   if ((Data[18] = 2) or (Data[18] = 3)) and (LoadAddr = $C000) and
@@ -477,6 +490,8 @@ begin
     else
       DiskFile.Meta := Format('Custom 0x%x', [Data[15]]);
   end;
+  if Data[15] = 3 then
+    DiskFile.LoadAddress := Param1;
 end;
 
 // File
@@ -486,6 +501,19 @@ begin
   inherited Create;
   FParentFileSystem := ParentFileSystem;
   Blocks := TFPGList<integer>.Create;
+  LoadAddress := -1;
+  ExecAddress := -1;
+end;
+
+procedure TCPMFile.GetAddresses(out Load, Exec: integer);
+begin
+  Load := LoadAddress;
+  Exec := ExecAddress;
+  if (HeaderType = 'None') and SameText(ExtractFileExt(FileName), '.COM') then
+  begin
+    Load := $100;
+    Exec := $100;
+  end;
 end;
 
 destructor TCPMFile.Destroy;

@@ -96,7 +96,7 @@
         <PackageName Value="LCL"/>
       </Item2>
     </RequiredPackages>
-    <Units Count="30">
+    <Units Count="33">
       <Unit0>
         <Filename Value="DiskImageManager.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -248,6 +248,21 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="OpusFileSystem"/>
       </Unit29>
+      <Unit30>
+        <Filename Value="DataViewer.pas"/>
+        <IsPartOfProject Value="True"/>
+        <ComponentName Value="frmDataViewer"/>
+        <HasResources Value="True"/>
+        <ResourceBaseClass Value="Form"/>
+      </Unit30>
+      <Unit31>
+        <Filename Value="ByteViews.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit31>
+      <Unit32>
+        <Filename Value="Z80Disasm.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit32>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
