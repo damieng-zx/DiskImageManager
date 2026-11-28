@@ -29,6 +29,7 @@
 - List the files of an MGT disk held in a DSK or Teledisk image from the right tracks
 - Format new MGT disks with a zero filler: the previous E5 left every directory slot looking occupied
 - List each MGT file with its own type, size and location, instead of every second file taking those of the entry before it, and leave erased entries out
+- Show +D and DISCiPLE file names as their catalogue prints them, with keywords in full, block graphics and user-defined graphics, instead of unrelated characters such as `/` for `CODE`. Renaming keeps the keywords and graphics the new name still shows
 - Keep a newly formatted MGT disk identified as MGT instead of PCW
 - Open gzipped .mgt images, which were refused as an unknown file type
 - Save an image opened from a name ending .GZ in capitals through Save As, as a lowercase .gz already was, instead of writing it uncompressed over the gzipped file

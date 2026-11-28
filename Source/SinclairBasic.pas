@@ -54,6 +54,17 @@ type
     property FontName: string read FFontName write FFontName;
   end;
 
+// A name as the Spectrum prints it, which is how a catalogue shows one: keywords
+// in full, block graphics as Unicode block elements, user defined graphics as \A
+// to \U, and no trailing spaces
+function SpectrumName(const Data: array of byte; Offset, Count: integer): string;
+
+// The bytes that print as Name, for a file whose name is stored as Previous. The
+// keywords and graphics that name holds are kept wherever the new one still
+// shows them. False if the rest is not plain ASCII, a pound or a copyright sign.
+function EncodeSpectrumName(const Name: string; const Previous: array of byte;
+  out Stored: TDiskByteArray): boolean;
+
 implementation
 
 const
@@ -77,6 +88,156 @@ const
     'POKE', 'PRINT', 'PLOT', 'RUN', 'SAVE', 'RANDOMIZE', 'IF', 'CLS',
     'DRAW', 'CLEAR', 'RETURN', 'COPY'
   );
+
+  // The block graphics as Unicode block elements (UTF-8). The low four bits of
+  // the code each fill a quarter of the character: top right, top left, bottom
+  // right and bottom left
+  BlockGraphics: array[$80..$8F] of string = (
+    ' ',                      // none
+    #$E2#$96#$9D,             // U+259D top right
+    #$E2#$96#$98,             // U+2598 top left
+    #$E2#$96#$80,             // U+2580 top half
+    #$E2#$96#$97,             // U+2597 bottom right
+    #$E2#$96#$90,             // U+2590 right half
+    #$E2#$96#$9A,             // U+259A top left, bottom right
+    #$E2#$96#$9C,             // U+259C all but bottom left
+    #$E2#$96#$96,             // U+2596 bottom left
+    #$E2#$96#$9E,             // U+259E top right, bottom left
+    #$E2#$96#$8C,             // U+258C left half
+    #$E2#$96#$9B,             // U+259B all but bottom right
+    #$E2#$96#$84,             // U+2584 bottom half
+    #$E2#$96#$9F,             // U+259F all but top left
+    #$E2#$96#$99,             // U+2599 all but top right
+    #$E2#$96#$88);            // U+2588 all
+
+  PoundSign = #$C2#$A3;       // UTF-8
+  CopyrightSign = #$C2#$A9;
+
+// A byte from $20 up as a name shows it. The ROM puts a space before a keyword
+// that is a word, other than a function, unless one is already there, and after
+// one ending in a letter or '$', other than RND, INKEY$ and PI.
+function PrintedInName(B: byte; AfterSpace: boolean): string;
+begin
+  case B of
+    $60: Result := PoundSign;
+    $7F: Result := CopyrightSign;
+    $80..$8F: Result := BlockGraphics[B];
+    $90..$A4: Result := '\' + Chr(Ord('A') + B - $90);
+    $A5..$FF:
+      begin
+        Result := Tokens[B];
+        if (B >= $A8) and (Result[Length(Result)] in ['$', 'A'..'Z']) then
+          Result := Result + ' ';
+        if (B >= $C5) and (Result[1] >= 'A') and not AfterSpace then
+          Result := ' ' + Result;
+      end;
+  else
+    Result := Chr(B);
+  end;
+end;
+
+function SpectrumName(const Data: array of byte; Offset, Count: integer): string;
+var
+  Pos: integer;
+  B: byte;
+begin
+  Result := '';
+  Pos := Offset;
+  while Pos < Offset + Count do
+  begin
+    B := Data[Pos];
+    case B of
+      // Control codes show nothing, and neither do the bytes some of them take
+      $10..$15: Inc(Pos);
+      $16, $17: Inc(Pos, 2);
+      $20..$FF:
+        Result := Result + PrintedInName(B, (Result = '') or Result.EndsWith(' '));
+    end;
+    Inc(Pos);
+  end;
+  Result := Result.TrimRight;
+end;
+
+function EncodeSpectrumName(const Name: string; const Previous: array of byte;
+  out Stored: TDiskByteArray): boolean;
+var
+  Kept: array of byte;
+  Used: array of boolean;
+  Idx, Slot, Best, BestLength, Matched: integer;
+  AfterSpace: boolean;
+  Printed: string;
+  Value: byte;
+
+  // How much of the name at Idx is the printed form, or 0 when it is not there.
+  // The space after a keyword is lost from the end of a name.
+  function MatchLength(const Text: string): integer;
+  begin
+    if Copy(Name, Idx, Length(Text)) = Text then
+      Result := Length(Text)
+    else if Copy(Name, Idx, MaxInt) = Text.TrimRight then
+      Result := Length(Text.TrimRight)
+    else
+      Result := 0;
+  end;
+
+begin
+  Result := False;
+  Stored := nil;
+
+  // A blank block graphic cannot be told from a space, so it is not kept
+  Kept := nil;
+  for Slot := 0 to High(Previous) do
+    if Previous[Slot] > $80 then
+      Insert(Previous[Slot], Kept, Length(Kept));
+  Used := nil;
+  SetLength(Used, Length(Kept));
+
+  Idx := 1;
+  AfterSpace := True;
+  while Idx <= Length(Name) do
+  begin
+    Best := -1;
+    BestLength := 0;
+    for Slot := 0 to High(Kept) do
+    begin
+      if Used[Slot] then continue;
+      Matched := MatchLength(PrintedInName(Kept[Slot], AfterSpace));
+      if Matched > BestLength then
+      begin
+        Best := Slot;
+        BestLength := Matched;
+      end;
+    end;
+
+    if Best >= 0 then
+    begin
+      Value := Kept[Best];
+      Used[Best] := True;
+    end
+    else if Copy(Name, Idx, 2) = PoundSign then
+    begin
+      Value := $60;
+      BestLength := 2;
+    end
+    else if Copy(Name, Idx, 2) = CopyrightSign then
+    begin
+      Value := $7F;
+      BestLength := 2;
+    end
+    else if Name[Idx] in [' '..'~'] then
+    begin
+      Value := Ord(Name[Idx]);
+      BestLength := 1;
+    end
+    else
+      exit;
+
+    Insert(Value, Stored, Length(Stored));
+    Inc(Idx, BestLength);
+    AfterSpace := Name[Idx - 1] = ' ';
+  end;
+  Result := True;
+end;
 
 constructor TSinclairBasicParser.Create(Mode: TSinclairBasicMode);
 begin
@@ -187,31 +348,10 @@ begin
 end;
 
 function TSinclairBasicParser.GetSpecialChar(B: byte): string;
-const
-  // The block graphics as Unicode block elements (UTF-8). The low four bits of
-  // the code each fill a quarter of the character: top right, top left, bottom
-  // right and bottom left
-  BlockGraphics: array[$80..$8F] of string = (
-    ' ',                      // none
-    #$E2#$96#$9D,             // U+259D top right
-    #$E2#$96#$98,             // U+2598 top left
-    #$E2#$96#$80,             // U+2580 top half
-    #$E2#$96#$97,             // U+2597 bottom right
-    #$E2#$96#$90,             // U+2590 right half
-    #$E2#$96#$9A,             // U+259A top left, bottom right
-    #$E2#$96#$9C,             // U+259C all but bottom left
-    #$E2#$96#$96,             // U+2596 bottom left
-    #$E2#$96#$9E,             // U+259E top right, bottom left
-    #$E2#$96#$8C,             // U+258C left half
-    #$E2#$96#$9B,             // U+259B all but bottom right
-    #$E2#$96#$84,             // U+2584 bottom half
-    #$E2#$96#$9F,             // U+259F all but top left
-    #$E2#$96#$99,             // U+2599 all but top right
-    #$E2#$96#$88);            // U+2588 all
 begin
   case B of
-    $60: Result := #$C2#$A3;  // Pound sign (UTF-8)
-    $7F: Result := #$C2#$A9;  // Copyright symbol (UTF-8)
+    $60: Result := PoundSign;
+    $7F: Result := CopyrightSign;
     $80..$8F: Result := BlockGraphics[B];
     // User defined graphics A to U, written as \A to \U
     $90..$A4: Result := '\' + Chr(Ord('A') + B - $90);

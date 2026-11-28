@@ -55,6 +55,11 @@ type
     function GetDosType: TMGTDosType;
     function HasMasterDOSMarker: boolean;
     function HoldsOnlySpectrumFiles: boolean;
+    // The name stored at Offset, as its system's catalogue shows it
+    function DecodeName(const Data: array of byte; Offset: integer): string;
+    // The bytes a new name is stored as. Raises EConvertError for a name with
+    // characters the directory cannot hold.
+    function EncodeName(DiskFile: TMGTFile; const Name: string): TDiskByteArray;
   public
     // The sector at an MGT disk address, or nil when the disk has no such sector
     function GetSector(TrackByte, SectorID: byte): TDSKSector;
@@ -121,7 +126,7 @@ function MGTMapIndex(TrackByte, SectorID: byte): integer;
 implementation
 
 uses
-  SpectrumScreen;
+  SpectrumScreen, SinclairBasic;
 
 const
   // File types, the low five bits of an entry's first byte
@@ -378,6 +383,51 @@ begin
   end;
 end;
 
+// A +D prints a name as it would any string, so a byte above ASCII shows as a
+// graphic or a whole keyword. SAM disks mean other things by those bytes, which
+// lose their top bit here.
+function TMGTFileSystem.DecodeName(const Data: array of byte; Offset: integer): string;
+begin
+  if DosType = mdPlusD then
+    Result := SpectrumName(Data, Offset, deNameLength)
+  else
+    Result := StrBlockClean(Data, Offset, deNameLength).TrimRight;
+end;
+
+function TMGTFileSystem.EncodeName(DiskFile: TMGTFile;
+  const Name: string): TDiskByteArray;
+const
+  Refusal = 'MGT names may contain only %s, other than * and ?.';
+var
+  Previous: array[0..deNameLength - 1] of byte;
+  Idx: integer;
+begin
+  Result := nil;
+  if DosType = mdPlusD then
+  begin
+    Move(DiskFile.Entry[deName], Previous, deNameLength);
+    if (Pos('*', Name) > 0) or (Pos('?', Name) > 0) or
+      not EncodeSpectrumName(Name, Previous, Result) then
+      raise EConvertError.CreateFmt(Refusal,
+        ['plain ASCII characters, '#$C2#$A3' and '#$C2#$A9]);
+  end
+  else
+  begin
+    SetLength(Result, Length(Name));
+    for Idx := 1 to Length(Name) do
+    begin
+      if not (Name[Idx] in [' '..'~']) or (Name[Idx] in ['*', '?']) then
+        raise EConvertError.CreateFmt(Refusal, ['plain ASCII characters']);
+      Result[Idx - 1] := Ord(Name[Idx]);
+    end;
+  end;
+
+  // A keyword is stored as one byte however long it shows
+  if Length(Result) > deNameLength then
+    raise EConvertError.CreateFmt('MGT names may be at most %d characters.',
+      [deNameLength]);
+end;
+
 function TMGTFileSystem.Directory: TFPGList<TMGTFile>;
 var
   Slot, Offset: integer;
@@ -409,7 +459,7 @@ begin
 
   Result := TMGTFile.Create(Self);
   Move(Data[Offset], Result.Entry, MGTDirEntrySize);
-  Result.FileName := StrBlockClean(Data, Offset + deName, deNameLength).TrimRight;
+  Result.FileName := DecodeName(Data, Offset + deName);
   Result.FileType := Data[Offset] and FileTypeMask;
   Result.SectorsAllocated := ReadWordBE(Data, Offset + deSectors);
   Result.AllocatedSize := Result.SectorsAllocated * MGTSectorSize;
@@ -424,10 +474,11 @@ function TMGTFileSystem.RenameFile(DiskFile: TMGTFile;
   const NewFileName: string): boolean;
 var
   NewName: string;
+  Stored: array[0..deNameLength - 1] of byte;
+  Encoded: TDiskByteArray;
   Sector, Other: TDSKSector;
-  Offset, OtherOffset, Slot, Idx: integer;
+  Offset, OtherOffset, Slot: integer;
   Nested: boolean;
-  Value: byte;
 begin
   Result := False;
   if DiskFile = nil then exit;
@@ -438,13 +489,11 @@ begin
 
   if NewName = '' then
     raise EConvertError.Create('An MGT file must have a name.');
-  for Idx := 1 to Length(NewName) do
-    if not (NewName[Idx] in [' '..'~']) or (NewName[Idx] in ['*', '?']) then
-      raise EConvertError.Create(
-        'MGT names may contain only plain ASCII characters, other than * and ?.');
-  if Length(NewName) > deNameLength then
-    raise EConvertError.CreateFmt('MGT names may be at most %d characters.',
-      [deNameLength]);
+  Encoded := EncodeName(DiskFile, NewName);
+  FillChar(Stored, SizeOf(Stored), Ord(' '));
+  Move(Encoded[0], Stored, Length(Encoded));
+  // The name as it will be listed
+  NewName := DecodeName(Stored, 0);
 
   // Only the entry the file was read from, and only while it is still there
   if not GetDirectorySlot(DiskFile.EntryIndex, Sector, Offset) or
@@ -467,20 +516,12 @@ begin
     // Each MasterDOS subdirectory may have a file of the same name
     if Nested and
       (Other.Data[OtherOffset + deDirTag] <> DiskFile.Entry[deDirTag]) then continue;
-    if SameText(StrBlockClean(Other.Data, OtherOffset + deName,
-      deNameLength).TrimRight, NewName) then
+    if SameText(DecodeName(Other.Data, OtherOffset + deName), NewName) then
       raise EConvertError.CreateFmt('There is already a file called %s.', [NewName]);
   end;
 
-  for Idx := 0 to deNameLength - 1 do
-  begin
-    if Idx < Length(NewName) then
-      Value := Ord(NewName[Idx + 1])
-    else
-      Value := Ord(' ');
-    Sector.Data[Offset + deName + Idx] := Value;
-    DiskFile.Entry[deName + Idx] := Value;
-  end;
+  Move(Stored, Sector.Data[Offset + deName], deNameLength);
+  Move(Stored, DiskFile.Entry[deName], deNameLength);
   Sector.IsChanged := True;
   DiskFile.FileName := NewName;
   Result := True;

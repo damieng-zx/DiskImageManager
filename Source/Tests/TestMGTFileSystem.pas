@@ -50,6 +50,9 @@ type
     procedure TestRenameChangesOnlyTheName;
     procedure TestRenameRefusesNamesTheDiskCannotTake;
     procedure TestRenameAllowsANameUsedInAnotherDirectory;
+    procedure TestPlusDNamesShowKeywordsAndGraphics;
+    procedure TestSAMNamesLoseTheTopBit;
+    procedure TestRenameKeepsTheKeywordsStillShown;
     procedure TestDosTypeAndLabel;
     procedure TestMasterDOSExtendedDirectory;
     procedure TestFileDataMatchesTheSectorChain;
@@ -692,6 +695,150 @@ begin
   try
     AssertTrue(FileSystem.RenameFile(Files[1], 'SubDir'));
     AssertEquals('SubDir', Files[1].FileName);
+  finally
+    FreeFiles(Files);
+    FileSystem.Free;
+    Image.Free;
+  end;
+end;
+
+// The name of the first directory entry, padded with spaces as a disk has it
+procedure StoreName(Image: TDSKImage; const Before: string; const Codes: array of byte;
+  const After: string);
+var
+  Sector: TDSKSector;
+  Name: TDiskByteArray;
+  Idx: integer;
+begin
+  Name := nil;
+  for Idx := 1 to Length(Before) do
+    Insert(Ord(Before[Idx]), Name, Length(Name));
+  for Idx := 0 to High(Codes) do
+    Insert(Codes[Idx], Name, Length(Name));
+  for Idx := 1 to Length(After) do
+    Insert(Ord(After[Idx]), Name, Length(Name));
+  while Length(Name) < 10 do
+    Insert(Ord(' '), Name, Length(Name));
+
+  Sector := Image.Disk.Side[0].Track[0].GetLogicalSectorByID(1);
+  Move(Name[0], Sector.Data[1], 10);
+end;
+
+procedure TMGTFileSystemTest.TestPlusDNamesShowKeywordsAndGraphics;
+var
+  Image: TDSKImage;
+  FileSystem: TMGTFileSystem;
+
+  procedure Listed(const Before: string; const Codes: array of byte;
+    const After, Expected: string);
+  var
+    Files: TMGTFiles;
+  begin
+    StoreName(Image, Before, Codes, After);
+    Files := FileSystem.Directory;
+    try
+      AssertEquals(Expected, Files[0].FileName);
+    finally
+      FreeFiles(Files);
+    end;
+  end;
+
+begin
+  Image := LoadSample('zx_code');
+  FileSystem := TMGTFileSystem.Create(Image.Disk);
+  try
+    // As The Outlet issue 18 has them, and as the +D catalogues them
+    Listed('editorial', [$AF], '', 'editorialCODE');
+    Listed('letters1 ', [$AF], '', 'letters1 CODE');
+    Listed('lookout  ', [$AF], '', 'lookout  CODE');
+    Listed('INDEX', [$E4], '', 'INDEX DATA');
+    // A word has one space before it, and none at the start of a name
+    Listed('', [$E4], 'x', 'DATA x');
+    Listed('A ', [$E4], 'x', 'A DATA x');
+    // A function has none before it, RND none after, and a symbol neither
+    Listed('', [$A5, Ord('a'), $A8], 'b', 'RNDaFN b');
+    Listed('a', [$C7], 'b', 'a<=b');
+    // Pound, copyright, a block graphic and the first and last of the user
+    // defined graphics a name has
+    Listed('', [$60, $7F, $83, $90, $A4], '',
+      #$C2#$A3#$C2#$A9#$E2#$96#$80'\A\U');
+    // A colour control and the byte it takes show nothing
+    Listed('', [$10, $32], 'red', 'red');
+  finally
+    FileSystem.Free;
+    Image.Free;
+  end;
+end;
+
+procedure TMGTFileSystemTest.TestSAMNamesLoseTheTopBit;
+var
+  Image: TDSKImage;
+  FileSystem: TMGTFileSystem;
+  Files: TMGTFiles;
+begin
+  Image := LoadSample('samdos2');
+  StoreName(Image, 'editorial', [$AF], '');
+  FileSystem := TMGTFileSystem.Create(Image.Disk);
+  Files := FileSystem.Directory;
+  try
+    AssertEquals('the entry patched', 0, Files[0].EntryIndex);
+    AssertEquals('editorial/', Files[0].FileName);
+  finally
+    FreeFiles(Files);
+    FileSystem.Free;
+    Image.Free;
+  end;
+end;
+
+procedure TMGTFileSystemTest.TestRenameKeepsTheKeywordsStillShown;
+var
+  Image: TDSKImage;
+  FileSystem: TMGTFileSystem;
+  Files: TMGTFiles;
+  Sector: TDSKSector;
+
+  procedure Renamed(const NewName, StoredHex: string);
+  var
+    Stored: TDiskByteArray;
+  begin
+    AssertTrue(NewName, FileSystem.RenameFile(Files[0], NewName));
+    AssertEquals(NewName, Files[0].FileName);
+    Stored := nil;
+    SetLength(Stored, 10);
+    Move(Sector.Data[1], Stored[0], 10);
+    AssertBytes(NewName, HexBytes(StoredHex), Stored);
+  end;
+
+  procedure Refused(const Name: string);
+  begin
+    try
+      FileSystem.RenameFile(Files[0], Name);
+      Fail('accepted "' + Name + '"');
+    except
+      on EConvertError do ;
+    end;
+  end;
+
+begin
+  Image := LoadSample('zx_code');
+  StoreName(Image, 'INDEX', [$E4], '');
+  Sector := Image.Disk.Side[0].Track[0].GetLogicalSectorByID(1);
+  FileSystem := TMGTFileSystem.Create(Image.Disk);
+  Files := FileSystem.Directory;
+  try
+    AssertFalse('same name', FileSystem.RenameFile(Files[0], 'INDEX DATA'));
+
+    Renamed('IDX DATA', '494458E4202020202020');
+    Renamed('DATA old', 'E46F6C64202020202020');
+    // Ten bytes, though it shows as fourteen characters
+    Renamed('abcdefghi DATA', '616263646566676869E4');
+    Refused('abcdefghij DATA');
+    Refused('a*');
+    Refused('caf'#$C3#$A9);
+    // Once the keyword has gone, the same letters are only letters
+    Renamed('plain', '706C61696E2020202020');
+    Renamed('old DATA', '6F6C6420444154412020');
+    Renamed(#$C2#$A3'1', '60312020202020202020');
   finally
     FreeFiles(Files);
     FileSystem.Free;
