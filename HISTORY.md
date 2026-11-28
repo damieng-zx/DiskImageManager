@@ -1,6 +1,6 @@
 # Disk Image Manager
 
-## 2.13.0 (26 November 2026)
+## 2.13.0 (28 November 2026)
 ### Changes
 - Name the Supermat 192 2/82 format, and report any other unrecognised disk with a valid disk specification as an unknown XDPB format of its capacity
 - Ask before overwriting existing files when extracting, one at a time or for all of them
