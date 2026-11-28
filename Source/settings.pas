@@ -79,6 +79,15 @@ uses Main;
 var
   frmMain: TFrmMain;
 
+const
+  // What earlier versions saved as the sector font, chosen or not
+  OldDefaultSectorFont = 'Consolas,8pt,,';
+
+function DefaultSectorFont: string;
+begin
+  Result := MonoFontName + ',8pt,,';
+end;
+
 constructor TSettings.Create(Owner: TForm);
 begin
   frmMain := TFrmMain(Owner);
@@ -143,7 +152,7 @@ var
   Reg: TIniFile;
   Idx: integer;
   FileName: TFileName;
-  S: string;
+  S, SectorFontText: string;
 begin
   Reg := TIniFile.Create(ChangeFileExt(Application.ExeName, '.ini'));
   try
@@ -175,7 +184,13 @@ begin
     S := 'SectorView';
     UnknownASCII := Reg.ReadString(S, 'UnknownASCII', '?');
     BytesPerLine := Reg.ReadInteger(S, 'BytesPerLine', 8);
-    ReadFontInto(SectorFont, Reg.ReadString(S, 'Font', 'Consolas,8pt,,'));
+    SectorFontText := Reg.ReadString(S, 'Font', DefaultSectorFont);
+    // Earlier versions saved their default as though it had been chosen, so it
+    // follows the new one. A font saved since then stands, whatever it is.
+    if (SectorFontText = OldDefaultSectorFont) and
+      not Reg.ValueExists(S, 'FontUpgraded') then
+      SectorFontText := DefaultSectorFont;
+    ReadFontInto(SectorFont, SectorFontText);
     WarnSectorChange := Reg.ReadBool(S, 'WarnSectorChange', True);
     Mapping := Reg.ReadString(S, 'Mapping', '1252');
 
@@ -271,6 +286,7 @@ begin
     Reg.WriteString(S, 'UnknownASCII', UnknownASCII);
     Reg.WriteInteger(S, 'BytesPerLine', BytesPerLine);
     Reg.WriteString(S, 'Font', FontToDescription(SectorFont));
+    Reg.WriteBool(S, 'FontUpgraded', True);
     Reg.WriteBool(S, 'WarnSectorChange', WarnSectorChange);
     Reg.WriteString(S, 'Mapping', Mapping);
 
@@ -334,7 +350,7 @@ begin
 
   UnknownASCII := '?';
   BytesPerLine := 8;
-  ReadFontInto(SectorFont, 'Consolas,8pt,,');
+  ReadFontInto(SectorFont, DefaultSectorFont);
   WarnSectorChange := True;
   Mapping := '1252';
 

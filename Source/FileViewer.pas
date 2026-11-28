@@ -15,7 +15,8 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls,
-  DskImage, FileSystem, OpusFileSystem, SinclairBasic, AmstradBasic, RTFView;
+  DskImage, FileSystem, MGTFileSystem, OpusFileSystem, SinclairBasic,
+  AmstradBasic, RTFView, Utils;
 
 type
   TfrmFileViewer = class(TForm)
@@ -34,7 +35,7 @@ type
     procedure ShowRTF(const RTFContent: string);
     procedure UpdateCaption;
   public
-    // For a CP/M file or an Opus Discovery one
+    // For a CP/M, MGT or Opus Discovery file
     procedure LoadBasicFile(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
     procedure LoadStringArrayFile(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
     procedure LoadTextFile(DiskImage: TDSKDisk; DiskFile: TCPMFile; const DiskName: string);
@@ -52,6 +53,13 @@ uses
   Windows;
 
 {$R *.lfm}
+
+// A Spectrum decoder set in this machine's monospace font
+function NewSpectrumParser: TSinclairBasicParser;
+begin
+  Result := TSinclairBasicParser.Create(sbMode128K);
+  Result.FontName := MonoFontName;
+end;
 
 procedure ShowBasicViewer(DiskImage: TDSKDisk; DiskFile: TDiskFile; const DiskName: string);
 var
@@ -180,6 +188,7 @@ begin
   begin
     AmstradParser := TAmstradBasicParser.Create;
     try
+      AmstradParser.FontName := MonoFontName;
       RTFText := AmstradParser.DecodeFileRTF(DiskImage, TCPMFile(DiskFile));
     finally
       AmstradParser.Free;
@@ -187,10 +196,12 @@ begin
   end
   else
   begin
-    SinclairParser := TSinclairBasicParser.Create(sbMode128K);
+    SinclairParser := NewSpectrumParser;
     try
       if DiskFile is TOpusFile then
         RTFText := SinclairParser.DecodeRTF(TOpusFile(DiskFile).BasicProgram)
+      else if DiskFile is TMGTFile then
+        RTFText := SinclairParser.DecodeRTF(TMGTFile(DiskFile).BasicProgram)
       else
         RTFText := SinclairParser.DecodeFileRTF(DiskImage, TCPMFile(DiskFile));
     finally
@@ -214,12 +225,12 @@ begin
 
   EnsureViewer;
 
-  Parser := TSinclairBasicParser.Create(sbMode128K);
+  Parser := NewSpectrumParser;
   try
-    if DiskFile is TOpusFile then
-      RTFText := Parser.DecodeStringArrayRTF(DiskFile.GetData(False))
+    if DiskFile is TCPMFile then
+      RTFText := Parser.DecodeStringArrayFileRTF(DiskImage, TCPMFile(DiskFile))
     else
-      RTFText := Parser.DecodeStringArrayFileRTF(DiskImage, TCPMFile(DiskFile));
+      RTFText := Parser.DecodeStringArrayRTF(DiskFile.GetData(False));
   finally
     Parser.Free;
   end;
@@ -240,7 +251,7 @@ begin
 
   EnsureViewer;
 
-  Parser := TSinclairBasicParser.Create(sbMode128K);
+  Parser := NewSpectrumParser;
   try
     RTFText := Parser.DecodeTextFileRTF(DiskImage, DiskFile);
   finally

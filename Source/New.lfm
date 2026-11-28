@@ -710,9 +710,8 @@ object frmNew: TfrmNew
           Font.CharSet = ANSI_CHARSET
           Font.Color = clBlack
           Font.Height = -11
-          Font.Name = 'Courier New'
+          Font.Name = 'Cascadia Mono'
           Font.Pitch = fpFixed
-          Font.Quality = fqDraft
           ParentFont = False
           ReadOnly = True
           TabOrder = 1

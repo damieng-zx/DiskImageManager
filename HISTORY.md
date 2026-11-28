@@ -5,6 +5,10 @@
 - Name the Supermat 192 2/82 format, and report any other unrecognised disk with a valid disk specification as an unknown XDPB format of its capacity
 - Ask before overwriting existing files when extracting, one at a time or for all of them
 - Refuse to save an image flagged as corrupt because of its signature or first track, which was previously saved anyway
+- Show Spectrum block graphics in BASIC listings, string arrays and text files as Unicode block characters
+- Use Cascadia Mono by default, where installed, in the file viewer, sector view and disk specification preview, with Consolas elsewhere. A sector view still set to the old default of Consolas 8pt moves to it
+- Right-align Spectrum and Amstrad BASIC line numbers in four columns so that listings line up
+- Show Spectrum user-defined graphics as underlined letters A to U, copied to the clipboard as `\A` to `\U`, with a real backslash in a BASIC listing or string array copied as `\\`. The two that 128K machines also use for SPECTRUM and PLAY are graphics inside a string and keywords outside one
 ### New
 - Teledisk (.td0) image support: open normal and advanced-compressed images (including gzipped ones), showing the image's comment and keeping sector flags, FM tracks and data rate, and save any disk as a compressed .td0
 - Opus Discovery support: open .opd and .opu images (including gzipped and zipped ones) and save disks as them, recognise Opus disks held in DSK or Teledisk images, list and extract their files with or without the 7-byte header, view their BASIC programs, string arrays and SCREEN$ files, and format new Opus disks
@@ -12,9 +16,10 @@
 - Open disk images from .zip files: every image in one is opened, including gzipped ones and those in folders, and any that will not open are listed together. Saving one asks for a new name and leaves the zip alone
 - Extract files from MGT disks, with or without their 9-byte header, by saving them or dragging them out
 - MGT file listings show each file's actual size and its start address, length, autorun line, execute address, array name or screen mode
+- View Spectrum BASIC programs, string arrays and SCREEN$ files on MGT disks
 - Name MGT +D/DISCiPLE disks as such instead of calling them SAM Coupe SAMDOS
 - Drag saved disk images from the tree, and files inside disks from the list, to Explorer and other applications
-- Rename files on CP/M disks from the file list's right-click menu
+- Rename files on CP/M, MGT and Opus Discovery disks from the file list's right-click menu
 - View protected Amstrad BASIC programs
 - Sort the list by clicking a column header, clicking again to reverse it; numeric columns sort by value rather than as text
 ### Fixes
@@ -53,7 +58,9 @@
 - Read disk specifications with sectors larger than 512 bytes
 - Detect sector interleaves above 1, and load Standard DSK sector size codes 7 and 8
 - Name the FM and MFM recording modes the right way round
-- Keep tildes in Spectrum BASIC listings, stop colour and position codes showing as text, and label block and user-defined graphics correctly
+- Keep tildes in Spectrum BASIC listings and stop colour and position codes showing as text
+- Show keywords held inside strings in the BASIC viewer instead of leaving them out
+- Show the pound and copyright signs in Spectrum listings, string arrays and text files, instead of a backtick and a stray accented letter before the sign
 - Fix the Strings view: identical strings listed once per copy found, the last string on the disk never shown, and a memory leak each time it was viewed
 - Find text that begins within a run of the same character, and include the starting sector in a new search
 - Stop reporting worn disks as unknown copy protection, and match protection signatures only within a sector's own data

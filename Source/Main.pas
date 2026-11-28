@@ -168,6 +168,7 @@ type
     procedure itmTrackPropertiesClick(Sender: TObject);
     procedure itmTrackUnformatClick(Sender: TObject);
     procedure ShowFile(Sender: TObject);
+    procedure ShowMGTFile(DiskFile: TMGTFile; const DiskName: string);
     procedure ShowOpusFile(DiskFile: TOpusFile; const DiskName: string);
     procedure lvwMainCompare(Sender: TObject; Item1, Item2: TListItem;
       Data: integer; var Compare: integer);
@@ -313,6 +314,10 @@ begin
   Settings.Load(Application.HasOption('c', 'clear'));
   FPresenter := TListViewPresenter.Create(lvwMain, Settings);
 
+  // The library otherwise makes an input box a quarter of the monitor wide;
+  // without that it keeps to its fixed width, scaled for the screen
+  cInputQueryEditSizePercents := 0;
+
   NextNewFile := 0;
   Caption := Application.Title;
   itmAbout.Caption := 'About ' + Application.Title;
@@ -412,26 +417,55 @@ end;
 
 procedure TfrmMain.itmRenameFileClick(Sender: TObject);
 var
-  DiskFile: TCPMFile;
-  NewFileName: string;
+  DiskFile: TDiskFile;
+  FileSystem: TObject;
+  SystemName, Prompt, NewFileName: string;
+  Renamed: boolean;
 begin
   if (lvwMain.Selected = nil) or (lvwMain.Selected.Data = nil) or
-    (TObject(lvwMain.Selected.Data).ClassType <> TCPMFile) or
-    (tvwMain.Selected = nil) or (tvwMain.Selected.Data = nil) or
-    (TObject(tvwMain.Selected.Data).ClassType <> TCPMFileSystem) then
+    (tvwMain.Selected = nil) or (tvwMain.Selected.Data = nil) then
     Exit;
 
-  DiskFile := TCPMFile(lvwMain.Selected.Data);
+  DiskFile := TDiskFile(lvwMain.Selected.Data);
+  FileSystem := TObject(tvwMain.Selected.Data);
+  if (DiskFile.ClassType = TCPMFile) and (FileSystem.ClassType = TCPMFileSystem) then
+  begin
+    SystemName := 'CP/M';
+    Prompt := 'New filename (NAME.EXT):';
+  end
+  else if (DiskFile.ClassType = TMGTFile) and
+    (FileSystem.ClassType = TMGTFileSystem) then
+  begin
+    SystemName := 'MGT';
+    Prompt := 'New filename (up to 10 characters):';
+  end
+  else if (DiskFile.ClassType = TOpusFile) and
+    (FileSystem.ClassType = TOpusFileSystem) then
+  begin
+    SystemName := 'Opus';
+    Prompt := 'New filename (up to 10 characters):';
+  end
+  else
+    Exit;
+
   NewFileName := DiskFile.FileName;
-  if not InputQuery('Rename CP/M file', 'New filename (NAME.EXT):', NewFileName) then
+  if not InputQuery(SysUtils.Format('Rename %s file', [SystemName]), Prompt,
+    NewFileName) then
     Exit;
 
   try
-    if TCPMFileSystem(tvwMain.Selected.Data).RenameFile(DiskFile, NewFileName) then
+    if FileSystem is TCPMFileSystem then
+      Renamed := TCPMFileSystem(FileSystem).RenameFile(TCPMFile(DiskFile), NewFileName)
+    else if FileSystem is TMGTFileSystem then
+      Renamed := TMGTFileSystem(FileSystem).RenameFile(TMGTFile(DiskFile), NewFileName)
+    else
+      Renamed := TOpusFileSystem(FileSystem).RenameFile(TOpusFile(DiskFile), NewFileName);
+    if Renamed then
       RefreshList;
   except
     on E: EConvertError do
-      MessageDlg('Invalid CP/M filename', E.Message, mtWarning, [mbOK], 0);
+      MessageDlg(SysUtils.Format('Invalid %s filename', [SystemName]), E.Message,
+        mtWarning, [mbOK], 0);
   end;
 end;
 
@@ -671,8 +705,8 @@ begin
     (TObject(lvwMain.Selected.Data) is TDiskFile) then
   begin
     DiskFile := TDiskFile((lvwMain.Selected).Data);
-    // Only the CP/M file system can rename
-    itmRenameFile.Visible := TObject(lvwMain.Selected.Data) is TCPMFile;
+    // Every file system can rename
+    itmRenameFile.Visible := True;
     itmSaveFile.Visible := DiskFile.HasHeader;
     itmSaveFile.Caption := Format('Save %s', [DiskFile.FileName]);
 
@@ -2470,6 +2504,14 @@ begin
     Exit;
   end;
 
+  if TObject(lvwMain.Selected.Data) is TMGTFile then
+  begin
+    DiskImage := GetCurrentImage;
+    if DiskImage <> nil then
+      ShowMGTFile(TMGTFile(lvwMain.Selected.Data), DiskImage.DisplayName);
+    Exit;
+  end;
+
   if TObject(lvwMain.Selected.Data).ClassType <> TCPMFile then
     Exit;
 
@@ -2532,6 +2574,18 @@ begin
   begin
     ShowTextViewer(DiskImage.Disk, DiskFile, DiskName);
     Exit;
+  end;
+end;
+
+procedure TfrmMain.ShowMGTFile(DiskFile: TMGTFile; const DiskName: string);
+var
+  Disk: TDSKDisk;
+begin
+  Disk := GetCurrentImage.Disk;
+  case DiskFile.ViewKind of
+    mvScreen: ShowZXScreenViewer(Disk, DiskFile, DiskName);
+    mvBasic: ShowBasicViewer(Disk, DiskFile, DiskName);
+    mvStringArray: ShowStringArrayViewer(Disk, DiskFile, DiskName);
   end;
 end;
 

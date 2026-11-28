@@ -20,6 +20,7 @@ type
   TAmstradBasicParser = class
   private
     FFormat: TFormatSettings;
+    FFontName: string;
     function GetTokenText(Token: byte): string;
     function GetFunctionText(Token: byte): string;
     function ReadVarName(const Data: array of byte; var Pos: integer; EndPos: integer): string;
@@ -36,6 +37,8 @@ type
     function DecodeFile(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
     function DecodeRTF(const Data: array of byte; IsProtected: boolean = False): string;
     function DecodeFileRTF(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
+    // The font the RTF is set in
+    property FontName: string read FFontName write FFontName;
   end;
 
 implementation
@@ -77,6 +80,7 @@ const
 constructor TAmstradBasicParser.Create;
 begin
   inherited Create;
+  FFontName := MonoFont;
   FFormat := DefaultFormatSettings;
   FFormat.DecimalSeparator := '.';
   FFormat.ThousandSeparator := #0;
@@ -419,7 +423,7 @@ begin
     if LineEnd > DataLen then
       LineEnd := DataLen;
 
-    Result := Result + Format('%d %s'#13#10,
+    Result := Result + Format('%4d %s'#13#10,
       [LineNum, DecodeLine(Data, Pos + 4, LineEnd)]);
 
     Pos := Pos + LineLen;
@@ -617,10 +621,8 @@ end;
 
 function TAmstradBasicParser.DecodeRTF(const Data: array of byte; IsProtected: boolean): string;
 const
-  RTFHeader = '{\rtf1\ansi\deff0' +
-    '{\fonttbl{\f0\fmodern Consolas;}}' +
-    '{\colortbl;\red128\green128\blue128;\red0\green0\blue170;\red170\green0\blue0;\red0\green128\blue0;\red0\green0\blue0;}' +
-    '\f0\fs26 ';
+  Colours =
+    '{\colortbl;\red128\green128\blue128;\red0\green0\blue170;\red170\green0\blue0;\red0\green128\blue0;\red0\green0\blue0;}';
 var
   DecodedData: TDiskByteArray;
   Pos, DataLen, LineEnd: integer;
@@ -632,7 +634,8 @@ begin
     DecodedData := DeprotectData(Data);
     Exit(DecodeRTF(DecodedData));
   end;
-  Result := RTFHeader;
+  Result := '{\rtf1\ansi\deff0{\fonttbl{\f0\fmodern ' + FFontName + ';}}' +
+    Colours + '\f0\fs26 ';
   Pos := 0;
   DataLen := System.Length(Data);
   FirstLine := True;
@@ -654,7 +657,7 @@ begin
       Result := Result + '\par ';
     FirstLine := False;
 
-    Result := Result + '{\cf1 ' + IntToStr(LineNum) + '} ' +
+    Result := Result + '{\cf1 ' + Format('%4d', [LineNum]) + '} ' +
       DecodeLineRTF(Data, Pos + 4, LineEnd);
 
     Pos := Pos + LineLen;

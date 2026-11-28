@@ -19,6 +19,7 @@ uses
 type
   TAmstradBasicTest = class(TTestCase)
   published
+    procedure TestLineNumbersAlign;
     procedure TestPrintString;
     procedure TestEightBitInteger;
     procedure TestHexConstant;
@@ -46,7 +47,7 @@ begin
   P := TAmstradBasicParser.Create;
   try
     // 10 PRINT "HI"  ; len = 11 (4 header + BF 20 22 48 49 22 00)
-    AssertEquals('10 PRINT "HI"' + CRLF,
+    AssertEquals('  10 PRINT "HI"' + CRLF,
       P.Decode([$0B, $00, $0A, $00, tPRINT, $20, $22, $48, $49, $22, $00]));
   finally
     P.Free;
@@ -60,7 +61,7 @@ begin
   P := TAmstradBasicParser.Create;
   try
     // 20 PRINT 65  ; $19 = 8-bit integer prefix, next byte = value
-    AssertEquals('20 PRINT 65' + CRLF,
+    AssertEquals('  20 PRINT 65' + CRLF,
       P.Decode([$09, $00, $14, $00, tPRINT, $20, $19, $41, $00]));
   finally
     P.Free;
@@ -74,7 +75,7 @@ begin
   P := TAmstradBasicParser.Create;
   try
     // 30 PRINT &FF  ; $1C = 16-bit hex prefix (lo, hi)
-    AssertEquals('30 PRINT &FF' + CRLF,
+    AssertEquals('  30 PRINT &FF' + CRLF,
       P.Decode([$0A, $00, $1E, $00, tPRINT, $20, $1C, $FF, $00, $00]));
   finally
     P.Free;
@@ -88,7 +89,7 @@ begin
   P := TAmstradBasicParser.Create;
   try
     // 40 PRINT SIN  ; $FF = function prefix, $15 = SIN ; len = 9
-    AssertEquals('40 PRINT SIN' + CRLF,
+    AssertEquals('  40 PRINT SIN' + CRLF,
       P.Decode([$09, $00, $28, $00, tPRINT, $20, $FF, $15, $00]));
   finally
     P.Free;
@@ -102,7 +103,7 @@ begin
   P := TAmstradBasicParser.Create;
   try
     // 50 PRINT 7  ; $0E..$17 encode the single digits 0..9 ($15 = 7)
-    AssertEquals('50 PRINT 7' + CRLF,
+    AssertEquals('  50 PRINT 7' + CRLF,
       P.Decode([$08, $00, $32, $00, tPRINT, $20, $15, $00]));
   finally
     P.Free;
@@ -116,7 +117,7 @@ begin
   P := TAmstradBasicParser.Create;
   try
     // 10 PRINT "HI" then 20 CLS  (CLS = $8A)
-    AssertEquals('10 PRINT "HI"' + CRLF + '20 CLS' + CRLF,
+    AssertEquals('  10 PRINT "HI"' + CRLF + '  20 CLS' + CRLF,
       P.Decode([$0B, $00, $0A, $00, tPRINT, $20, $22, $48, $49, $22, $00,
                 $06, $00, $14, $00, $8A, $00]));
   finally
@@ -131,7 +132,7 @@ begin
   P := TAmstradBasicParser.Create;
   try
     // "10 PRINT \"HI\"" encrypted with the AMSDOS 128-byte XOR stream.
-    AssertEquals('10 PRINT "HI"' + CRLF,
+    AssertEquals('  10 PRINT "HI"' + CRLF,
       P.Decode([$A0, $2C, $E7, $EA, $D3, $17, $1D, $A4, $D2, $FD, $7A], True));
   finally
     P.Free;
@@ -145,7 +146,7 @@ begin
   P := TAmstradBasicParser.Create;
   try
     AssertEquals('16-bit, binary and hexadecimal constants',
-      '10 PRINT 4660 &X10100101 &1234' + CRLF,
+      '  10 PRINT 4660 &X10100101 &1234' + CRLF,
       P.Decode([$12, $00, $0A, $00, tPRINT, $20,
         $1A, $34, $12, $20, $1B, $A5, $00, $20, $1C, $34, $12, $00]));
   finally
@@ -160,7 +161,7 @@ begin
   P := TAmstradBasicParser.Create;
   try
     // $02 is an integer variable; bit 7 marks the last character in its name.
-    AssertEquals('10 PRINT N%' + CRLF,
+    AssertEquals('  10 PRINT N%' + CRLF,
       P.Decode([$0B, $00, $0A, $00, tPRINT, $20, $02, $00, $00, $CE, $00]));
   finally
     P.Free;
@@ -175,7 +176,7 @@ begin
   try
     // An implicit leading mantissa bit and exponent 128 encode +/-1; exponent
     // zero is the dedicated representation for 0.
-    AssertEquals('10 PRINT 0.5' + CRLF + '20 PRINT -0.5' + CRLF + '30 PRINT 0' + CRLF,
+    AssertEquals('  10 PRINT 0.5' + CRLF + '  20 PRINT -0.5' + CRLF + '  30 PRINT 0' + CRLF,
       P.Decode([$0D, $00, $0A, $00, tPRINT, $20, $1F, $00, $00, $00, $00, $80, $00,
                 $0D, $00, $14, $00, tPRINT, $20, $1F, $00, $00, $00, $80, $80, $00,
                 $0D, $00, $1E, $00, tPRINT, $20, $1F, $00, $00, $00, $00, $00, $00]));
@@ -190,7 +191,7 @@ var
 begin
   P := TAmstradBasicParser.Create;
   try
-    AssertEquals('10 PRINT REMhi' + CRLF,
+    AssertEquals('  10 PRINT REMhi' + CRLF,
       P.Decode([$0B, $00, $0A, $00, tPRINT, $20, $C5, $68, $69, $BF, $00]));
   finally
     P.Free;
@@ -209,6 +210,34 @@ begin
     AssertTrue('opening brace escaped in RTF', Pos('\{', RTF) > 0);
     AssertTrue('closing brace escaped in RTF', Pos('\}', RTF) > 0);
     AssertTrue('BASIC string uses its syntax color', Pos('\cf3', RTF) > 0);
+  finally
+    P.Free;
+  end;
+end;
+
+// Line numbers take at least four columns, so the statements line up
+procedure TAmstradBasicTest.TestLineNumbersAlign;
+const
+  // Empty lines 5, 100, 9999 and 65535, then the end of the program
+  Lines: array[0..21] of byte = (
+    $05, $00, $05, $00, $00,
+    $05, $00, $64, $00, $00,
+    $05, $00, $0F, $27, $00,
+    $05, $00, $FF, $FF, $00,
+    $00, $00);
+var
+  P: TAmstradBasicParser;
+  RTF: string;
+begin
+  P := TAmstradBasicParser.Create;
+  try
+    AssertEquals('   5 ' + #13#10 + ' 100 ' + #13#10 + '9999 ' + #13#10 +
+      '65535 ' + #13#10, P.Decode(Lines, False));
+
+    RTF := P.DecodeRTF(Lines, False);
+    AssertTrue('one digit', Pos('{\cf1    5} ', RTF) > 0);
+    AssertTrue('three digits', Pos('{\cf1  100} ', RTF) > 0);
+    AssertTrue('five digits are not cut short', Pos('{\cf1 65535} ', RTF) > 0);
   finally
     P.Free;
   end;

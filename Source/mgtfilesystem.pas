@@ -39,6 +39,9 @@ type
   // Which operating system's disk this is, as far as the directory can tell
   TMGTDosType = (mdPlusD, mdSAMDOS, mdMasterDOS, mdBDOS);
 
+  // What a file's contents can be shown as
+  TMGTViewKind = (mvNone, mvBasic, mvStringArray, mvScreen);
+
   TMGTFile = class;
 
   TMGTFileSystem = class(TObject)
@@ -58,6 +61,9 @@ type
     // The file described by the entry at Offset, or nil when the slot is free
     function ReadFileEntry(const Data: array of byte; Offset: integer): TMGTFile;
     function Directory: TFPGList<TMGTFile>;
+    // Give a file a new name. Raises EConvertError for one that the directory
+    // cannot hold or that another file already has.
+    function RenameFile(DiskFile: TMGTFile; const NewFileName: string): boolean;
 
     constructor Create(ParentDisk: TDSKDisk);
     destructor Destroy; override;
@@ -94,6 +100,11 @@ type
     function MapBit(Index: integer): boolean;
     function MappedSectorCount: integer;
     function GetData(WithHeader: boolean): TDiskByteArray; override;
+    // SAM Coupe BASIC, arrays and screens differ from the Spectrum's and have
+    // no viewer
+    function ViewKind: TMGTViewKind;
+    // A Spectrum BASIC program without its variables, or nothing for any other file
+    function BasicProgram: TDiskByteArray;
 
     constructor Create(ParentFileSystem: TMGTFileSystem);
     destructor Destroy; override;
@@ -106,6 +117,9 @@ procedure MGTMapLocation(Index: integer; out TrackByte, SectorID: byte);
 function MGTMapIndex(TrackByte, SectorID: byte): integer;
 
 implementation
+
+uses
+  SpectrumScreen;
 
 const
   // File types, the low five bits of an entry's first byte
@@ -157,6 +171,7 @@ const
   deSAMLength = 239;
   deSAMExecute = 242;    // execute address, or autorun marker and line
   deBDOSLabel = 250;
+  deDirTag = 254;        // MasterDOS: the subdirectory the file is in, 0 the root
   deDirTracks = 255;     // first entry only: MasterDOS extra directory tracks
 
   EntriesPerSector = MGTSectorSize div MGTDirEntrySize;
@@ -401,6 +416,72 @@ begin
     Result.Size := Result.SectorsAllocated * MGTChainPayload;
   Result.FirstSector := GetSector(Data[Offset + deFirstTrack], Data[Offset + deFirstSector]);
   Result.Describe;
+end;
+
+function TMGTFileSystem.RenameFile(DiskFile: TMGTFile;
+  const NewFileName: string): boolean;
+var
+  NewName: string;
+  Sector, Other: TDSKSector;
+  Offset, OtherOffset, Slot, Idx: integer;
+  Nested: boolean;
+  Value: byte;
+begin
+  Result := False;
+  if DiskFile = nil then exit;
+  // Names are padded with spaces, so any typed at the end would be lost. An
+  // unchanged name is left as it is, whatever characters the listing dropped.
+  NewName := NewFileName.TrimRight;
+  if NewName = DiskFile.FileName then exit;
+
+  if NewName = '' then
+    raise EConvertError.Create('An MGT file must have a name.');
+  for Idx := 1 to Length(NewName) do
+    if not (NewName[Idx] in [' '..'~']) or (NewName[Idx] in ['*', '?']) then
+      raise EConvertError.Create(
+        'MGT names may contain only plain ASCII characters, other than * and ?.');
+  if Length(NewName) > deNameLength then
+    raise EConvertError.CreateFmt('MGT names may be at most %d characters.',
+      [deNameLength]);
+
+  // Only the entry the file was read from, and only while it is still there
+  if not GetDirectorySlot(DiskFile.EntryIndex, Sector, Offset) or
+    not CompareMem(@Sector.Data[Offset], @DiskFile.Entry[0], MGTDirEntrySize) then exit;
+
+  // The byte naming an entry's directory means that only where there are
+  // subdirectories to be in
+  Nested := False;
+  for Slot := 0 to DirectorySlots - 1 do
+    if GetDirectorySlot(Slot, Other, OtherOffset) and
+      IsFileEntry(Other.Data, OtherOffset) and
+      (Other.Data[OtherOffset] and FileTypeMask = ftMasterDOSDir) then
+      Nested := True;
+
+  for Slot := 0 to DirectorySlots - 1 do
+  begin
+    if (Slot = DiskFile.EntryIndex) or
+      not GetDirectorySlot(Slot, Other, OtherOffset) or
+      not IsFileEntry(Other.Data, OtherOffset) then continue;
+    // Each MasterDOS subdirectory may have a file of the same name
+    if Nested and
+      (Other.Data[OtherOffset + deDirTag] <> DiskFile.Entry[deDirTag]) then continue;
+    if SameText(StrBlockClean(Other.Data, OtherOffset + deName,
+      deNameLength).TrimRight, NewName) then
+      raise EConvertError.CreateFmt('There is already a file called %s.', [NewName]);
+  end;
+
+  for Idx := 0 to deNameLength - 1 do
+  begin
+    if Idx < Length(NewName) then
+      Value := Ord(NewName[Idx + 1])
+    else
+      Value := Ord(' ');
+    Sector.Data[Offset + deName + Idx] := Value;
+    DiskFile.Entry[deName + Idx] := Value;
+  end;
+  Sector.IsChanged := True;
+  DiskFile.FileName := NewName;
+  Result := True;
 end;
 
 // File
@@ -656,6 +737,30 @@ begin
     First := Min(HeaderLength, Last);
 
   Result := Copy(Data, First, Last - First);
+end;
+
+function TMGTFile.ViewKind: TMGTViewKind;
+begin
+  Result := mvNone;
+  case FileType of
+    ftBasic: Result := mvBasic;
+    ftStringArray: Result := mvStringArray;
+    // A screen saved from BASIC is CODE; the snapshot button saves a SCREEN
+    ftCode, ftScreen:
+      if TSpectrumScreen.IsValidScreenSize(Size) then
+        Result := mvScreen;
+  end;
+end;
+
+function TMGTFile.BasicProgram: TDiskByteArray;
+var
+  Data: TDiskByteArray;
+begin
+  Result := nil;
+  if FileType <> ftBasic then exit;
+  Data := GetData(False);
+  // Where an array keeps its name, a program keeps its length without variables
+  Result := Copy(Data, 0, Min(ReadWordLE(Entry, deZXVariable), Length(Data)));
 end;
 
 end.

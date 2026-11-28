@@ -92,6 +92,9 @@ type
     function GetBlock(Block: integer): TDSKSector;
     // The files in catalogue order. The caller owns the list and what is in it.
     function Directory: TFPGList<TOpusFile>;
+    // Give a file a new name. Raises EConvertError for one that the catalogue
+    // cannot hold or that another file already has.
+    function RenameFile(DiskFile: TOpusFile; const NewFileName: string): boolean;
 
     // Whether there is a boot sector and a catalogue to read
     property IsValid: boolean read FIsValid;
@@ -422,6 +425,44 @@ begin
     end;
 end;
 
+// The ten bytes the catalogue stores a typed name as, DecodeName's reverse
+procedure EncodeName(const Name: string; out Stored: array of byte);
+var
+  Idx, Count: integer;
+  Value: byte;
+begin
+  FillChar(Stored[0], OpusNameLength, Ord(' '));
+  Count := 0;
+  Idx := 1;
+  while Idx <= Length(Name) do
+  begin
+    if Copy(Name, Idx, 2) = #$C2#$A3 then       // pound sign (UTF-8)
+    begin
+      Value := $60;
+      Inc(Idx, 2);
+    end
+    else if Copy(Name, Idx, 2) = #$C2#$A9 then  // copyright sign (UTF-8)
+    begin
+      Value := $7F;
+      Inc(Idx, 2);
+    end
+    else if Name[Idx] in [' '..'_', 'a'..'~'] then
+    begin
+      Value := Ord(Name[Idx]);
+      Inc(Idx);
+    end
+    else
+      raise EConvertError.Create(
+        'Opus names may contain only Spectrum characters, so no ` or accented letters.');
+
+    if Count >= OpusNameLength then
+      raise EConvertError.CreateFmt('Opus names may be at most %d characters.',
+        [OpusNameLength]);
+    Stored[Count] := Value;
+    Inc(Count);
+  end;
+end;
+
 // A slot formatted but never used
 function IsUnusedSlot(const Data: array of byte; Offset: integer): boolean;
 var
@@ -543,6 +584,60 @@ begin
   Result := TFPGList<TOpusFile>.Create;
   if FIsValid then
     ReadCatalogue(Result);
+end;
+
+function TOpusFileSystem.RenameFile(DiskFile: TOpusFile;
+  const NewFileName: string): boolean;
+var
+  Stored: array[0..OpusNameLength - 1] of byte;
+  NewName: string;
+  Files: TFPGList<TOpusFile>;
+  Other: TOpusFile;
+  Sector: TDSKSector;
+  PerBlock, Offset: integer;
+  Taken: boolean;
+begin
+  Result := False;
+  if DiskFile = nil then exit;
+  // Names are padded with spaces, so any typed at the end would be lost. An
+  // unchanged name is left as it is, whatever bytes the listing showed as '?'.
+  if NewFileName.TrimRight = DiskFile.FileName then exit;
+
+  EncodeName(NewFileName.TrimRight, Stored);
+  NewName := DecodeName(Stored, 0);
+  if NewName = '' then
+    raise EConvertError.Create('An Opus file must have a name.');
+
+  // The interface tells names that differ only in case apart
+  Taken := False;
+  Files := Directory;
+  try
+    for Other in Files do
+    begin
+      if (Other.EntryIndex <> DiskFile.EntryIndex) and (Other.FileName = NewName) then
+        Taken := True;
+      Other.Free;
+    end;
+  finally
+    Files.Free;
+  end;
+  if Taken then
+    raise EConvertError.CreateFmt('There is already a file called %s.', [NewName]);
+
+  // Only the entry the file was read from, and only while it is still there
+  if not FIsValid then exit;
+  PerBlock := FGeometry.SectorSize div OpusDirEntrySize;
+  Sector := GetBlock(DiskFile.EntryIndex div PerBlock);
+  if Sector = nil then exit;
+  Offset := (DiskFile.EntryIndex mod PerBlock) * OpusDirEntrySize;
+  if ((ReadWordLE(Sector.Data, Offset + deFirstBlock) and ValueMask) <> DiskFile.FirstBlock) or
+    (ReadWordLE(Sector.Data, Offset + deLastBlock) <> DiskFile.LastBlock) or
+    (DecodeName(Sector.Data, Offset + deName) <> DiskFile.FileName) then exit;
+
+  Move(Stored, Sector.Data[Offset + deName], OpusNameLength);
+  Sector.IsChanged := True;
+  DiskFile.FileName := NewName;
+  Result := True;
 end;
 
 function TOpusFileSystem.GetFreeBlocks: integer;

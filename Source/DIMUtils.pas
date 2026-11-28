@@ -18,6 +18,10 @@ uses
 
 const
   MaxBlockShift = 8;
+  // The font for anything set in columns, and the one that stands in where it is
+  // not installed. The stand-in has no quarter block graphics.
+  MonoFont = 'Cascadia Mono';
+  FallbackMonoFont = 'Consolas';
 
 type
   TDiskByteArray = array of byte;

@@ -208,10 +208,21 @@ var
   Track: TDSKTrack;
   Sector: TDSKSector;
   Spec: TDSKSpecification;
-  NamePart, ExtensionPart, UpperName, OldName, CurrentName, CurrentExtension,
-    CurrentFullName: string;
-  DotPos, Idx: integer;
+  NamePart, ExtensionPart, UpperName, NewName, OldName, CurrentName: string;
+  DotPos, Idx, MaxEntries: integer;
   Matched: boolean;
+  // An entry's name as the directory listing shows it
+  function EntryName(const Found: TDSKDirEntry): string;
+  var
+    Extension: string;
+  begin
+    Result := StrBlockClean(Found.Sector.Data,
+      Found.Offset + FILENAME_OFFSET, 8).TrimRight();
+    Extension := StrBlockClean(Found.Sector.Data,
+      Found.Offset + EXTENSION_OFFSET, 3).TrimRight();
+    if Extension <> '' then
+      Result := Result + '.' + Extension;
+  end;
   procedure CheckPart(const Part: string; MaxLength: integer);
   var
     CharIdx: integer;
@@ -231,8 +242,10 @@ begin
   Result := False;
   if (DiskFile = nil) or (DiskFile.FileName = '') then exit;
 
-  UpperName := UpperCase(Trim(NewFileName));
   OldName := DiskFile.FileName;
+  // An unchanged name is left as it is, even one that could not be typed anew
+  if Trim(NewFileName) = OldName then exit;
+  UpperName := UpperCase(Trim(NewFileName));
   DotPos := LastDelimiter('.', UpperName);
   if DotPos > 0 then
   begin
@@ -250,6 +263,10 @@ begin
     raise EConvertError.Create('A CP/M filename must have a name.');
   CheckPart(NamePart, 8);
   CheckPart(ExtensionPart, 3);
+  NewName := NamePart;
+  if ExtensionPart <> '' then
+    NewName := NewName + '.' + ExtensionPart;
+  if NewName = OldName then exit;
 
   Spec := FParentDisk.Specification;
   Track := FParentDisk.GetLogicalTrack(Spec.ReservedTracks);
@@ -257,19 +274,24 @@ begin
   Sector := Track.GetFirstLogicalSector();
   if Sector = nil then exit;
 
-  Matched := False;
-  for Entry in FParentDisk.DirectoryEntries(Sector, 32,
-    Spec.DirectoryBlocks * Spec.GetBlockSize() div 32) do
+  MaxEntries := Spec.DirectoryBlocks * Spec.GetBlockSize() div 32;
+
+  // Two files of one name and user would have their extents read as one file's,
+  // so look for that before anything is written
+  for Entry in FParentDisk.DirectoryEntries(Sector, 32, MaxEntries) do
     if Entry.Sector.Data[Entry.Offset] = DiskFile.User then
     begin
-      CurrentName := StrBlockClean(Entry.Sector.Data,
-        Entry.Offset + FILENAME_OFFSET, 8).TrimRight();
-      CurrentExtension := StrBlockClean(Entry.Sector.Data,
-        Entry.Offset + EXTENSION_OFFSET, 3).TrimRight();
-      CurrentFullName := CurrentName;
-      if CurrentExtension <> '' then
-        CurrentFullName := CurrentFullName + '.' + CurrentExtension;
-      if CurrentFullName = OldName then
+      CurrentName := EntryName(Entry);
+      if (CurrentName <> OldName) and SameText(CurrentName, NewName) then
+        raise EConvertError.CreateFmt('User %d already has a file called %s.',
+          [DiskFile.User, NewName]);
+    end;
+
+  Matched := False;
+  for Entry in FParentDisk.DirectoryEntries(Sector, 32, MaxEntries) do
+    if Entry.Sector.Data[Entry.Offset] = DiskFile.User then
+    begin
+      if EntryName(Entry) = OldName then
       begin
         Matched := True;
         for Idx := 0 to 7 do
@@ -292,7 +314,7 @@ begin
     end;
   if Matched then
   begin
-    DiskFile.FileName := UpperName;
+    DiskFile.FileName := NewName;
     Result := True;
   end;
 end;

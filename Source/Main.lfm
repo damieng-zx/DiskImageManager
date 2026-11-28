@@ -862,7 +862,7 @@ object frmMain: TfrmMain
     end
     object itmRenameFile: TMenuItem
       Caption = 'Rename File...'
-      Hint = 'Rename this CP/M directory entry'
+      Hint = 'Rename this directory entry'
       OnClick = itmRenameFileClick
     end
     object itmCopyDetailsClipboard: TMenuItem

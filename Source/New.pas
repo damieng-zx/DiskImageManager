@@ -15,7 +15,8 @@ interface
 
 uses
   DskImage, Main, DIMUtils, OpusFileSystem,
-  SysUtils, Classes, Forms, StdCtrls, ComCtrls, ExtCtrls, Dialogs, Buttons, Math, Controls, Graphics, DSKFormat;
+  SysUtils, Classes, Forms, StdCtrls, ComCtrls, ExtCtrls, Dialogs, Buttons, Math, Controls, Graphics, DSKFormat,
+  Utils;
 
 type
 
@@ -492,6 +493,8 @@ var
   Idx: integer;
   Format: TDSKFormatSpecification;
 begin
+  memDPBHex.Font.Name := MonoFontName;
+
   lvwFormats.BeginUpdate;
   try
     for Idx := 0 to 9 do

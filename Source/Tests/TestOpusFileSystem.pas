@@ -84,6 +84,8 @@ type
     procedure TestEveryGeometryCanBeFormatted;
     procedure TestOnlyOpusGeometryCanBeFormatted;
     procedure TestCompressedImages;
+    procedure TestRenameChangesOnlyTheName;
+    procedure TestRenameRefusesNamesTheCatalogueCannotTake;
   end;
 
 implementation
@@ -1024,6 +1026,79 @@ begin
     Images.Free;
     Problems.Free;
   end;
+end;
+
+procedure TOpusFileSystemTest.TestRenameChangesOnlyTheName;
+const
+  // A pound sign, a five, a space and a copyright sign, as UTF-8
+  NewName = #$C2#$A3'5 '#$C2#$A9;
+  Stored: array[0..9] of byte = ($60, $35, 32, $7F, 32, 32, 32, 32, 32, 32);
+var
+  Builder: TOpusBuilder;
+  Expected, Data: TDiskByteArray;
+begin
+  Builder := SingleSided;
+  try
+    Open(Builder.Bytes);
+    Expected := Copy(Builder.Bytes, 0, Length(Builder.Bytes));
+    // The second file's entry is the third, after the disk's own
+    Move(Stored, Expected[Builder.Offset(0) + 2 * 16 + 6], SizeOf(Stored));
+  finally
+    Builder.Free;
+  end;
+  ReadDirectory;
+  Data := FFiles[1].GetData(True);
+
+  AssertFalse('same name', FFileSystem.RenameFile(FFiles[1], 'Code File'));
+  AssertFalse('same name leaves the image alone', FImage.IsChanged);
+
+  AssertTrue('renamed', FFileSystem.RenameFile(FFiles[1], NewName + '  '));
+  AssertEquals('name of the file in hand', NewName, FFiles[1].FileName);
+  AssertTrue('image is changed', FImage.IsChanged);
+
+  SaveAs(TempName('.out.opd'), diRawOPD);
+  AssertBytes('saved image', Expected, ReadBytes(TempName('.out.opd')));
+
+  Reopen(TempName('.out.opd'));
+  ReadDirectory;
+  AssertEquals('name listed', NewName, FFiles[1].FileName);
+  AssertBytes('contents', Data, FFiles[1].GetData(True));
+end;
+
+procedure TOpusFileSystemTest.TestRenameRefusesNamesTheCatalogueCannotTake;
+
+  procedure Refused(const Name: string);
+  begin
+    try
+      FFileSystem.RenameFile(FFiles[0], Name);
+      Fail('accepted "' + Name + '"');
+    except
+      on EConvertError do ;
+    end;
+    AssertEquals('name kept after "' + Name + '"', 'program', FFiles[0].FileName);
+    AssertFalse('image untouched after "' + Name + '"', FImage.IsChanged);
+  end;
+
+var
+  Builder: TOpusBuilder;
+begin
+  Builder := SingleSided;
+  try
+    Open(Builder.Bytes);
+  finally
+    Builder.Free;
+  end;
+  ReadDirectory;
+
+  Refused('');
+  Refused('   ');
+  Refused('elevenchars');
+  Refused('back`tick');
+  Refused('caf'#$C3#$A9);
+  Refused('tab'#9'bed');
+  Refused('Code File');
+  // The interface tells names that differ only in case apart
+  AssertTrue(FFileSystem.RenameFile(FFiles[0], 'code file'));
 end;
 
 initialization

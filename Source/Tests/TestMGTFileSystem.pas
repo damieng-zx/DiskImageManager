@@ -16,7 +16,7 @@ interface
 
 uses
   Classes, SysUtils, FGL, ZStream, fpcunit, testregistry,
-  DskImage, DIMUtils, MGTFileSystem;
+  DskImage, DIMUtils, MGTFileSystem, SinclairBasic;
 
 type
   TMGTFiles = specialize TFPGList<TMGTFile>;
@@ -44,6 +44,12 @@ type
     procedure TestSavingReproducesEverySample;
     procedure TestSpectrumEntries;
     procedure TestSAMEntries;
+    procedure TestWhichFilesCanBeViewed;
+    procedure TestBasicProgramStopsBeforeItsVariables;
+    procedure TestStringArraysAreListed;
+    procedure TestRenameChangesOnlyTheName;
+    procedure TestRenameRefusesNamesTheDiskCannotTake;
+    procedure TestRenameAllowsANameUsedInAnotherDirectory;
     procedure TestDosTypeAndLabel;
     procedure TestMasterDOSExtendedDirectory;
     procedure TestFileDataMatchesTheSectorChain;
@@ -479,6 +485,218 @@ begin
     'SAM Driver application', '1600280080ffff0001', '');
   CheckEntry('driver_boot', 0, 'driverboot', 23, 1, 500,
     'SAM Driver bootstrap', '17f40100bdffff0000', '');
+end;
+
+procedure TMGTFileSystemTest.TestWhichFilesCanBeViewed;
+
+  procedure Check(const Sample: string; Expected: TMGTViewKind);
+  var
+    Image: TDSKImage;
+    FileSystem: TMGTFileSystem;
+    Files: TMGTFiles;
+  begin
+    Image := LoadSample(Sample);
+    FileSystem := TMGTFileSystem.Create(Image.Disk);
+    Files := FileSystem.Directory;
+    try
+      AssertEquals(Sample, Ord(Expected), Ord(Files[0].ViewKind));
+    finally
+      FreeFiles(Files);
+      FileSystem.Free;
+      Image.Free;
+    end;
+  end;
+
+begin
+  Check('zx_basic_vars', mvBasic);
+  Check('zx_basic_auto', mvBasic);
+  Check('zx_data_str1', mvStringArray);
+  Check('zx_data_str2', mvStringArray);
+  Check('zx_screen', mvScreen);
+  Check('zx_data', mvNone);
+  // CODE of any other size than a screen's
+  Check('zx_code', mvNone);
+  Check('zx_snap_48k', mvNone);
+  Check('zx_opentype', mvNone);
+  Check('basic_auto', mvNone);
+  Check('data_str', mvNone);
+  Check('screen_1', mvNone);
+end;
+
+procedure TMGTFileSystemTest.TestBasicProgramStopsBeforeItsVariables;
+
+  procedure Check(const Sample: string; ProgramLength: integer);
+  var
+    Image: TDSKImage;
+    FileSystem: TMGTFileSystem;
+    Files: TMGTFiles;
+    Parser: TSinclairBasicParser;
+    Listing: string;
+  begin
+    Image := LoadSample(Sample);
+    FileSystem := TMGTFileSystem.Create(Image.Disk);
+    Files := FileSystem.Directory;
+    Parser := TSinclairBasicParser.Create(sbMode128K);
+    try
+      AssertBytes(Sample + ' program',
+        Slice(Files[0].GetData(False), 0, ProgramLength), Files[0].BasicProgram);
+      Listing := Parser.Decode(Files[0].BasicProgram);
+      AssertEquals(Sample + ' first line', '  10 ', Copy(Listing, 1, 5));
+    finally
+      Parser.Free;
+      FreeFiles(Files);
+      FileSystem.Free;
+      Image.Free;
+    end;
+  end;
+
+var
+  Image: TDSKImage;
+  FileSystem: TMGTFileSystem;
+  Files: TMGTFiles;
+begin
+  // 78 bytes stored, of which the last 52 are variables
+  Check('zx_basic_vars', 26);
+  Check('zx_basic_auto', 189);
+
+  Image := LoadSample('zx_code');
+  FileSystem := TMGTFileSystem.Create(Image.Disk);
+  Files := FileSystem.Directory;
+  try
+    AssertEquals('only BASIC has one', 0, Length(Files[0].BasicProgram));
+  finally
+    FreeFiles(Files);
+    FileSystem.Free;
+    Image.Free;
+  end;
+end;
+
+procedure TMGTFileSystemTest.TestStringArraysAreListed;
+var
+  Image: TDSKImage;
+  FileSystem: TMGTFileSystem;
+  Files: TMGTFiles;
+  Parser: TSinclairBasicParser;
+begin
+  Image := LoadSample('zx_data_str2');
+  FileSystem := TMGTFileSystem.Create(Image.Disk);
+  Files := FileSystem.Directory;
+  Parser := TSinclairBasicParser.Create(sbMode128K);
+  try
+    AssertEquals('first of x$(5,10)', 'hello',
+      Copy(Parser.DecodeStringArray(Files[0].GetData(False)), 1, 5));
+  finally
+    Parser.Free;
+    FreeFiles(Files);
+    FileSystem.Free;
+    Image.Free;
+  end;
+end;
+
+procedure TMGTFileSystemTest.TestRenameChangesOnlyTheName;
+var
+  Image: TDSKImage;
+  FileSystem: TMGTFileSystem;
+  Files, Renamed: TMGTFiles;
+  Original, Expected, Data: TDiskByteArray;
+  Name: string;
+  Idx: integer;
+begin
+  Original := Unpack(DataDir + 'zx_code.mgt.gz');
+  Image := LoadSample('zx_code');
+  FileSystem := TMGTFileSystem.Create(Image.Disk);
+  Files := FileSystem.Directory;
+  try
+    Data := Files[0].GetData(True);
+
+    AssertFalse('same name', FileSystem.RenameFile(Files[0], 'code'));
+    AssertFalse('same name leaves the image alone', Image.IsChanged);
+
+    AssertTrue('renamed', FileSystem.RenameFile(Files[0], 'New Name  '));
+    AssertEquals('name of the file in hand', 'New Name', Files[0].FileName);
+    AssertTrue('image is changed', Image.IsChanged);
+    // A second rename of the same object, as its entry was kept up to date
+    AssertTrue('renamed again', FileSystem.RenameFile(Files[0], 'abcdefghij'));
+
+    Renamed := FileSystem.Directory;
+    try
+      AssertEquals('name listed', 'abcdefghij', Renamed[0].FileName);
+      AssertBytes('contents', Data, Renamed[0].GetData(True));
+    finally
+      FreeFiles(Renamed);
+    end;
+
+    // The first entry's name is bytes 1 to 10 of the image
+    Expected := Copy(Original, 0, Length(Original));
+    Name := 'abcdefghij';
+    for Idx := 1 to Length(Name) do
+      Expected[Idx] := Ord(Name[Idx]);
+    AssertBytes('saved image', Expected, SavedBytes(Image, diRawMGT, '.mgt'));
+  finally
+    FreeFiles(Files);
+    FileSystem.Free;
+    Image.Free;
+  end;
+end;
+
+procedure TMGTFileSystemTest.TestRenameRefusesNamesTheDiskCannotTake;
+var
+  Image: TDSKImage;
+  FileSystem: TMGTFileSystem;
+  Files: TMGTFiles;
+
+  procedure Refused(const Name: string);
+  begin
+    try
+      FileSystem.RenameFile(Files[0], Name);
+      Fail('accepted "' + Name + '"');
+    except
+      on EConvertError do ;
+    end;
+    AssertEquals('name kept after "' + Name + '"', '1', Files[0].FileName);
+    AssertFalse('image untouched after "' + Name + '"', Image.IsChanged);
+  end;
+
+begin
+  Image := LoadSample('masterdos_dir_5trk');
+  FileSystem := TMGTFileSystem.Create(Image.Disk);
+  Files := FileSystem.Directory;
+  try
+    Refused('');
+    Refused('   ');
+    Refused('elevenchars');
+    Refused('a*');
+    Refused('a?');
+    Refused('tab'#9'bed');
+    Refused('caf'#$C3#$A9);
+    Refused('2');
+    // Past the standard directory, where the longer one carries on
+    Refused('98');
+  finally
+    FreeFiles(Files);
+    FileSystem.Free;
+    Image.Free;
+  end;
+end;
+
+procedure TMGTFileSystemTest.TestRenameAllowsANameUsedInAnotherDirectory;
+var
+  Image: TDSKImage;
+  FileSystem: TMGTFileSystem;
+  Files: TMGTFiles;
+begin
+  // The file 'code' is inside the directory 'subdir', which is in the root
+  Image := LoadSample('dir');
+  FileSystem := TMGTFileSystem.Create(Image.Disk);
+  Files := FileSystem.Directory;
+  try
+    AssertTrue(FileSystem.RenameFile(Files[1], 'SubDir'));
+    AssertEquals('SubDir', Files[1].FileName);
+  finally
+    FreeFiles(Files);
+    FileSystem.Free;
+    Image.Free;
+  end;
 end;
 
 procedure TMGTFileSystemTest.TestDosTypeAndLabel;

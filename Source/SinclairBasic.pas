@@ -22,14 +22,18 @@ type
   TSinclairBasicParser = class
   private
     FMode: TSinclairBasicMode;
+    FFontName: string;
+    function RTFStart(const Colours: string = ''): string;
+    function IsKeyword(B: byte; InString: boolean): boolean;
     function GetTokenText(Token: byte): string;
     function DecodeSpectrumIntegral(const Bytes: array of byte): string;
     function DecodeSpectrumFloat(const Bytes: array of byte): string;
     function DecodeLine(const Data: array of byte; StartPos, Length: integer): string;
     function DecodeLineRTF(const Data: array of byte; StartPos, Length: integer): string;
     function GetSpecialChar(B: byte): string;
+    function GetPrintableChar(B: byte): string;
     function EscapeRTF(const S: string): string;
-    function DecodeArrayChar(B: byte): string;
+    function DecodeChar(B: byte; InString: boolean): string;
     function ParseStringArrayHeader(const Data: array of byte;
       out StartPos, StringLen, NumStrings: integer): boolean;
   public
@@ -44,11 +48,15 @@ type
     function DecodeTextRTF(const Data: array of byte): string;
     function DecodeTextFileRTF(DiskImage: TDSKDisk; DiskFile: TCPMFile): string;
     property Mode: TSinclairBasicMode read FMode write FMode;
+    // The font the RTF is set in, which wants to be one with the block graphics
+    property FontName: string read FFontName write FFontName;
   end;
 
 implementation
 
 const
+  TokenREM = $EA;
+
   Tokens: array[$A5..$FF] of string = (
     'RND', 'INKEY$', 'PI', 'FN', 'POINT', 'SCREEN$', 'ATTR', 'AT', 'TAB',
     'VAL$', 'CODE', 'VAL', 'LEN', 'SIN', 'COS', 'TAN', 'ASN', 'ACS', 'ATN',
@@ -67,21 +75,31 @@ constructor TSinclairBasicParser.Create(Mode: TSinclairBasicMode);
 begin
   inherited Create;
   FMode := Mode;
+  FFontName := MonoFont;
 end;
 
+// The start of an RTF document, up to where the text goes
+function TSinclairBasicParser.RTFStart(const Colours: string): string;
+begin
+  Result := '{\rtf1\ansi\deff0{\fonttbl{\f0\fmodern ' + FFontName + ';}}' +
+    Colours + '\f0\fs26 ';
+end;
+
+// Whether a byte stands for a keyword. $A3 and $A4 are the last two user defined
+// graphics, which the 128K machines also use for SPECTRUM and PLAY: they are the
+// graphics inside a string, and everywhere in a 48K program.
+function TSinclairBasicParser.IsKeyword(B: byte; InString: boolean): boolean;
+begin
+  Result := (B >= $A5) or
+    ((B >= $A3) and (FMode = sbMode128K) and not InString);
+end;
+
+// The keyword for a byte IsKeyword accepts
 function TSinclairBasicParser.GetTokenText(Token: byte): string;
 begin
   case Token of
-    $A3:
-      if FMode = sbMode128K then
-        Result := 'SPECTRUM'
-      else
-        Result := 'UDG-A';
-    $A4:
-      if FMode = sbMode128K then
-        Result := 'PLAY'
-      else
-        Result := 'UDG-B';
+    $A3: Result := 'SPECTRUM';
+    $A4: Result := 'PLAY';
     $A5..$FF:
       Result := Tokens[Token];
   else
@@ -162,14 +180,49 @@ begin
 end;
 
 function TSinclairBasicParser.GetSpecialChar(B: byte): string;
+const
+  // The block graphics as Unicode block elements (UTF-8). The low four bits of
+  // the code each fill a quarter of the character: top right, top left, bottom
+  // right and bottom left
+  BlockGraphics: array[$80..$8F] of string = (
+    ' ',                      // none
+    #$E2#$96#$9D,             // U+259D top right
+    #$E2#$96#$98,             // U+2598 top left
+    #$E2#$96#$80,             // U+2580 top half
+    #$E2#$96#$97,             // U+2597 bottom right
+    #$E2#$96#$90,             // U+2590 right half
+    #$E2#$96#$9A,             // U+259A top left, bottom right
+    #$E2#$96#$9C,             // U+259C all but bottom left
+    #$E2#$96#$96,             // U+2596 bottom left
+    #$E2#$96#$9E,             // U+259E top right, bottom left
+    #$E2#$96#$8C,             // U+258C left half
+    #$E2#$96#$9B,             // U+259B all but bottom right
+    #$E2#$96#$84,             // U+2584 bottom half
+    #$E2#$96#$9F,             // U+259F all but top left
+    #$E2#$96#$99,             // U+2599 all but top right
+    #$E2#$96#$88);            // U+2588 all
 begin
   case B of
+    $60: Result := #$C2#$A3;  // Pound sign (UTF-8)
     $7F: Result := #$C2#$A9;  // Copyright symbol (UTF-8)
-    $80..$8F: Result := '[GRAPH]';
-    $90..$A0, $A2: Result := '[UDG]';
-    $A1: Result := '\';  // Spectrum pound-sign glyph
+    $80..$8F: Result := BlockGraphics[B];
+    // User defined graphics A to U, written as \A to \U
+    $90..$A4: Result := '\' + Chr(Ord('A') + B - $90);
   else
     Result := '?';
+  end;
+end;
+
+// A printable byte, which is ASCII except where the Spectrum has a pound sign
+// and a copyright sign. A backslash is doubled, as one on its own introduces a
+// user defined graphic.
+function TSinclairBasicParser.GetPrintableChar(B: byte): string;
+begin
+  case B of
+    $5C: Result := '\\';
+    $60, $7F: Result := GetSpecialChar(B);
+  else
+    Result := Chr(B);
   end;
 end;
 
@@ -177,11 +230,13 @@ function TSinclairBasicParser.DecodeLine(const Data: array of byte; StartPos, Le
 var
   Pos, EndPos: integer;
   B: byte;
-  LastWasSpace: boolean;
+  InString, InREM, LastWasSpace: boolean;
 begin
   Result := '';
   Pos := StartPos;
   EndPos := StartPos + Length;
+  InString := False;
+  InREM := False;
   LastWasSpace := True;  // Start of line counts as "after space"
 
   while Pos < EndPos do
@@ -216,44 +271,26 @@ begin
       $16, $17:
         if Pos + 2 <= EndPos then Inc(Pos, 2) else Pos := EndPos;
 
-      // Tokens $A3 and $A4 (mode-dependent)
-      $A3, $A4:
-        begin
-          if not LastWasSpace then
-            Result := Result + ' ';
-          Result := Result + GetTokenText(B) + ' ';
-          LastWasSpace := True;
-        end;
-
-      // Tokens $A5-$FF are BASIC keywords
-      $A5..$FF:
-        begin
-          if not LastWasSpace then
-            Result := Result + ' ';
-          Result := Result + GetTokenText(B) + ' ';
-          LastWasSpace := True;
-        end;
-
-      // Regular printable ASCII
-      $20..$7F:
-        begin
-          if B = $7F then
-            Result := Result + GetSpecialChar(B)  // Copyright symbol
-          else
-            Result := Result + Chr(B);
-          LastWasSpace := (B = $20);
-        end;
-
-      // Extended characters (0x80-0xA2, note: 0x7F is handled above with ASCII)
-      $80..$A2:
-        begin
-          Result := Result + GetSpecialChar(B);
-          LastWasSpace := False;
-        end;
-
-      // Control characters and others - skip
     else
-      // Unknown - skip
+      if IsKeyword(B, InString) then
+      begin
+        if not LastWasSpace then
+          Result := Result + ' ';
+        Result := Result + GetTokenText(B) + ' ';
+        LastWasSpace := True;
+        if (B = TokenREM) and not InString then
+          InREM := True;
+      end
+      else
+      begin
+        // A quote in a comment is only text, and opens no string
+        if (B = $22) and not InREM then
+          InString := not InString;
+        Result := Result + DecodeChar(B, InString);
+        // Control characters show nothing, so leave the spacing as it was
+        if B >= $20 then
+          LastWasSpace := (B = $20);
+      end;
     end;
   end;
 end;
@@ -293,7 +330,7 @@ begin
 
     // Decode the line
     LineText := DecodeLine(Data, Pos, LineLen);
-    Result := Result + Format('%d %s'#13#10, [LineNum, LineText]);
+    Result := Result + Format('%4d %s'#13#10, [LineNum, LineText]);
 
     // Move to next line
     Inc(Pos, LineLen);
@@ -332,17 +369,46 @@ end;
 
 function TSinclairBasicParser.EscapeRTF(const S: string): string;
 var
+  Wide: UnicodeString;
   I: integer;
+
+  // RTF takes a character as a signed 16 bit number, then a stand-in for it
+  function ByNumber(C: widechar): string;
+  begin
+    Result := '\u' + IntToStr(smallint(Ord(C))) + '?';
+  end;
+
 begin
   Result := '';
-  for I := 1 to Length(S) do
-    case S[I] of
-      '\': Result := Result + '\\';
-      '{': Result := Result + '\{';
-      '}': Result := Result + '\}';
+  // The signs and graphics above ASCII arrive as UTF-8, which the viewer would
+  // show a byte at a time, so they are given to it by number instead
+  Wide := UTF8Decode(S);
+  I := 1;
+  while I <= Length(Wide) do
+  begin
+    case Ord(Wide[I]) of
+      // A backslash escapes the character after it: the letter of a user defined
+      // graphic, which is underlined, or another backslash. The escape itself is
+      // hidden text, which the viewer does not show but does copy.
+      Ord('\'):
+        if I < Length(Wide) then
+        begin
+          Inc(I);
+          if Wide[I] = '\' then
+            Result := Result + '{\v \\}\\'
+          else
+            Result := Result + '{\v \\}{\ul ' + AnsiChar(Ord(Wide[I])) + '}';
+        end;
+      Ord('{'): Result := Result + '\{';
+      Ord('}'): Result := Result + '\}';
     else
-      Result := Result + S[I];
+      if Ord(Wide[I]) > 127 then
+        Result := Result + ByNumber(Wide[I])
+      else
+        Result := Result + AnsiChar(Ord(Wide[I]));
     end;
+    Inc(I);
+  end;
 end;
 
 function TSinclairBasicParser.DecodeLineRTF(const Data: array of byte; StartPos, Length: integer): string;
@@ -381,24 +447,15 @@ begin
       Continue;
     end;
 
-    // Inside a REM comment - everything is green, no token parsing
+    // Inside a REM comment - everything is green, and quotes open no string
     if InREM then
     begin
-      case B of
-        $0E:
-          begin
-            if Pos + 5 <= EndPos then
-              Inc(Pos, 5)
-            else
-              Pos := EndPos;
-          end;
-        $20..$7E:
-          Result := Result + EscapeRTF(Chr(B));
-        $7F..$A2:
-          Result := Result + EscapeRTF(GetSpecialChar(B));
-        $A3..$FF:
-          Result := Result + EscapeRTF(GetTokenText(B));
-      end;
+      if B <> $0E then
+        Result := Result + EscapeRTF(DecodeChar(B, False))
+      else if Pos + 5 <= EndPos then
+        Inc(Pos, 5)
+      else
+        Pos := EndPos;
       Continue;
     end;
 
@@ -432,27 +489,19 @@ begin
     // Inside a string - everything is red
     if InString then
     begin
-      case B of
-        $20..$7F:
-          if B = $7F then
-            Result := Result + EscapeRTF(GetSpecialChar(B))
-          else
-            Result := Result + EscapeRTF(Chr(B));
-        $80..$A2:
-          Result := Result + EscapeRTF(GetSpecialChar(B));
-      end;
+      Result := Result + EscapeRTF(DecodeChar(B, True));
       Continue;
     end;
 
     // Keywords
-    if B in [$A3..$FF] then
+    if IsKeyword(B, False) then
     begin
       TokenText := GetTokenText(B);
       if not LastWasSpace then
         Result := Result + ' ';
 
       // REM keyword - emit keyword then switch to comment mode
-      if B = $EA then
+      if B = TokenREM then
       begin
         Result := Result + '{\cf2\b ' + EscapeRTF(TokenText) + ' }{\cf4 ';
         InREM := True;
@@ -464,27 +513,11 @@ begin
       Continue;
     end;
 
-    // Regular printable ASCII
-    if (B >= $20) and (B <= $7E) then
+    // Characters, graphics included
+    if B >= $20 then
     begin
-      Result := Result + EscapeRTF(Chr(B));
+      Result := Result + EscapeRTF(DecodeChar(B, False));
       LastWasSpace := (B = $20);
-      Continue;
-    end;
-
-    if B = $7F then
-    begin
-      Result := Result + EscapeRTF(GetSpecialChar(B));
-      LastWasSpace := False;
-      Continue;
-    end;
-
-    // Extended characters
-    if (B >= $80) and (B <= $A2) then
-    begin
-      Result := Result + EscapeRTF(GetSpecialChar(B));
-      LastWasSpace := False;
-      Continue;
     end;
   end;
 
@@ -497,10 +530,7 @@ end;
 
 function TSinclairBasicParser.DecodeRTF(const Data: array of byte): string;
 const
-  RTFHeader = '{\rtf1\ansi\deff0' +
-    '{\fonttbl{\f0\fmodern Consolas;}}' +
-    '{\colortbl;\red128\green128\blue128;\red0\green0\blue170;\red170\green0\blue0;\red0\green128\blue0;\red0\green0\blue0;}' +
-    '\f0\fs26 ';
+  Colours = '{\colortbl;\red128\green128\blue128;\red0\green0\blue170;\red170\green0\blue0;\red0\green128\blue0;\red0\green0\blue0;}';
 var
   Pos, DataLen: integer;
   LineNum: word;
@@ -508,7 +538,7 @@ var
   LineRTF: string;
   FirstLine: boolean;
 begin
-  Result := RTFHeader;
+  Result := RTFStart(Colours);
   Pos := 0;
   DataLen := System.Length(Data);
   FirstLine := True;
@@ -535,7 +565,7 @@ begin
     FirstLine := False;
 
     LineRTF := DecodeLineRTF(Data, Pos, LineLen);
-    Result := Result + '{\cf1 ' + IntToStr(LineNum) + '} ' + LineRTF;
+    Result := Result + '{\cf1 ' + Format('%4d', [LineNum]) + '} ' + LineRTF;
 
     Inc(Pos, LineLen);
   end;
@@ -569,19 +599,19 @@ begin
   Result := DecodeRTF(BasicData);
 end;
 
-// Decode a single byte of a saved character (string) array element. Unlike a
-// tokenised BASIC line there are no number markers, so every byte is a literal
-// character: printable ASCII, a Spectrum special/extended character, or a
-// keyword token.
-function TSinclairBasicParser.DecodeArrayChar(B: byte): string;
+// The text a single byte stands for: printable ASCII, a Spectrum
+// special/extended character, or a keyword token. The elements of a saved
+// character array are all strings, so they are decoded as inside one.
+function TSinclairBasicParser.DecodeChar(B: byte; InString: boolean): string;
 begin
-  case B of
-    $20..$7E: Result := Chr(B);
-    $7F..$A2: Result := GetSpecialChar(B);
-    $A3..$FF: Result := GetTokenText(B);
+  if IsKeyword(B, InString) then
+    Result := GetTokenText(B)
+  else if B >= $80 then
+    Result := GetSpecialChar(B)
+  else if B >= $20 then
+    Result := GetPrintableChar(B)
   else
     Result := '';  // control characters
-  end;
 end;
 
 // Parse the dimension table at the start of a saved character array. The data
@@ -662,7 +692,7 @@ begin
     begin
       if Pos >= System.Length(Data) then
         Break;
-      Item := Item + DecodeArrayChar(Data[Pos]);
+      Item := Item + DecodeChar(Data[Pos], True);
       Inc(Pos);
     end;
     Result := Result + TrimRight(Item) + #13#10;
@@ -672,10 +702,6 @@ end;
 // Decode a saved character array to RTF for the file viewer, one array item
 // (string) per line.
 function TSinclairBasicParser.DecodeStringArrayRTF(const Data: array of byte): string;
-const
-  RTFHeader = '{\rtf1\ansi\deff0' +
-    '{\fonttbl{\f0\fmodern Consolas;}}' +
-    '\f0\fs26 ';
 var
   StartPos, StringLen, NumStrings, ItemIdx, I, Pos: integer;
   Item: string;
@@ -684,7 +710,7 @@ begin
   if not ParseStringArrayHeader(Data, StartPos, StringLen, NumStrings) then
     Exit;
 
-  Result := RTFHeader;
+  Result := RTFStart;
   Pos := StartPos;
   for ItemIdx := 0 to NumStrings - 1 do
   begin
@@ -695,7 +721,7 @@ begin
     begin
       if Pos >= System.Length(Data) then
         Break;
-      Item := Item + DecodeArrayChar(Data[Pos]);
+      Item := Item + DecodeChar(Data[Pos], True);
       Inc(Pos);
     end;
     Result := Result + EscapeRTF(TrimRight(Item));
@@ -721,18 +747,14 @@ begin
 end;
 
 // Decode arbitrary file contents to RTF as plain text, mapping each byte with
-// the Spectrum character set (printable ASCII, special characters and keyword
-// tokens) and treating CR/LF as line breaks.
+// the Spectrum character set (printable ASCII, special characters, user defined
+// graphics and keyword tokens) and treating CR/LF as line breaks.
 function TSinclairBasicParser.DecodeTextRTF(const Data: array of byte): string;
-const
-  RTFHeader = '{\rtf1\ansi\deff0' +
-    '{\fonttbl{\f0\fmodern Consolas;}}' +
-    '\f0\fs26 ';
 var
   I: integer;
   Line: string;
 begin
-  Result := RTFHeader;
+  Result := RTFStart;
   Line := '';
   I := 0;
   while I <= High(Data) do
@@ -750,8 +772,13 @@ begin
         Result := Result + EscapeRTF(Line) + '\par ';
         Line := '';
       end;
+      $5C:  // a text file's backslashes are its own, and are copied as they are
+      begin
+        Result := Result + EscapeRTF(Line) + '\\';
+        Line := '';
+      end;
     else
-      Line := Line + DecodeArrayChar(Data[I]);
+      Line := Line + DecodeChar(Data[I], True);
     end;
     Inc(I);
   end;

@@ -39,6 +39,8 @@ type
     procedure TestEmptyFileWithoutBlocksIsListed;
     procedure TestRenameUpdatesCPMDirectoryEntry;
     procedure TestRenameRejectsInvalidCPMNameWithoutEditing;
+    procedure TestRenameRefusesAUsedName;
+    procedure TestRenameToTheSameNameChangesNothing;
     procedure TestDirectoryWalkContinuesIntoNextSector;
     procedure TestDirectorySkipsDeletedAndUnnamedEntries;
     procedure TestDirectoryUsesEntryAttributesAndUserNumbers;
@@ -493,6 +495,99 @@ begin
         AssertEquals('directory bytes are unchanged', 'TESTFILE',
           TrimRight(StrBlockClean(DirSector(Img).Data, 1, 8)));
         AssertFalse('rejected rename does not dirty the image', Img.IsChanged);
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestRenameRefusesAUsedName;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+  Before: array[0..95] of byte;
+
+  // An entry of one record, in the slot given
+  procedure Plant(Slot, User, Block: integer; const Name: string);
+  var
+    Offset: integer;
+  begin
+    Offset := Slot * 32;
+    FillChar(DirSector(Img).Data[Offset], 32, 0);
+    DirSector(Img).Data[Offset] := User;
+    WriteAscii(DirSector(Img), Offset + 1, Name);
+    WriteAscii(DirSector(Img), Offset + 9, 'BAS');
+    DirSector(Img).Data[Offset + 15] := 1;
+    DirSector(Img).Data[Offset + 16] := Block;
+  end;
+
+  procedure Refused(const NewName: string);
+  begin
+    try
+      FSys.RenameFile(Files[0], NewName);
+      Fail('accepted ' + NewName);
+    except
+      on EConvertError do ;
+    end;
+    AssertEquals('name kept', 'FIRST.BAS', Files[0].FileName);
+    AssertTrue('directory untouched',
+      CompareMem(@Before, @DirSector(Img).Data[0], SizeOf(Before)));
+    AssertFalse('image untouched', Img.IsChanged);
+  end;
+
+begin
+  Img := MakePCWDisk;
+  try
+    Plant(0, 0, 2, 'FIRST   ');
+    Plant(1, 0, 3, 'SECOND  ');
+    Plant(2, 1, 4, 'THIRD   ');
+    Move(DirSector(Img).Data[0], Before, SizeOf(Before));
+    Img.IsChanged := False;
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertEquals('three files', 3, Files.Count);
+        AssertEquals('FIRST.BAS', Files[0].FileName);
+        Refused('SECOND.BAS');
+        Refused('second.bas');
+        // Another user's name is free to use
+        AssertTrue(FSys.RenameFile(Files[0], 'THIRD.BAS'));
+        AssertEquals('THIRD.BAS', Files[0].FileName);
+      finally
+        FreeDirectory(Files);
+      end;
+    finally
+      FSys.Free;
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+
+procedure TCPMFileSystemTest.TestRenameToTheSameNameChangesNothing;
+var
+  Img: TDSKImage;
+  FSys: TCPMFileSystem;
+  Files: TDirectory;
+begin
+  Img := MakePCWDisk;
+  try
+    PlantDirEntry(Img, 1, 0, 2);
+    Img.IsChanged := False;
+    FSys := TCPMFileSystem.Create(Img.Disk);
+    try
+      Files := FSys.Directory;
+      try
+        AssertFalse('as it is', FSys.RenameFile(Files[0], 'TESTFILE.BAS'));
+        AssertFalse('in another case', FSys.RenameFile(Files[0], 'testfile.bas'));
+        AssertFalse('image untouched', Img.IsChanged);
       finally
         FreeDirectory(Files);
       end;

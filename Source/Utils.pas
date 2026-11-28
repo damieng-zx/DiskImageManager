@@ -30,6 +30,9 @@ function FontFromDescription(Description: string): TFont;
 function FontHumanReadable(ThisFont: TFont): string;
 function FontCopy(ThisFont: TFont): TFont;
 
+// The monospace font to show things in, of the two that can be, on this machine
+function MonoFontName: string;
+
 procedure DrawBorder(Canvas: TCanvas; var Rect: TRect; BorderStyle: TSpinBorderStyle);
 procedure AutoResizeListView(const ListView: TListView;
   const Mode: integer = LVSCW_AUTOSIZE_BESTFIT);
@@ -48,7 +51,15 @@ procedure SaveBitmapWithDialog(AOwner: TComponent; Bitmap: TBitmap;
 implementation
 
 uses
-  DIMUtils, LCLIntf, CommCtrl, Dialogs;
+  DIMUtils, LCLIntf, CommCtrl, Dialogs, Forms;
+
+function MonoFontName: string;
+begin
+  if Screen.Fonts.IndexOf(MonoFont) >= 0 then
+    Result := MonoFont
+  else
+    Result := FallbackMonoFont;
+end;
 
 procedure DrawBorder(Canvas: TCanvas; var Rect: TRect; BorderStyle: TSpinBorderStyle);
 var
